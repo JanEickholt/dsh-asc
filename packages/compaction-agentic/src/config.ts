@@ -101,6 +101,9 @@ export function resolveConfig(config: AgenticCompactionConfig = {}): ResolvedCon
   validateKeys(config, AGENTIC_CONFIG_KEYS, 'AgenticCompactionConfig')
   const retention = resolveRetention(config)
   const thresholdRatio = config.thresholdRatio ?? DEFAULT_THRESHOLD_RATIO
+  if (config.thresholdRatio !== undefined) {
+    assertRatio('AgenticCompactionConfig.thresholdRatio', config.thresholdRatio)
+  }
   validateRatioRetention(thresholdRatio, retention, 'AgenticCompactionConfig')
 
   const nudge = resolveGroup(config.nudge, NUDGE_KEYS, 'AgenticCompactionConfig.nudge', {
@@ -137,11 +140,10 @@ export function resolveConfig(config: AgenticCompactionConfig = {}): ResolvedCon
     maxTier: 3,
     growthTokens: 50000,
   } as const, (group, name) => {
-    if (group.maxTier !== undefined) {
-      assertPositiveInteger(`${name}.maxTier`, group.maxTier)
-      if (group.maxTier < 1 || group.maxTier > 5) {
-        throw new Error(`${name}.maxTier (${group.maxTier}) must be between 1 and 5`)
-      }
+    if (group.maxTier !== undefined
+      && (typeof group.maxTier !== 'number' || !Number.isInteger(group.maxTier)
+        || group.maxTier < 1 || group.maxTier > 5)) {
+      throw new Error(`${name}.maxTier (${String(group.maxTier)}) must be an integer between 1 and 5`)
     }
     if (group.growthTokens !== undefined) {
       assertPositiveInteger(`${name}.growthTokens`, group.growthTokens)
@@ -296,6 +298,9 @@ export function resolveCompactSpec(
 
 /** Choose an explicit retention form or the ratio default. */
 function resolveRetention(config: AgenticCompactionConfig): { retainRatio?: number; retainTokens?: number } {
+  if (config.retainRatio !== undefined && config.retainTokens !== undefined) {
+    throw new Error('AgenticCompactionConfig: retainRatio and retainTokens are mutually exclusive')
+  }
   if (config.retainTokens !== undefined) {
     assertNonNegativeInteger('AgenticCompactionConfig.retainTokens', config.retainTokens)
     return { retainTokens: config.retainTokens }

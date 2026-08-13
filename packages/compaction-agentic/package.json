@@ -81,8 +81,8 @@
     "vitest": "^3.0.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "clean": "node -e \"const fs=require('fs');for(const d of ['lib','dist'])fs.rmSync(d,{recursive:true,force:true})\""
   },

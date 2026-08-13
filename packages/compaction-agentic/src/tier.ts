@@ -74,6 +74,11 @@ export function nodeKindOf(session: Session, seq: number): SurfaceNodeKind {
 
 /**
  * Compute or fetch the tier snapshot for a session's current surface.
+ *
+ * Tiers are derived from replacement provenance in LOG order, so a consumed
+ * checkpoint that is no longer on the surface keeps its tier (a tier-2
+ * checkpoint shadows the tier-1 checkpoint it consumed, and the derivation
+ * must still resolve that chain).
  * @param session - session whose surface is folded.
  * @returns the snapshot for the current replace generation.
  */
@@ -85,26 +90,24 @@ export function tierSnapshot(session: Session): TierSnapshot {
 
   const folded = foldSurface(session.events)
   const shadowedBySeq = new Map<number, readonly number[]>()
+  const tierBySeq = new Map<number, number>()
+  // Replacements arrive in log order, so a checkpoint's shadowed tiers are
+  // always resolved before the checkpoint that consumed them.
   for (const replacement of folded.replacements) {
+    let maxShadowed = 0
+    for (const shadowedSeq of replacement.shadowedSeqs) {
+      const tier = tierBySeq.get(shadowedSeq) ?? 0
+      if (tier > maxShadowed) maxShadowed = tier
+    }
+    tierBySeq.set(replacement.seq, maxShadowed + 1)
     shadowedBySeq.set(replacement.seq, replacement.shadowedSeqs)
   }
 
-  const tierBySeq = new Map<number, number>()
   const kindBySeq = new Map<number, SurfaceNodeKind>()
   for (const seq of surface.nodes) {
     const kind = nodeKindOf(session, seq)
     kindBySeq.set(seq, kind)
-    if (kind !== 'checkpoint') {
-      tierBySeq.set(seq, 0)
-      continue
-    }
-    const shadowed = shadowedBySeq.get(seq) ?? []
-    let maxTier = 0
-    for (const shadowedSeq of shadowed) {
-      const tier = tierBySeq.get(shadowedSeq)
-      if (tier !== undefined && tier > maxTier) maxTier = tier
-    }
-    tierBySeq.set(seq, maxTier + 1)
+    if (!tierBySeq.has(seq)) tierBySeq.set(seq, 0)
   }
 
   const snapshot: TierSnapshot = {

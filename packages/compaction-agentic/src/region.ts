@@ -121,8 +121,11 @@ interface CompactionEntryState {
 }
 
 /**
- * Select the next head-anchored range while retaining a priced recent tail
- * and never splitting a tool-call/result pair or crossing protected nodes.
+ * Select the next head-anchored range while retaining a priced recent tail,
+ * never splitting a tool-call/result pair, and never crossing protected
+ * nodes. The range starts after any leading protected nodes (e.g. a
+ * protected first user message) and ends at the first balanced, protected-free
+ * cut inside the retention budget.
  * @param session - session supplying authoritative current surface positions.
  * @param measurement - unified pressure and surface measurement.
  * @param retainTokens - minimum recent tail budget retained verbatim.
@@ -153,34 +156,41 @@ export function selectCompactableRange(
     if (accumulated >= retainTokens) break
   }
 
-  // Walk back until the span [0, keepFromIdx) contains no protected node.
-  while (keepFromIdx > 0 && protectedSeqs !== undefined) {
-    let protectedInside = false
-    for (let index = 0; index < keepFromIdx; index += 1) {
-      // oxlint-disable-next-line typescript/no-non-null-assertion -- index < keepFromIdx <= surface length
-      if (protectedSeqs.has(surfaceNodes[index]!)) {
-        protectedInside = true
-        break
-      }
-    }
-    if (!protectedInside) break
-    keepFromIdx -= 1
+  // Start after any leading protected nodes.
+  let startIdx = 0
+  while (startIdx < keepFromIdx
+    && protectedSeqs !== undefined
+    && protectedSeqs.has(surfaceNodes[startIdx]!)) {
+    startIdx += 1
   }
-  if (keepFromIdx === 0) return null
+  if (startIdx >= keepFromIdx) return null
 
-  // Walk back to a balanced cut (no open tool call crosses it).
-  while (keepFromIdx > 0) {
-    // oxlint-disable-next-line typescript/no-non-null-assertion -- keepFromIdx > 0
-    if (toolPairingBalancedBefore(session, surfaceNodes[keepFromIdx]!)) break
-    keepFromIdx -= 1
+  // Walk the end back until the span is protected-free and the trailing cut
+  // is balanced.
+  let endIdx = keepFromIdx - 1
+  while (endIdx >= startIdx) {
+    const spanProtected = protectedSeqs !== undefined
+      && surfaceNodes.slice(startIdx, endIdx + 1).some(seq => protectedSeqs.has(seq))
+    if (!spanProtected && toolPairingBalancedAfter(session, surfaceNodes[endIdx]!)) break
+    endIdx -= 1
   }
-  if (keepFromIdx === 0) return null
+  if (endIdx < startIdx) return null
 
-  // oxlint-disable-next-line typescript/no-non-null-assertion -- surface is non-empty
-  const first = surfaceNodes[0]!
-  // oxlint-disable-next-line typescript/no-non-null-assertion -- keepFromIdx > 0
-  const cutoff = surfaceNodes[keepFromIdx - 1]!
-  return { start: first, end: cutoff }
+  // Advance the start past unbalanced leading cuts (a cut before a
+  // tool/result whose call precedes the span); re-check the span afterwards.
+  while (startIdx <= endIdx && !toolPairingBalancedBefore(session, surfaceNodes[startIdx]!)) {
+    startIdx += 1
+  }
+  if (startIdx > endIdx) return null
+  while (endIdx >= startIdx
+    && protectedSeqs !== undefined
+    && surfaceNodes.slice(startIdx, endIdx + 1).some(seq => protectedSeqs.has(seq))) {
+    endIdx -= 1
+  }
+  if (endIdx < startIdx) return null
+
+  // oxlint-disable-next-line typescript/no-non-null-assertion -- indices validated above
+  return { start: surfaceNodes[startIdx]!, end: surfaceNodes[endIdx]! }
 }
 
 /**
@@ -325,6 +335,8 @@ function prepareCompaction(
 ): {
   selection: ReturnType<typeof validateSurfaceRange>
   shadowedTokenCount: number
+  /** Tiers of the shadowed nodes, captured BEFORE any mutation. */
+  shadowedTiers: number[]
   framed: { measurement: TokenMeasurement; selectedNodes: TokenMeasurement['nodes'] }
 } {
   const measurement = dependencies.meter.measure(session)
@@ -334,7 +346,9 @@ function prepareCompaction(
     throw new SurfaceChangedError('compaction: selected surface changed before commit')
   }
   const shadowedTokenCount = selectedNodes.reduce((total, node) => total + node.tokens, 0)
-  return { selection, shadowedTokenCount, framed: { measurement, selectedNodes } }
+  const tiers = tierSnapshot(session)
+  const shadowedTiers = selection.shadowedSeqs.map(seq => tiers.tierBySeq.get(seq) ?? 0)
+  return { selection, shadowedTokenCount, shadowedTiers, framed: { measurement, selectedNodes } }
 }
 
 /** Build the checkpoint message and enforce the shrink invariant. */
@@ -400,7 +414,7 @@ function commitBody(
   checkpointMessage: UserMessage,
   summaryTokenCount: number,
 ): Omit<CommitResult, 'endSeq'> {
-  const { selection, shadowedTokenCount } = prepared
+  const { selection, shadowedTokenCount, shadowedTiers } = prepared
   const { start, end, shadowedSeqs } = selection
   const summaryBlocks: ContentBlock[] = source.kind === 'model'
     ? [{ type: 'text', text: source.summary }]
@@ -429,7 +443,7 @@ function commitBody(
     sourceEventSeqs: [startEvent.seq, summaryEvent.seq, ...shadowedSeqs],
   })
 
-  const tier = deriveTier(session, shadowedSeqs)
+  const tier = 1 + shadowedTiers.reduce((max, value) => Math.max(max, value), 0)
   const author = source.kind === 'model' ? 'model' as const : 'fallback' as const
   const postReplace = dependencies.meter.measure(session).totalTokens
   const tierTokens = tierTokenTotals(dependencies, session)
@@ -486,21 +500,6 @@ function tierTokenTotals(
     .filter(([tier]) => tier > 0)
     .map(([tier, tokens]) => ({ tier, tokens }))
     .sort((left, right) => left.tier - right.tier)
-}
-
-/**
- * Derive the new checkpoint's tier from its shadow chain: raw shadowed nodes
- * are tier 0, so a checkpoint over them is tier 1; consuming checkpoints of
- * tier t yields tier t + 1.
- */
-function deriveTier(session: Session, shadowedSeqs: readonly number[]): number {
-  const tiers = tierSnapshot(session)
-  let maxShadowed = 0
-  for (const seq of shadowedSeqs) {
-    const tier = tiers.tierBySeq.get(seq) ?? 0
-    if (tier > maxShadowed) maxShadowed = tier
-  }
-  return maxShadowed + 1
 }
 
 /** Wrap raw summary blocks in the durable checkpoint framing. */

@@ -43,7 +43,11 @@ interface SessionTrace {
   pendingDecompress: string | undefined
 }
 
-function seedTrace(session: Session, fail: InvariantFailure): SessionTrace {
+function seedTrace(
+  session: Session,
+  fail: InvariantFailure,
+  excludeEvent?: SessionEvent,
+): SessionTrace {
   const trace: SessionTrace = {
     openCompactionId: undefined,
     openSummarized: false,
@@ -52,8 +56,18 @@ function seedTrace(session: Session, fail: InvariantFailure): SessionTrace {
     pendingDecompress: undefined,
   }
   for (const event of session.events) {
+    // A lazily seeded trace during a post-commit publication must not see
+    // the very event being published (it is validated separately through
+    // the staged path).
+    if (event === excludeEvent) continue
     validateEvent(trace, event, fail)
     applyEvent(trace, event)
+  }
+  if (trace.pendingNudge) {
+    fail('context/nudge at the end of the seed has no adjacent nudge user message')
+  }
+  if (trace.pendingDecompress !== undefined) {
+    fail(`context/decompress for ${trace.pendingDecompress} at the end of the seed has no adjacent restore user message`)
   }
   return trace
 }
@@ -146,37 +160,58 @@ function applyEvent(trace: SessionTrace, event: SessionEvent): void {
   }
 }
 
-/* jscpd:ignore-start */
-const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
-  const traces = new WeakMap<Session, SessionTrace>()
-  const staged = new WeakMap<SessionEvent, { session: Session }>()
-  const traceFor = (session: Session): SessionTrace => traces.get(session) ?? seedTrace(session, fail)
+/** Companion plugin configuration. */
+export interface CompactionAgenticInvariantConfig {
+  /**
+   * Register listeners globally (observe every session) instead of
+   * scope-filtered to the mounting fiber. Required in DSH compositions
+   * where the companion mounts at host level; plain test contexts should
+   * set it to `false`.
+   */
+  global?: boolean
+}
 
-  for (const session of ctx.sessions.list()) seedTrace(session, fail)
-  ctx.on('session/created', (session) => { seedTrace(session, fail) }, { global: true })
-  ctx.on('session/event', (session, event) => {
-    const trace = traceFor(session)
-    const candidate = staged.get(event)
-    if (candidate === undefined || candidate.session !== session) {
-      fail('context/* event published without pre-commit validation')
+/* jscpd:ignore-start */
+/** Build the invariant installer with the requested listener scoping. */
+function createInstaller(global: boolean): InvariantInstaller {
+  return Object.assign((ctx: Context, fail: InvariantFailure) => {
+    const traces = new WeakMap<Session, SessionTrace>()
+    const staged = new WeakMap<SessionEvent, { session: Session }>()
+    const traceFor = (session: Session, excludeEvent?: SessionEvent): SessionTrace => {
+      const existing = traces.get(session)
+      if (existing !== undefined) return existing
+      const seeded = seedTrace(session, fail, excludeEvent)
+      traces.set(session, seeded)
+      return seeded
     }
-    staged.delete(event)
-    applyEvent(trace, event)
-  }, { global: true })
-  ctx.on('internal/dispatch', (_mode, eventName, args) => {
-    if (eventName !== 'session/event') return
-    const [session, event] = args as [Session, SessionEvent]
-    const trace = traceFor(session)
-    validateEvent(trace, event, fail)
-    staged.set(event, { session })
-  }, { global: true })
-}, { inject: ['sessions'] })
+
+    for (const session of ctx.sessions.list()) seedTrace(session, fail)
+    ctx.on('session/created', (session) => { seedTrace(session, fail) }, { global })
+    ctx.on('session/event', (session, event) => {
+      const trace = traceFor(session, event)
+      const candidate = staged.get(event)
+      if (candidate === undefined || candidate.session !== session) {
+        fail('context/* event published without pre-commit validation')
+      }
+      staged.delete(event)
+      applyEvent(trace, event)
+    }, { global })
+    ctx.on('internal/dispatch', (_mode, eventName, args) => {
+      if (eventName !== 'session/event') return
+      const [session, event] = args as [Session, SessionEvent]
+      const trace = traceFor(session)
+      validateEvent(trace, event, fail)
+      staged.set(event, { session })
+    }, { global })
+  }, { inject: ['sessions'] })
+}
 /* jscpd:ignore-end */
 
 /**
  * Register the package invariant companion.
  * @param ctx - Cordis context carrying the invariant service.
+ * @param config - optional listener scoping; `global` defaults to `true`.
  * @returns the installed registration's disposer after setup succeeds.
  */
-export const apply = (ctx: Context): Promise<() => void> =>
-  Promise.resolve(ctx.invariants.register(PACKAGE_NAME, install))
+export const apply = (ctx: Context, config: CompactionAgenticInvariantConfig = {}): Promise<() => void> =>
+  Promise.resolve(ctx.invariants.register(PACKAGE_NAME, createInstaller(config.global ?? true)))

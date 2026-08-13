@@ -14,8 +14,9 @@
 
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
-import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
+import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import type { CompactionId } from '@deepseek-ai/dsh-compaction'
+import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { DecompressTarget, ResolvedConfig } from './types.ts'
 import { checkpointViews, eventForSeq } from './protected.ts'
@@ -145,7 +146,9 @@ export function resolveRestoreTargets(
 
 /**
  * Expand a set of seqs to the leaf seqs to restore: one tier by default,
- * recursively to raw content with `full`.
+ * recursively to raw content with `full`. Classification reads the log
+ * events directly (a shadowed checkpoint is no longer on the current
+ * surface, so surface-indexed lookups would miss it).
  * @param session - session owning the log.
  * @param seqs - seqs to expand.
  * @param full - whether to expand checkpoints recursively.
@@ -159,7 +162,12 @@ export function expandRestoreSeqs(
   const tiers = tierSnapshot(session)
   const leaves: number[] = []
   const visit = (seq: number): void => {
-    if (tiers.kindBySeq.get(seq) === 'checkpoint' && full) {
+    const event = session.events[seq]
+    const isCheckpoint = event?.type === 'user/message'
+      && isCompactCheckpointSource(event.data.source)
+    if (isCheckpoint && full) {
+      // Checkpoints may be off-surface (shadowed by a later tier); the
+      // replacement provenance map covers every replacement in the log.
       const shadowed = tiers.shadowedBySeq.get(seq) ?? []
       if (shadowed.length === 0) {
         leaves.push(seq)

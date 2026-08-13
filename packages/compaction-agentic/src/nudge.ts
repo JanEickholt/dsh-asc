@@ -16,7 +16,7 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
 import type { ResolvedConfig, RecommendedRange } from './types.ts'
 import type { NudgeRecommendation } from './events.ts'
-import { isProtectedNode, firstUserMessageSeq } from './protected.ts'
+import { isProtectedNode } from './protected.ts'
 import { nodeKindOf, tierSnapshot, tierTokenUsage } from './tier.ts'
 
 /** Nudge kinds. */
@@ -36,6 +36,11 @@ export interface NudgeState {
 
 /**
  * Fold nudge state from a session log.
+ *
+ * Baseline semantics: a nudge resets its own cadence; a compression resets
+ * the baseline of the tier it CONSUMED (a tier-2 checkpoint reduces the
+ * tier-1 pile), while a tier-1 capture only grows the tier-1 pile and must
+ * not reset it — otherwise tier distillation could never accumulate growth.
  * @param events - complete session log.
  * @returns the durable nudge state.
  */
@@ -45,15 +50,33 @@ export function foldNudgeState(events: readonly SessionEvent[]): NudgeState {
   const tierBaselines = new Map<number, number>()
   let steps = 0
   for (const event of events) {
-    if (event.type === 'context/nudge' || event.type === 'context/compress') {
+    if (event.type === 'context/nudge') {
       lastBaseline = {
         seq: event.seq,
-        kind: event.type === 'context/nudge' ? 'nudge' : 'compress',
+        kind: 'nudge',
         totalTokens: event.data.totalTokens,
       }
       lastBaselineSeq = event.seq
       steps = 0
       for (const entry of event.data.tierTokens ?? []) tierBaselines.set(entry.tier, entry.tokens)
+      continue
+    }
+    if (event.type === 'context/compress') {
+      lastBaseline = {
+        seq: event.seq,
+        kind: 'compress',
+        totalTokens: event.data.totalTokens,
+      }
+      lastBaselineSeq = event.seq
+      steps = 0
+      // Only a distillation (tier >= 2) consumes a lower tier's pile and
+      // resets its cadence baseline.
+      const consumedTier = event.data.tier - 1
+      if (consumedTier >= 1) {
+        for (const entry of event.data.tierTokens ?? []) {
+          if (entry.tier === consumedTier) tierBaselines.set(entry.tier, entry.tokens)
+        }
+      }
       continue
     }
     if (event.type === 'step/start') {
@@ -182,11 +205,18 @@ function hasConsumableCheckpoint(session: Session, tier: number, config: Resolve
 /** Number of surface nodes after the last human user message. */
 export function nodesSinceLastUser(session: Session): number {
   const nodes = session.surface.nodes
-  const lastUser = firstUserMessageSeq(session)
-  if (lastUser === undefined) return 0
-  const index = nodes.indexOf(lastUser)
-  if (index === -1) return 0
-  return nodes.length - index - 1
+  let lastUserIdx = -1
+  for (let index = nodes.length - 1; index >= 0; index -= 1) {
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- index is in bounds
+    const event = session.events[nodes[index]!]
+    if (event?.type === 'user/message'
+      && (event.data.source as { kind: string }).kind === 'user') {
+      lastUserIdx = index
+      break
+    }
+  }
+  if (lastUserIdx === -1) return 0
+  return nodes.length - lastUserIdx - 1
 }
 
 /**
@@ -281,25 +311,25 @@ function recommendHeadRange(
   const protectedSeqs = new Set(
     nodes.filter(seq => isProtectedNode(session, seq, config)),
   )
+  // Start after any leading protected nodes (e.g. a protected first prompt).
+  let startIdx = 0
+  while (startIdx < tailBoundary && protectedSeqs.has(nodes[startIdx]!)) startIdx += 1
+  if (startIdx >= tailBoundary) return null
   let endIdx = tailBoundary - 1
-  while (endIdx > 0) {
-    // oxlint-disable-next-line typescript/no-non-null-assertion -- endIdx < nodes.length
-    const end = nodes[endIdx]!
-    const protectedInside = nodes.slice(0, endIdx + 1).some(seq => protectedSeqs.has(seq))
-    if (!protectedInside && toolPairingBalancedAfter(session, end)) break
+  while (endIdx >= startIdx) {
+    const spanProtected = nodes.slice(startIdx, endIdx + 1).some(seq => protectedSeqs.has(seq))
+    if (!spanProtected && toolPairingBalancedAfter(session, nodes[endIdx]!)) break
     endIdx -= 1
   }
-  if (endIdx <= 0) return null
-  // oxlint-disable-next-line typescript/no-non-null-assertion -- endIdx > 0
-  const end = nodes[endIdx]!
+  if (endIdx < startIdx) return null
   let tokens = 0
   for (const node of measurement.nodes) {
     tokens += node.tokens
-    if (node.seq === end) break
+    if (node.seq === nodes[endIdx]!) break
   }
   return {
-    startSeq: nodes[0]!,
-    endSeq: end,
+    startSeq: nodes[startIdx]!,
+    endSeq: nodes[endIdx]!,
     tokens,
     kind: 'history',
     reason: 'older conversation history',
