@@ -28,13 +28,19 @@ export {
   SummaryNotSmallerError,
   SurfaceChangedError,
 } from './region.ts'
-export { foldNudgeState, decideNudge, recommendRanges, buildNudgeText } from './nudge.ts'
+export {
+  applyCompressionBaseline,
+  applyNudgeBaseline,
+  decideNudge,
+  freshNudgeState,
+  recommendRanges,
+  buildNudgeText,
+} from './nudge.ts'
 export { evaluateQuality, wordTokens, rouge1F1, topKeywordRecall } from './quality-gate.ts'
 export {
   resolveRestoreTargets,
   expandRestoreSeqs,
   buildRestoredContent,
-  commitRestore,
   restoreTargets,
 } from './restore.ts'
 export { serializeMessage, serializeMessages, textPreview } from './text.ts'

@@ -5,14 +5,15 @@
  * restoring compressed content costs zero stored state: resolve the target
  * checkpoint, expand its shadow chain (one tier by default, `full` to the
  * raw bottom), replay the leaf events into derived messages, serialize them,
- * and append the transcript as a durable `user/message` — with a
- * `context/decompress` record immediately before it, mirroring the
- * shadow-price adjacency protocol.
+ * and return the transcript for the tool result. The transcript therefore
+ * lands in the `tool/result` event that immediately follows the assistant's
+ * tool-call — an interleaved user message would violate the provider's
+ * tool-call pairing contract — and the model sees the full restored content
+ * in the next request, mirroring the upstream decompression semantics.
  *
  * @module @dsh-asc/compaction-agentic/restore
  */
 
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import type { CompactionId } from '@deepseek-ai/dsh-compaction'
@@ -23,22 +24,13 @@ import { checkpointViews, eventForSeq } from './protected.ts'
 import { tierSnapshot } from './tier.ts'
 import { serializeMessages, textPreview } from './text.ts'
 
-/** The plugin name used in decompression and nudge message sources. */
+/** The plugin name used in nudge message sources. */
 export const PLUGIN_NAME = 'dsh-asc'
 
 const NUDGE_SOURCE = Object.freeze({ kind: 'plugin', plugin: PLUGIN_NAME, purpose: 'nudge' } as const)
 
-const RESTORE_SOURCE = Object.freeze({ kind: 'plugin', plugin: PLUGIN_NAME, op: 'decompress' } as const)
-
 /** Message provenance carried by an injected nudge. */
 export type NudgeSource = typeof NUDGE_SOURCE
-
-/** Message provenance carried by a restored transcript. */
-export type RestoreSource = typeof RESTORE_SOURCE & {
-  readonly compactionId: CompactionId
-  readonly tier: number
-  readonly full: boolean
-}
 
 /**
  * Create nudge provenance for an injected guidance message.
@@ -46,21 +38,6 @@ export type RestoreSource = typeof RESTORE_SOURCE & {
  */
 export function nudgeSource(): NudgeSource {
   return NUDGE_SOURCE
-}
-
-/**
- * Create restore provenance correlated with one decompression.
- * @param compactionId - the restored checkpoint's compaction id.
- * @param tier - the checkpoint's tier.
- * @param full - whether the restore expanded to raw content.
- * @returns immutable restore source.
- */
-export function restoreSource(
-  compactionId: CompactionId,
-  tier: number,
-  full: boolean,
-): RestoreSource {
-  return Object.freeze({ ...RESTORE_SOURCE, compactionId, tier, full })
 }
 
 /** The preview length included in tool results. */
@@ -211,49 +188,17 @@ export function buildRestoredContent(
 }
 
 /**
- * Commit one decompression: append the `context/decompress` record and the
- * restored transcript as a durable user message.
- * @param session - session whose log grows.
- * @param target - restored target.
- * @param full - whether the restore expanded to raw content.
- * @param restoredSeqs - leaf seqs whose content was restored.
- * @param text - the restored transcript.
- * @param tokens - estimated transcript tokens.
- */
-export function commitRestore(
-  session: Session,
-  target: RestoreTarget,
-  full: boolean,
-  restoredSeqs: readonly number[],
-  text: string,
-  tokens: number,
-): void {
-  const record = session.append('context/decompress', {
-    compactionId: target.compactionId,
-    tier: target.tier,
-    full,
-    restoredSeqs: [...restoredSeqs],
-    restoredTokens: tokens,
-    restoredChars: Array.from(text).length,
-  })
-  session.append('user/message', createUserMessage({
-    content: [{ type: 'text', text }],
-    source: restoreSource(target.compactionId, target.tier, full),
-  }), {
-    surfaceOp: 'append',
-    sourceEventSeqs: [record.seq, ...restoredSeqs],
-  })
-}
-
-/**
- * Restore a list of targets under the configured budget.
+ * Restore a list of targets under the configured budget. The restored
+ * transcript is returned for the tool result; no log-only audit event is
+ * written because this harness release has no registration surface for
+ * out-of-tree event types (the persistence layer refuses unknown types).
+ * The transcript itself is durable in the `tool/result` event.
  * @param session - session owning the log.
  * @param targets - resolved targets in restore order.
  * @param full - whether to expand to raw content.
  * @param meter - token meter pricing restored messages.
  * @param config - resolved budget policy.
- * @returns the restored targets and skipped ids.
- * @throws when the combined budget would be exceeded.
+ * @returns the restored targets (with full content) and skipped ids.
  */
 export function restoreTargets(
   session: Session,
@@ -275,7 +220,6 @@ export function restoreTargets(
       continue
     }
     budgetUsed += tokens
-    commitRestore(session, target, full, restoredSeqs, text, tokens)
     restored.push({
       compactionId: target.compactionId,
       tier: target.tier,
@@ -284,6 +228,7 @@ export function restoreTargets(
       restoredTokens: tokens,
       restoredChars: chars,
       preview: textPreview(text, RESTORE_PREVIEW_CHARS),
+      content: text,
     })
   }
   return { restored, skipped }

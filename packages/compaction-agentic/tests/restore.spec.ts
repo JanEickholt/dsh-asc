@@ -101,33 +101,24 @@ describe('expandRestoreSeqs', () => {
 })
 
 describe('buildRestoredContent and restoreTargets', () => {
-  it('replays the shadowed transcript and commits a durable restore', async () => {
+  it('replays the shadowed transcript into the result without log writes', async () => {
     const ctx = createContext()
     const session = conversationSession(4)
     const result = await commitT1(session, ctx.tokenMeter)
     const config = resolveConfig({})
     const { targets } = resolveRestoreTargets(session, [result.compactionId], undefined)
+    const logLength = session.events.length
     const { restored, skipped } = restoreTargets(session, targets, false, ctx.tokenMeter, config)
     expect(skipped).toEqual([])
     expect(restored).toHaveLength(1)
     expect(restored[0]!.compactionId).toBe(result.compactionId)
     expect(restored[0]!.restoredTokens).toBeGreaterThan(0)
+    // The full transcript travels in the tool result (the event following
+    // the assistant tool-call must be the tool result itself), so the
+    // restore performs no session writes at all.
+    expect(restored[0]!.content).toContain('user 1')
     expect(restored[0]!.preview.length).toBeGreaterThan(0)
-
-    const record = eventOf(session.events, session.events.length - 2, 'context/decompress')
-    const message = eventOf(session.events, session.events.length - 1, 'user/message')
-    expect(record.data.compactionId).toBe(result.compactionId)
-    expect(record.data.restoredSeqs).toEqual(restored[0]!.restoredSeqs)
-    const source = message.data.source as { op?: string; compactionId?: string }
-    expect(source.op).toBe('decompress')
-    expect(source.compactionId).toBe(result.compactionId)
-    expect(message.surfaceOp).toBe('append')
-    // The restored content contains the original user prompt text.
-    const text = message.data.content
-      .filter(block => block.type === 'text')
-      .map(block => (block as { text: string }).text)
-      .join('')
-    expect(text).toContain('user 1')
+    expect(session.events.length).toBe(logLength)
   })
 
   it('skips targets over the restore budget', async () => {

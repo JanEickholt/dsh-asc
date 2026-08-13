@@ -47,10 +47,10 @@ represented.**
   shadowed transcript from the events that remain in the log and appends it
   as a durable `user/message`. Tier-aware: one tier up by default, `full:
   true` expands recursively to raw content.
-- Nudges are logged and precisely priced. The nudge state machine folds
-  `context/nudge` and `context/compress` records plus the token meter; the
-  nudge itself is an appended `user/message`, so "model-visible ⟺ logged"
-  holds and its cost is measurable.
+- Nudges are logged and precisely priced. Every nudge is an appended
+  `user/message`, so "model-visible ⟺ logged" holds and its cost is
+  measurable; the cadence state machine combines the token meter with
+  transient per-session baselines.
 - Search covers the full log. `context_search` runs session-query FTS over
   *all* events — including `shadowed` ones — and reports each hit's surface
   status and owning checkpoint.
@@ -58,55 +58,27 @@ represented.**
   fall back to head-anchored selection plus one cache-friendly
   `ctx.llm.stream()` summarization call, exactly like `compaction-basic`.
 
-## 3. Session events owned by the package
+## 3. Durable facts and platform compatibility
 
-All three are log-only (no `surfaceOp`); each is immediately followed by
-the model-visible `user/message` it records, mirroring the shadow-price
-adjacency protocol of `compaction/prune`.
+The backend deliberately declares **no custom `SessionEventMap` members**.
+This harness release refuses to persist or index logs containing event types
+outside its generated vocabulary unless the event carries the envelope's
+`ignorable` marker — and `Session.append` does not yet expose a way to set
+that marker for out-of-tree plugins. Every durable fact therefore rides on
+already-known event types:
 
-### `context/nudge`
-```ts
-{
-  kind: 'pressure' | 'iteration' | 'tier'
-  tier?: number                    // recommended distillation target
-  totalTokens: number              // token-meter total at emission
-  surfaceTokens: number
-  growthSinceBaseline: number
-  tierTokens?: { tier: number; tokens: number }[]
-  recommendation?: { start: number; end: number; reason: string }[]
-}
-```
-The following `user/message` carries the nudge text with source
-`{ kind: 'plugin', plugin: 'dsh-asc', purpose: 'nudge' }` and
-`surfaceOp: 'append'`.
+| Fact | Known event type |
+|---|---|
+| Compression transaction | `compaction/start` → `compaction/summary` → replacement `user/message` (`surfaceOp: replace`, `compactCheckpointSource`) → `compaction/end` |
+| Summary authorship | `compaction/summary.llmStreamCall` — `true` means the fallback LLM call; model-written summaries never carry it |
+| A nudge | an appended `user/message` with source `{ kind: 'plugin', plugin: 'dsh-asc', purpose: 'nudge' }` and `surfaceOp: 'append'` |
+| A decompressed transcript | the `tool/result` content of `context_decompress` (the model sees it in the next request) |
+| Checkpoint tier | derived from the shadow chain (`tierSnapshot`) |
 
-### `context/compress`
-```ts
-{
-  compactionId: CompactionId       // matches the enclosing bracket
-  author: 'model' | 'fallback'
-  tier: number                     // derived from the shadow chain
-  totalTokens: number              // post-replacement total (next baseline)
-  tierTokens?: { tier: number; tokens: number }[]
-  quality?: { passed: boolean; blocking: boolean; gate: string; note?: string }
-}
-```
-Appended between the replacement and `compaction/end`.
-
-### `context/decompress`
-```ts
-{
-  compactionId: CompactionId
-  tier: number
-  full: boolean
-  restoredSeqs: number[]
-  restoredTokens: number
-  restoredChars: number
-}
-```
-The following `user/message` carries the restored transcript with source
-`{ kind: 'plugin', plugin: 'dsh-asc', op: 'decompress', compactionId, tier,
-full }` and `surfaceOp: 'append'`.
+Nudge cadence and tier baselines are **transient in-memory state**
+(`WeakMap<Session, NudgeState>`): a fresh process re-establishes the
+baseline before nudging again, so a restart can never double-fire, and the
+nudge messages themselves remain durable and replayable.
 
 ## 4. The four tools
 
@@ -142,8 +114,12 @@ Restores compressed content by replay.
   `full: true`.
 - Budgets: `decompress.maxTokens` per call (over-budget targets are skipped
   and reported) and `decompress.maxBlocks` per call (hard error).
+- The complete transcript is returned as the tool result (and rendered as
+  its model-visible content), so it appears in the next context window
+  without ever interleaving a surface event between the assistant tool-call
+  and its `tool/result` — that pairing is a hard provider contract.
 - Result: `{ restored: [{ compactionId, tier, checkpointSeq, restoredSeqs,
-  restoredTokens, restoredChars, preview }], skipped: [...] }`.
+  restoredTokens, restoredChars, preview, content }], skipped: [...] }`.
 
 ### `context_status`
 Reports usage (token-meter baseline kind/tokens, total, window, percent),
@@ -179,10 +155,10 @@ Registered only when `auto: true` (default):
 - `agent/status` + `session/event` (assistant/message): reset the overflow
   retry counters.
 
-Nudge baseline semantics (folded from the log): a nudge resets its own
-cadence; a compression resets the baseline of the tier it *consumed*
-(a tier-2 checkpoint resets the tier-1 pile; a tier-1 capture only grows
-it). This is what lets distillation accumulate growth across captures.
+Nudge baseline semantics: a nudge resets its own cadence; a compression
+resets the baseline of the tier it *consumed* (a tier-2 checkpoint resets
+the tier-1 pile; a tier-1 capture only grows it). This is what lets
+distillation accumulate growth across captures.
 
 ## 6. Deterministic fallback
 
@@ -209,21 +185,12 @@ writes a standalone bracket (owner `null`), and flushes through
 
 ## 8. Invariants (the companion row)
 
-The companion registers under `@dsh-asc/compaction-agentic/invariant` and
-validates with pre-commit veto:
-
-- every `context/nudge` is immediately followed by the dsh-asc nudge
-  `user/message`;
-- every `context/decompress` is immediately followed by the matching
-  restore `user/message`;
-- every `context/compress` matches the enclosing bracket, appears only
-  after its `compaction/summary` and before its `compaction/end`, once per
-  bracket;
-- seeds are validated at mount; an unmatched record at the end of a seed
-  refuses the session.
-
-The `compaction/*` bracket structure itself is enforced by the upstream
-`@deepseek-ai/dsh-compaction/invariant` companion.
+The companion (`@dsh-asc/compaction-agentic/invariant`) registers under the
+package name and is currently an empty installer: the backend declares no
+custom event vocabulary, and the `compaction/*` bracket structure is
+enforced by the upstream `@deepseek-ai/dsh-compaction/invariant` companion.
+The row exists so compositions that mount it keep working as the vocabulary
+story evolves.
 
 ## 9. Configuration reference
 
@@ -234,12 +201,12 @@ See [usage.md](usage.md#configuration) for the full table with defaults.
 - **Reversible**: every compression is a log replacement; the original
   events remain in the log and `context_decompress` restores them exactly.
 - **Searchable**: FTS indexes the full log including shadowed events.
-- **Auditable**: model-visible ⟺ logged; every nudge, compression, and
-  decompression is a durable event with its own provenance.
+- **Auditable**: model-visible ⟺ logged; every nudge is a durable user
+  message, every compression is the upstream bracket, and every restored
+  transcript is the tool result.
 - **Crash-safe**: the transaction bracket and the end-seed boundary are the
   upstream mechanisms; a failed commit leaves a detectable unmatched start.
-- **No state drift**: block state, tier, and nudge baselines are folds over
-  the log; the only transient state is the first-observation baseline and
-  overflow retry counters, both restart-safe.
+- **Platform-compatible**: no custom session-event types, so persistence,
+  replay, resume, and FTS all accept the logs this backend writes.
 - **Deterministic degradation**: overflow and manual compaction never
   depend on the model's willingness to compress.

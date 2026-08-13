@@ -180,8 +180,9 @@ lost (it can be searched with `context_search` and restored with
   The log is append-only by design; compressing keeps the *model-visible*
   surface bounded while the log grows. Persistence backends that prune the
   log (none shipped) would break replay-based restore.
-- **Restarts.** Only the first-observation baseline and overflow retry
-  counters are transient; nudge cadence, tiers, and checkpoints fold from
-  the log, so a restart cannot double-fire nudges or lose block state.
+- **Restarts.** Nudge cadence and tier baselines are transient in-memory
+  state: a fresh process re-establishes the baseline before nudging again,
+  so a restart can never double-fire. Checkpoints and tiers derive from the
+  log and survive restarts.
 - **Disabling.** Set `auto: false` to stop nudges and overflow recovery
   while keeping the tools; remove the row to disable everything.

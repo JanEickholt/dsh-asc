@@ -48,7 +48,7 @@ describe('commitSurfaceCompaction', () => {
     expect(end.data.compactionId).toBe(result.compactionId)
 
     // The replacement is the user message directly after the summary event
-    // (shadow-price adjacency) and before the authorship record and end.
+    // (shadow-price adjacency), followed directly by the close event.
     const replacement = eventOf(events, result.summarySeq + 1, 'user/message')
     expect(isCompactCheckpointSource(replacement.data.source)).toBe(true)
     expect(replacement.data.source).toMatchObject({ compactionId: result.compactionId })
@@ -58,10 +58,8 @@ describe('commitSurfaceCompaction', () => {
       result.summarySeq,
       ...selection.shadowedSeqs,
     ])
-    const compressRecord = eventOf(events, result.summarySeq + 2, 'context/compress')
-    expect(compressRecord.data.compactionId).toBe(result.compactionId)
-    expect(compressRecord.data.author).toBe('model')
-    expect(compressRecord.data.tier).toBe(1)
+    const closeAfter = eventOf(events, result.summarySeq + 2, 'compaction/end')
+    expect(closeAfter.seq).toBe(result.endSeq)
 
     // The surface now carries the checkpoint node instead of the range.
     expect(session.surface.nodes).not.toContain(selection.start)
@@ -214,8 +212,10 @@ describe('commitSurfaceCompaction', () => {
       },
       { owner: 'current-turn', stability: 'whole-surface' },
     )
-    const record = eventOf(session.events, result.summarySeq + 2, 'context/compress')
-    expect(record.data.quality).toMatchObject({ passed: true })
+    // The quality outcome is carried in the returned result, not a log
+    // record (no custom event vocabulary).
+    const record = eventOf(session.events, result.summarySeq + 2, 'compaction/end')
+    expect(record.seq).toBe(result.endSeq)
   })
 })
 

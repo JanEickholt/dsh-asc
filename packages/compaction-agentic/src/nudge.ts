@@ -1,92 +1,104 @@
 /**
  * Nudge state machine.
  *
- * The nudge decision is a fold over durable `context/nudge` and
- * `context/compress` records plus the current token-meter measurement:
- * growth since the last baseline record (or the transient session baseline)
- * decides when to inject compression guidance. Every nudge is itself a
- * logged record followed by an appended `user/message`, so the state machine
- * is replayable and the cost of guidance is exactly measurable.
+ * The nudge decision combines the current token-meter measurement with a
+ * transient per-session baseline: growth since the last baseline (a nudge
+ * or a compression) decides when to inject compression guidance. State is
+ * in-memory because this harness release has no registration surface for
+ * out-of-tree plugin events (the persistence layer refuses unknown event
+ * types); a fresh process re-establishes the baseline before nudging again,
+ * so a restart can never double-fire. Every nudge itself is a durable
+ * `user/message` with source `{ kind: 'plugin', plugin: 'dsh-asc',
+ * purpose: 'nudge' }`, so "model-visible ⟺ logged" holds and the cost of
+ * guidance is measurable from the log.
+ *
+ * Baseline semantics: a nudge resets its own cadence; a compression resets
+ * the baseline of the tier it CONSUMED (a tier-2 checkpoint reduces the
+ * tier-1 pile), while a tier-1 capture only grows the tier-1 pile and must
+ * not reset it — otherwise tier distillation could never accumulate growth.
  *
  * @module @dsh-asc/compaction-agentic/nudge
  */
 
 import { toolPairingBalancedAfter } from '@deepseek-ai/dsh-compaction'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
 import type { ResolvedConfig, RecommendedRange } from './types.ts'
-import type { NudgeRecommendation } from './events.ts'
 import { isProtectedNode } from './protected.ts'
 import { nodeKindOf, tierSnapshot, tierTokenUsage } from './tier.ts'
 
 /** Nudge kinds. */
 export type NudgeKind = 'pressure' | 'iteration' | 'tier'
 
-/** Folded nudge state from the durable baseline records. */
+/** Transient per-session nudge state. */
 export interface NudgeState {
-  /** The latest baseline record (a nudge or a compression), if any. */
-  readonly lastBaseline:
-    | { seq: number; kind: 'nudge' | 'compress'; totalTokens: number }
-    | undefined
-  /** Per-tier token totals at the latest record that recorded them. */
+  /** Token-meter total at the last baseline, or undefined before the first observation. */
+  readonly lastBaselineTokens: number | undefined
+  /** Per-tier token totals at the last baseline that recorded them. */
   readonly tierBaselines: ReadonlyMap<number, number>
-  /** Number of step/start events since the last baseline record. */
+  /** Number of steps since the last baseline. */
   readonly stepsSinceBaseline: number
 }
 
+/** A fresh session state: no baseline yet. */
+export function freshNudgeState(): NudgeState {
+  return {
+    lastBaselineTokens: undefined,
+    tierBaselines: new Map(),
+    stepsSinceBaseline: 0,
+  }
+}
+
 /**
- * Fold nudge state from a session log.
- *
- * Baseline semantics: a nudge resets its own cadence; a compression resets
- * the baseline of the tier it CONSUMED (a tier-2 checkpoint reduces the
- * tier-1 pile), while a tier-1 capture only grows the tier-1 pile and must
- * not reset it — otherwise tier distillation could never accumulate growth.
- * @param events - complete session log.
- * @returns the durable nudge state.
+ * Record a compression's baseline effect: the new total becomes the growth
+ * baseline, and a distillation (tier >= 2) additionally resets the cadence
+ * of the tier it consumed.
+ * @param state - session nudge state.
+ * @param totalTokens - token-meter total after the replacement.
+ * @param tier - the new checkpoint's tier.
+ * @param tierTokens - per-tier token totals after the replacement.
+ * @returns the updated state.
  */
-export function foldNudgeState(events: readonly SessionEvent[]): NudgeState {
-  let lastBaseline: NudgeState['lastBaseline']
-  let lastBaselineSeq = -1
-  const tierBaselines = new Map<number, number>()
-  let steps = 0
-  for (const event of events) {
-    if (event.type === 'context/nudge') {
-      lastBaseline = {
-        seq: event.seq,
-        kind: 'nudge',
-        totalTokens: event.data.totalTokens,
-      }
-      lastBaselineSeq = event.seq
-      steps = 0
-      for (const entry of event.data.tierTokens ?? []) tierBaselines.set(entry.tier, entry.tokens)
-      continue
-    }
-    if (event.type === 'context/compress') {
-      lastBaseline = {
-        seq: event.seq,
-        kind: 'compress',
-        totalTokens: event.data.totalTokens,
-      }
-      lastBaselineSeq = event.seq
-      steps = 0
-      // Only a distillation (tier >= 2) consumes a lower tier's pile and
-      // resets its cadence baseline.
-      const consumedTier = event.data.tier - 1
-      if (consumedTier >= 1) {
-        for (const entry of event.data.tierTokens ?? []) {
-          if (entry.tier === consumedTier) tierBaselines.set(entry.tier, entry.tokens)
-        }
-      }
-      continue
-    }
-    if (event.type === 'step/start') {
-      if (lastBaselineSeq === -1 || event.seq > lastBaselineSeq) steps += 1
-    }
+export function applyCompressionBaseline(
+  state: NudgeState,
+  totalTokens: number,
+  tier: number,
+  tierTokens: ReadonlyMap<number, number>,
+): NudgeState {
+  const tierBaselines = new Map(state.tierBaselines)
+  if (tier > 1) {
+    const consumedTier = tier - 1
+    const consumed = tierTokens.get(consumedTier)
+    if (consumed !== undefined) tierBaselines.set(consumedTier, consumed)
   }
   return {
-    lastBaseline: lastBaselineSeq === -1 ? undefined : lastBaseline,
+    lastBaselineTokens: totalTokens,
     tierBaselines,
-    stepsSinceBaseline: steps,
+    stepsSinceBaseline: 0,
+  }
+}
+
+/**
+ * Record a nudge's baseline effect: the nudge resets its own cadence and
+ * every tier baseline.
+ * @param state - session nudge state.
+ * @param totalTokens - token-meter total at emission.
+ * @param tierTokens - per-tier token totals at emission.
+ * @returns the updated state.
+ */
+export function applyNudgeBaseline(
+  state: NudgeState,
+  totalTokens: number,
+  tierTokens: ReadonlyMap<number, number>,
+): NudgeState {
+  const tierBaselines = new Map<number, number>()
+  for (const [tier, tokens] of tierTokens) {
+    if (tier > 0) tierBaselines.set(tier, tokens)
+  }
+  return {
+    lastBaselineTokens: totalTokens,
+    tierBaselines,
+    stepsSinceBaseline: 0,
   }
 }
 
@@ -97,12 +109,8 @@ export interface NudgeInput {
   readonly config: ResolvedConfig
   /** Routed context-window capacity, when the adapter advertises one. */
   readonly contextWindow: number | undefined
-  /** Folded durable nudge state. */
+  /** Transient per-session nudge state. */
   readonly state: NudgeState
-  /** Transient baseline: the first measurement ever observed for the session. */
-  readonly transientBaseline: number
-  /** Transient per-tier baselines from the first observation. */
-  readonly transientTierBaselines: ReadonlyMap<number, number>
 }
 
 /** One nudge decision. */
@@ -122,8 +130,10 @@ export interface NudgeDecision {
  *
  * Priority: over-max pressure (frequency-gated) > tier distillation
  * (growth-gated) > iteration length (threshold-gated). Without a routed
- * context window only tier nudges can fire.
- * @param input - session, measurement, folded state, and policy.
+ * context window only tier nudges can fire. Before the first observation
+ * (no baseline yet) the decision is always `none` — the caller records the
+ * baseline instead.
+ * @param input - session, measurement, transient state, and policy.
  * @returns the decision; `kind: 'none'` injects nothing.
  */
 export function decideNudge(input: NudgeInput): NudgeDecision {
@@ -131,9 +141,10 @@ export function decideNudge(input: NudgeInput): NudgeDecision {
   const nudge = config.nudge
   const tiers = config.tiers
   if (!nudge.enabled) return none()
+  if (state.lastBaselineTokens === undefined) return none()
 
   const total = measurement.totalTokens
-  const baseline = state.lastBaseline?.totalTokens ?? input.transientBaseline
+  const baseline = state.lastBaselineTokens
   const growth = Math.max(0, total - baseline)
   const overMax = contextWindow !== undefined && total >= contextWindow * nudge.maxRatio
   const overMin = contextWindow !== undefined && total >= contextWindow * nudge.minRatio
@@ -152,9 +163,7 @@ export function decideNudge(input: NudgeInput): NudgeDecision {
     const usage = tierTokenUsage(session, measurement)
     for (let inputTier = 1; inputTier < tiers.maxTier; inputTier += 1) {
       const tierTokens = usage.get(inputTier) ?? 0
-      const tierBaseline = state.tierBaselines.get(inputTier)
-        ?? input.transientTierBaselines.get(inputTier)
-        ?? tierTokens
+      const tierBaseline = state.tierBaselines.get(inputTier) ?? tierTokens
       if (tierTokens - tierBaseline >= tiers.growthTokens
         && hasConsumableCheckpoint(session, inputTier, config)) {
         return {
@@ -276,6 +285,8 @@ export function recommendTierRanges(
       recommendations.push({
         startSeq,
         endSeq,
+        startPosition: runStartIdx,
+        endPosition: runEndIdx,
         tokens: runTokens,
         kind: 'history',
         reason: `tier-${tier} summaries`,
@@ -330,6 +341,8 @@ function recommendHeadRange(
   return {
     startSeq: nodes[startIdx]!,
     endSeq: nodes[endIdx]!,
+    startPosition: startIdx,
+    endPosition: endIdx,
     tokens,
     kind: 'history',
     reason: 'older conversation history',
@@ -355,23 +368,14 @@ function recommendBigToolResults(
     results.push({
       startSeq: node.seq,
       endSeq: node.seq,
+      startPosition: position,
+      endPosition: position,
       tokens: node.tokens,
       kind: 'tool-result',
       reason: 'large tool result',
     })
   }
   return results
-}
-
-/** Convert recommendations to their durable event form. */
-export function toDurableRecommendations(
-  recommendations: readonly RecommendedRange[],
-): NudgeRecommendation[] {
-  return recommendations.map(item => ({
-    start: item.startSeq,
-    end: item.endSeq,
-    reason: item.reason,
-  }))
 }
 
 /** Model-facing nudge text (pinned verbatim; tests assert its phrases). */
@@ -409,9 +413,12 @@ export function buildNudgeText(input: {
     )
   }
   if (decision.recommendations.length > 0) {
-    lines.push('Recommended ranges (surface seqs):')
+    lines.push('Recommended ranges (surface seqs; positions follow context_status recentNodes order):')
     for (const range of decision.recommendations) {
-      lines.push(`- seqs ${range.startSeq}..${range.endSeq} (~${range.tokens} tokens): ${range.reason}`)
+      lines.push(
+        `- seqs ${range.startSeq}..${range.endSeq} (positions ${range.startPosition}..${range.endPosition}, `
+        + `~${range.tokens} tokens): ${range.reason}`,
+      )
     }
     lines.push('To restore compressed content later, use context_decompress with the compactionId shown by context_status.')
   }

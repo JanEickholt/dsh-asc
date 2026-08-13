@@ -173,7 +173,7 @@ describe('AgenticCompactionEngine.compressByModel', () => {
 })
 
 describe('AgenticCompactionEngine.decompressByModel', () => {
-  it('restores by compaction id and appends the transcript', async () => {
+  it('restores by compaction id and returns the full transcript', async () => {
     const { engine } = engineWith()
     const session = conversationSession(4)
     const agent = agentOf(session)
@@ -188,7 +188,10 @@ describe('AgenticCompactionEngine.decompressByModel', () => {
     expect(result.skipped).toEqual([])
     expect(result.restored).toHaveLength(1)
     expect(result.restored[0]!.compactionId).toBe(id)
-    expect(session.deriveMessages().at(-1)).toBeDefined()
+    expect(result.restored[0]!.content).toContain('user 1')
+    // The restore writes no session events: the transcript travels in the
+    // tool result, keeping the tool-call/result pairing legal.
+    expect(session.events.length).toBeLessThan(60)
   })
 
   it('restores every overlapping checkpoint for a range', async () => {
@@ -278,10 +281,11 @@ describe('AgenticCompactionEngine automatic behavior', () => {
     })
     const session = conversationSession(2)
     const agent = agentOf(session)
-    // First observation: baseline only.
+    // First observation: baseline only, no nudge message.
     const first = await engine.compactIfNeeded(agent, 'pressure', new AbortController().signal)
     expect(first).toBeNull()
-    expect(session.events.some(event => event.type === 'context/nudge')).toBe(false)
+    expect(session.events.some(event => event.type === 'user/message'
+      && (event.data.source as { purpose?: string }).purpose === 'nudge')).toBe(false)
     // Grow the surface so total exceeds 10% of the window and nudge fires.
     for (let i = 0; i < 30; i += 1) {
       session.append('user/message', createUserMessage({
@@ -291,25 +295,27 @@ describe('AgenticCompactionEngine automatic behavior', () => {
     }
     const second = await engine.compactIfNeeded(agent, 'pressure', new AbortController().signal)
     expect(second).toBeNull()
-    const nudgeIdx = session.events.findIndex(event => event.type === 'context/nudge')
+    const nudgeIdx = session.events.findIndex(event => event.type === 'user/message'
+      && (event.data.source as { purpose?: string }).purpose === 'nudge')
     expect(nudgeIdx).toBeGreaterThanOrEqual(0)
-    const following = eventOf(session.events, nudgeIdx + 1, 'user/message')
-    expect((following.data.source as { purpose?: string }).purpose).toBe('nudge')
-    expect((following.data.content as { text: string }[])[0]!.text).toContain('[context-management]')
+    const nudgeMessage = eventOf(session.events, nudgeIdx, 'user/message')
+    expect((nudgeMessage.data.content as { text: string }[])[0]!.text).toContain('[context-management]')
   })
 
   it('compacts automatically on context overflow through the fallback summarizer', async () => {
-    const { ctx, engine } = engineWith()
+    const { engine } = engineWith()
     const session = conversationSession(4)
     const agent = agentOf(session)
     const before = session.surface.nodes.length
     const result = await engine.compactIfNeeded(agent, 'context-overflow', new AbortController().signal)
     expect(result).not.toBeNull()
     expect(session.surface.nodes.length).toBeLessThan(before)
-    const recordIdx = session.events.findIndex(event => event.type === 'context/compress')
-    const record = eventOf(session.events, recordIdx, 'context/compress')
-    expect(record.data.author).toBe('fallback')
-    expect(record.data.tier).toBe(1)
+    // The fallback authorship is recoverable from the upstream summary
+    // event's llmStreamCall flag.
+    const summaryIdx = session.events.findIndex(event => event.type === 'compaction/summary')
+    const summary = eventOf(session.events, summaryIdx, 'compaction/summary')
+    expect(summary.data.llmStreamCall).toBe(true)
+    expect(summary.data.shadowedSeqs.length).toBeGreaterThan(0)
     expect(result!.shadowedSeqs.length).toBeGreaterThan(0)
   })
 

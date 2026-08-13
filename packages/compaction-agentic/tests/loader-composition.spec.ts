@@ -122,7 +122,7 @@ describe('real Loader composition', () => {
     } as never)).rejects.toThrow(/unknown key "bogus"/)
   })
 
-  it('the invariant companion vetoes corrupt log writes in the composed app', async () => {
+  it('mounts the invariant companion row in the composed app', async () => {
     const loaded = await loadYaml([
       "- name: '@deepseek-ai/dsh-llm'",
       "- name: '@deepseek-ai/dsh-session'",
@@ -135,18 +135,10 @@ describe('real Loader composition', () => {
       '    auto: false',
       "- name: '@dsh-asc/compaction-agentic/invariant'",
     ])
-    const session = loaded.sessions.create()
-    session.append('context/nudge', {
-      kind: 'pressure',
-      totalTokens: 10,
-      surfaceTokens: 10,
-      growthSinceBaseline: 5,
-    })
-    expect(() => session.append('user/message', {
-      role: 'user',
-      id: 'm-1',
-      content: [{ type: 'text', text: 'ordinary' }],
-      source: { kind: 'user' },
-    } as never, { surfaceOp: 'append' })).toThrow(/context\/nudge must be immediately followed/)
+    const unloaded = [...loaded.loader.entries()]
+      .filter(entry => entry.fiber === undefined && !entry.disabled)
+      .map(entry => entry.options.name)
+    expect(unloaded).toEqual([])
+    expect(loaded.get('invariants')).toBeDefined()
   })
 })

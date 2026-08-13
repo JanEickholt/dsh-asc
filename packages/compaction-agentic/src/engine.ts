@@ -24,11 +24,11 @@ import type {
   ManualCompactAgentContext,
 } from '@deepseek-ai/dsh-compaction'
 import { assertNever, CONTEXT_WINDOW_EXCEEDED_CODE, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import type { Agent, PreStepDecision, RequestErrorAction } from '@deepseek-ai/dsh-agent'
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
-import type { CompactionId } from '@deepseek-ai/dsh-compaction'
 // Type-only: the optional pruner service and our own event vocabulary.
 import type {} from '@deepseek-ai/dsh-compaction-tool-result-pruner'
 import type {} from './events.ts'
@@ -42,11 +42,13 @@ import {
 } from './region.ts'
 import { summarizeWithLlm } from './fallback.ts'
 import {
+  applyCompressionBaseline,
+  applyNudgeBaseline,
   buildNudgeText,
   decideNudge,
-  foldNudgeState,
+  freshNudgeState,
   recommendRanges,
-  toDurableRecommendations,
+  type NudgeState,
 } from './nudge.ts'
 import { evaluateQuality } from './quality-gate.ts'
 import {
@@ -56,7 +58,7 @@ import {
   validateSurfaceRange,
 } from './protected.ts'
 import { nodeKindOf, tierSnapshot, tierTokenUsage } from './tier.ts'
-import { PLUGIN_NAME, nudgeSource, resolveRestoreTargets, restoreSource, restoreTargets } from './restore.ts'
+import { nudgeSource, PLUGIN_NAME, resolveRestoreTargets, restoreTargets } from './restore.ts'
 import { serializeMessages, textPreview } from './text.ts'
 import type {
   CompressionFailure,
@@ -171,8 +173,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
 
   private readonly overflowRetries = new WeakMap<Agent, number>()
   private readonly overflowAgents = new WeakMap<Session, Agent>()
-  private readonly transientBaselines = new WeakMap<Session, number>()
-  private readonly transientTierBaselines = new WeakMap<Session, Map<number, number>>()
+  private readonly nudgeStates = new WeakMap<Session, NudgeState>()
   private readonly qualityPending = new WeakMap<Session, { rangesKey: string; message: string }>()
 
   constructor(ctx: Context, config: AgenticCompactionConfig = {}) {
@@ -486,6 +487,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
           author: 'model',
           ...report === undefined ? {} : { quality: report },
         })
+        this.applyPostCompressionBaseline(session, outcome.tier)
       } catch (error: unknown) {
         failures.push({ index, reason: errorMessage(error) })
       }
@@ -538,22 +540,22 @@ export class AgenticCompactionEngine extends CompactionEngine {
       if (tier > 0) tierTokens[tier] = tokens
     }
 
-    const compressRecords = new Map<CompactionId, { author: 'model' | 'fallback'; totalTokens: number; seq: number }>()
     const summaryByCompactionId = new Map<string, SessionEvent<'compaction/summary'>>()
+    const summarySeqs: Array<{ compactionId: string; seq: number; author: 'model' | 'fallback' }> = []
     for (const event of session.events) {
-      if (event.type === 'context/compress') {
-        compressRecords.set(event.data.compactionId, {
-          author: event.data.author,
-          totalTokens: event.data.totalTokens,
-          seq: event.seq,
-        })
-      } else if (event.type === 'compaction/summary') {
+      if (event.type === 'compaction/summary') {
         summaryByCompactionId.set(event.data.compactionId, event)
+        // The upstream flag marks a call through the LLM seam: model-written
+        // summaries never carry it.
+        summarySeqs.push({
+          compactionId: event.data.compactionId,
+          seq: event.seq,
+          author: event.data.llmStreamCall === true ? 'fallback' : 'model',
+        })
       }
     }
 
     const checkpoints = checkpointViews(session).map(view => {
-      const record = compressRecords.get(view.compactionId)
       const summaryEvent = summaryByCompactionId.get(view.compactionId)
       const checkpointEvent = session.events[view.seq]
       let summaryChars = 0
@@ -569,7 +571,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
         shadowedSeqs: view.shadowedSeqs,
         shadowedTokenCount: summaryEvent?.data.shadowedTokenCount ?? 0,
         summaryChars,
-        author: record?.author ?? 'model',
+        author: summaryEvent?.data.llmStreamCall === true ? 'fallback' as const : 'model' as const,
       }
     })
 
@@ -579,9 +581,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
       this.surfaceNodePreview(session, measurement, tiers, seq)
     ))
 
-    const lastCompression = [...compressRecords.entries()]
-      .sort((left, right) => left[1].seq - right[1].seq)
-      .at(-1)
+    const lastCompression = summarySeqs.sort((left, right) => left.seq - right.seq).at(-1)
 
     return {
       sessionId: session.id,
@@ -601,9 +601,8 @@ export class AgenticCompactionEngine extends CompactionEngine {
         ? {}
         : {
           lastCompression: {
-            compactionId: lastCompression[0],
-            totalTokens: lastCompression[1].totalTokens,
-            author: lastCompression[1].author,
+            compactionId: CompactionId(lastCompression.compactionId),
+            author: lastCompression.author,
           },
         },
     }
@@ -614,25 +613,24 @@ export class AgenticCompactionEngine extends CompactionEngine {
     const session = agent.session
     const meter = this.ctx.tokenMeter
     const measurement = meter.measure(session)
-    const baseline = this.transientBaselines.get(session)
-    if (baseline === undefined) {
-      this.transientBaselines.set(session, measurement.totalTokens)
-      const usage = tierTokenUsage(session, measurement)
-      this.transientTierBaselines.set(session, new Map([...usage.entries()].filter(([tier]) => tier > 0)))
+    const state = this.nudgeStates.get(session) ?? freshNudgeState()
+    if (state.lastBaselineTokens === undefined) {
+      // First observation: record the baseline and do not nudge.
+      this.nudgeStates.set(session, applyNudgeBaseline(
+        state,
+        measurement.totalTokens,
+        tierTokenUsage(session, measurement),
+      ))
       return
     }
     const contextWindow = await this.contextWindowOfAsync(session)
-    const state = foldNudgeState(session.events)
-    const decision = decideNudge({
-      session,
-      measurement,
-      config: this.config,
-      contextWindow,
-      state,
-      transientBaseline: baseline,
-      transientTierBaselines: this.transientTierBaselines.get(session) ?? new Map(),
-    })
-    if (decision.kind === 'none') return
+    // Each pre-step evaluation advances the step counter before deciding.
+    const stepped = { ...state, stepsSinceBaseline: state.stepsSinceBaseline + 1 }
+    const decision = decideNudge({ session, measurement, config: this.config, contextWindow, state: stepped })
+    if (decision.kind === 'none') {
+      this.nudgeStates.set(session, stepped)
+      return
+    }
     const text = buildNudgeText({
       decision,
       totalTokens: measurement.totalTokens,
@@ -640,29 +638,27 @@ export class AgenticCompactionEngine extends CompactionEngine {
       contextWindow,
       config: this.config,
     })
-    const usage = tierTokenUsage(session, measurement)
-    const tierTokens = [...usage.entries()]
-      .filter(([tier]) => tier > 0)
-      .map(([tier, tokens]) => ({ tier, tokens }))
-      .sort((left, right) => left.tier - right.tier)
-    const record = session.append('context/nudge', {
-      kind: decision.kind,
-      ...decision.tier === undefined ? {} : { tier: decision.tier },
-      totalTokens: measurement.totalTokens,
-      surfaceTokens: measurement.surfaceTokens,
-      growthSinceBaseline: decision.growth,
-      ...tierTokens.length === 0 ? {} : { tierTokens },
-      ...decision.recommendations.length === 0
-        ? {}
-        : { recommendation: toDurableRecommendations(decision.recommendations) },
-    })
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text }],
       source: nudgeSource(),
-    }), {
-      surfaceOp: 'append',
-      sourceEventSeqs: [record.seq],
-    })
+    }), { surfaceOp: 'append' })
+    this.nudgeStates.set(session, applyNudgeBaseline(
+      state,
+      measurement.totalTokens,
+      tierTokenUsage(session, measurement),
+    ))
+  }
+
+  /** Update the nudge baselines after a committed compression. */
+  private applyPostCompressionBaseline(session: Session, tier: number): void {
+    const measurement = this.ctx.tokenMeter.measure(session)
+    const state = this.nudgeStates.get(session) ?? freshNudgeState()
+    this.nudgeStates.set(session, applyCompressionBaseline(
+      state,
+      measurement.totalTokens,
+      tier,
+      tierTokenUsage(session, measurement),
+    ))
   }
 
   /** Run the deterministic fallback: LLM summary then the durable commit. */
@@ -687,7 +683,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
       messages: regionMessages(session, selection.shadowedSeqs),
     }
     const result = await summarizeWithLlm(this.ctx, this.config, input, agent, signal)
-    return commitSurfaceCompaction(
+    const committed = await commitSurfaceCompaction(
       { meter: this.ctx.tokenMeter },
       session,
       start,
@@ -709,6 +705,8 @@ export class AgenticCompactionEngine extends CompactionEngine {
       },
       signal,
     )
+    this.applyPostCompressionBaseline(session, committed.tier)
+    return committed
   }
 
   /** Evaluate the quality gate for one plan against the live session. */

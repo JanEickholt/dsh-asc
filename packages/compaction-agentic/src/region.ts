@@ -33,7 +33,7 @@ import type { TokenMeter, TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { QualityReport } from './types.ts'
 import { eventForSeq, validateSurfaceRange } from './protected.ts'
-import { tierSnapshot, tierTokenUsage } from './tier.ts'
+import { tierSnapshot } from './tier.ts'
 
 /** Tag wrapping the structured summary inside the landed checkpoint node. */
 const SUMMARY_OPEN_TAG = '<compacted-summary>'
@@ -254,7 +254,7 @@ export async function commitSurfaceCompaction(
     const framed = frameCheckpoint(dependencies, session, prepared, source, compactionId, options.sourceCommandId)
     assertStable(dependencies, session, prepared, options.stability)
     stage = 'commit'
-    const pending = commitBody(dependencies, session, startEvent, prepared, source, framed.message, framed.framedTokenCount)
+    const pending = commitBody(session, startEvent, prepared, source, framed.message, framed.framedTokenCount)
     closing = true
     const endEvent = session.append('compaction/end', lifecycle)
     closed = true
@@ -404,9 +404,8 @@ function assertStable(
   }
 }
 
-/** Append the summary record, replacement, authorship record, and tier. */
+/** Append the summary record and the replacement checkpoint message. */
 function commitBody(
-  dependencies: CommitDependencies,
   session: Session,
   startEvent: SessionEvent<'compaction/start'>,
   prepared: ReturnType<typeof prepareCompaction>,
@@ -445,25 +444,6 @@ function commitBody(
 
   const tier = 1 + shadowedTiers.reduce((max, value) => Math.max(max, value), 0)
   const author = source.kind === 'model' ? 'model' as const : 'fallback' as const
-  const postReplace = dependencies.meter.measure(session).totalTokens
-  const tierTokens = tierTokenTotals(dependencies, session)
-  session.append('context/compress', {
-    compactionId: startEvent.data.compactionId,
-    author,
-    tier,
-    totalTokens: postReplace,
-    tierTokens,
-    ...source.kind === 'model' && source.quality !== undefined
-      ? {
-        quality: {
-          passed: source.quality.passed,
-          blocking: source.quality.blocking,
-          gate: source.quality.gate,
-          ...source.quality.note === undefined ? {} : { note: source.quality.note },
-        },
-      }
-      : {},
-  })
 
   return {
     compactionId: startEvent.data.compactionId,
@@ -488,18 +468,6 @@ function completeCommit(
   endEvent: SessionEvent<'compaction/end'>,
 ): CommitResult {
   return { ...pending, endSeq: endEvent.seq }
-}
-
-/** Per-tier surface totals after a replacement. */
-function tierTokenTotals(
-  dependencies: CommitDependencies,
-  session: Session,
-): { tier: number; tokens: number }[] {
-  const usage = tierTokenUsage(session, dependencies.meter.measure(session))
-  return [...usage.entries()]
-    .filter(([tier]) => tier > 0)
-    .map(([tier, tokens]) => ({ tier, tokens }))
-    .sort((left, right) => left.tier - right.tier)
 }
 
 /** Wrap raw summary blocks in the durable checkpoint framing. */

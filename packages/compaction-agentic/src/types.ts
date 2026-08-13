@@ -202,6 +202,8 @@ export interface DecompressTarget {
   readonly restoredTokens: number
   readonly restoredChars: number
   readonly preview: string
+  /** The complete restored transcript, carried in the tool result. */
+  readonly content: string
 }
 
 /** Complete result of a decompress call. */
@@ -212,8 +214,14 @@ export interface DecompressResult {
 
 /** One recommended compression range shown to the model. */
 export interface RecommendedRange {
+  /** First surface seq, inclusive (surface order, NOT numeric order). */
   readonly startSeq: number
+  /** Last surface seq, inclusive (surface order, NOT numeric order). */
   readonly endSeq: number
+  /** 0-based surface position of the first node (mirrors recentNodes order). */
+  readonly startPosition: number
+  /** 0-based surface position of the last node. */
+  readonly endPosition: number
   readonly tokens: number
   readonly kind: 'history' | 'tool-result'
   readonly reason: string
@@ -259,5 +267,5 @@ export interface ContextStatus {
   readonly protectedSeqs: readonly number[]
   readonly recommendations: readonly RecommendedRange[]
   readonly recentNodes: readonly SurfaceNodePreview[]
-  readonly lastCompression?: { readonly compactionId: CompactionId; readonly totalTokens: number; readonly author: 'model' | 'fallback' }
+  readonly lastCompression?: { readonly compactionId: CompactionId; readonly author: 'model' | 'fallback' }
 }

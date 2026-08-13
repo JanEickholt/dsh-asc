@@ -45,6 +45,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
         'This is the core context-management tool: pick ranges of surface seqs (see context_status for the current surface and recommendations) whose content is no longer needed verbatim, and write a dense summary for each. The original content stays in the session log and can be restored later with context_decompress.',
         '',
         'Rules:',
+        '- Surface seqs are EVENT SEQUENCE NUMBERS, not positions: they do not sort by size. The current surface order is the recentNodes list from context_status (positions 0..N-1, oldest first); a range is its first and last surface member.',
         '- Each range must be within the current surface; both seqs must be listed by context_status.',
         '- Ranges cannot include protected content (recent tail, protected tools, protected sources) — such ranges are rejected with a reason.',
         '- The framed checkpoint must be smaller than the shadowed content; too-long summaries are rejected.',
@@ -152,6 +153,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
       description: [
         'Restore previously compressed content into the visible conversation.',
         'Compressed content is never lost: it stays in the session log and is restored by replay. Use this when you need exact details a checkpoint summary cannot provide.',
+        'The complete restored transcript is returned as this tool\'s result and appears in your next context window. A short preview is included in the result metadata.',
         '',
         'Two targeting modes (mutually exclusive):',
         '- compactionIds: exact checkpoint ids from context_status (e.g. ["bd2a1c5e-..."]).',
@@ -192,6 +194,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
                   restoredTokens: { type: 'number', required: true },
                   restoredChars: { type: 'number', required: true },
                   preview: { type: 'string', required: true },
+                  content: { type: 'string', required: true },
                 },
               },
             },
@@ -205,7 +208,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
               `restored checkpoint ${entry.compactionId} (tier ${entry.tier}): ${entry.restoredSeqs.length} `
               + `events, ~${entry.restoredTokens} tokens, ${entry.restoredChars} chars`,
             )
-            if (entry.preview.length > 0) lines.push(entry.preview)
+            lines.push(entry.content)
           }
           for (const skip of value.skipped) lines.push(`skipped: ${skip}`)
           if (lines.length === 0) lines.push('nothing restored')
@@ -229,6 +232,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
             restoredTokens: entry.restoredTokens,
             restoredChars: entry.restoredChars,
             preview: entry.preview,
+            content: entry.content,
           })),
           skipped: [...result.skipped],
         }
