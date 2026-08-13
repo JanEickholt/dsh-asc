@@ -1,0 +1,28 @@
+NOTICE
+
+dsh-compaction-agentic (Agentic Surface Compaction for DeepSeek Harness)
+Copyright (c) 2026 dsh-compaction-agentic contributors
+
+This project builds on and adapts concepts from:
+
+1. DeepSeek Harness (https://github.com/deepseek-ai/deepseek-harness),
+   MIT License, Copyright (c) 2026 DeepSeek.
+   - The compaction capability seam (`ctx.compaction`), the durable
+     `compaction/start|summary|end` transaction bracket, the
+     `compaction/prune` shadow-price protocol, the tool-pairing balance
+     checks, and the checkpoint source protocol are used as designed by
+     DeepSeek Harness. Several algorithms in this repository (surface
+     retention selection, compaction entry-state inspection, replay-aware
+     token measurement integration) are derived from the MIT-licensed
+     `@deepseek-ai/dsh-compaction-basic` package.
+
+2. opencode-acp / Dynamic Context Pruning (https://github.com/ranxianglei/opencode-acp),
+   AGPL-3.0-or-later, Copyright (c) ranxianglei.
+   - Only IDEAS are taken: model-owned compression decisions, three-tier
+     LSM-style distillation, nudge-gated compression suggestions, quality
+     gating with risk acknowledgement, and protected content. No source
+     code from opencode-acp or its dependencies is copied into this
+     repository; all implementations here are original.
+
+This repository is MIT licensed. It is not affiliated with DeepSeek or
+opencode-acp.
