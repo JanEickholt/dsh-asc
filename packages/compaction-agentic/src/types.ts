@@ -1,0 +1,263 @@
+/**
+ * Configuration and result vocabulary for the agentic compaction backend.
+ *
+ * @module @dsh-asc/compaction-agentic/types
+ */
+
+import type { CompactionId } from '@deepseek-ai/dsh-compaction'
+
+/** Policy fields shared by the default policy and exact model overrides. */
+export interface CompactionPolicyFields {
+  /** Compact at this fraction of the model's context window. Defaults to `0.8`. */
+  thresholdRatio?: number
+  /** Recent context retained as a fraction of the model's window. Defaults to `0.16`. */
+  retainRatio?: number
+  /** Absolute recent-context budget; mutually exclusive with `retainRatio`. */
+  retainTokens?: number
+}
+
+/** Exact provider/model override merged over the default compaction policy. */
+export interface ModelAgenticPolicyConfig extends CompactionPolicyFields {
+  /** Registered provider route to match. */
+  provider: string
+  /** Exact routed model id to match within `provider`. */
+  model: string
+}
+
+/** Nudge policy: when and how often to inject compression guidance. */
+export interface NudgeConfig {
+  /** Master switch for automatic nudge injection. Defaults to `true`. */
+  enabled?: boolean
+  /** Below this fraction of the window, no nudges fire. Defaults to `0.45`. */
+  minRatio?: number
+  /** Above this fraction, strong nudges fire every `frequency` steps. Defaults to `0.8`. */
+  maxRatio?: number
+  /** Token growth since the last nudge required to nudge again. Defaults to `50000`. */
+  growthTokens?: number
+  /** Step interval for over-max nudges. Defaults to `5`. */
+  frequency?: number
+  /** Nudge after this many messages since the last user prompt. Defaults to `15`. */
+  iterationThreshold?: number
+  /** Nudge wording intensity. Defaults to `'soft'`. */
+  force?: 'soft' | 'strong'
+}
+
+/** Tier policy: LSM-style distillation cadence and depth cap. */
+export interface TierConfig {
+  /** Master switch for tier distillation nudges. Defaults to `true`. */
+  enabled?: boolean
+  /** Deepest checkpoint tier; nodes at this tier cannot be consumed again. Defaults to `3`. */
+  maxTier?: number
+  /** Per-tier summary-token growth that triggers the next-tier nudge. Defaults to `50000`. */
+  growthTokens?: number
+}
+
+/** Post-compression quality gate over model-written summaries. */
+export interface QualityGateConfig {
+  /** Master switch. Defaults to `true`. */
+  enabled?: boolean
+  /** Blocking failures reject the compression until `acknowledgeRisk` retry. Defaults to `true`. */
+  blocking?: boolean
+  /** L1: minimum summary length in characters. Defaults to `200`. */
+  layer1MinChars?: number
+  /** L1: minimum summary retention as a percent of shadowed tokens. Defaults to `1.0`. */
+  layer1MinRetentionPct?: number
+  /** L2: fail when ROUGE-1 F1 is below this (AND with keyword recall). Defaults to `0.05`. */
+  layer2MaxRougeF1?: number
+  /** L2: fail when top-20 keyword recall is below this (AND with ROUGE-1 F1). Defaults to `0.20`. */
+  layer2MaxTop20Recall?: number
+}
+
+/** Deterministic fallback summarization for overflow recovery and manual compaction. */
+export interface FallbackConfig {
+  /** Master switch for the LLM fallback path. Defaults to `true`. */
+  enabled?: boolean
+  /** Summary provider; set together with `summarizationModel`, or inherit the conversation target. */
+  summarizationProvider?: string
+  /** Summary model; set together with `summarizationProvider`, or inherit the conversation target. */
+  summarizationModel?: string
+  /** Provider generation cap for fallback summarization. Defaults to `8192`. */
+  maxTokens?: number
+  /** Maximum overflow-recovery retries after prune + compact. Defaults to `1`. */
+  maxOverflowRetries?: number
+}
+
+/** Protection policy: content that must never be shadowed by a compression. */
+export interface ProtectionConfig {
+  /** Protect every human user message (source kind `user`). Defaults to `false`. */
+  protectUserMessages?: boolean
+  /** Always protect the first human user message. Defaults to `true`. */
+  protectFirstUserMessage?: boolean
+  /** Protect the last N surface nodes from being included in a compression range. Defaults to `20`. */
+  retainRecentMessages?: number
+  /** Tool names whose call and result nodes are excluded from compression ranges. Defaults to `[]`. */
+  protectedTools?: string[]
+  /** Plugin names whose injected `user/message` nodes are excluded from compression ranges. Defaults to `[]`. */
+  protectedSources?: string[]
+}
+
+/** Decompression budget policy. */
+export interface DecompressConfig {
+  /** Maximum restored tokens per decompress call, summed across targets. Defaults to `60000`. */
+  maxTokens?: number
+  /** Maximum blocks restored per decompress call. Defaults to `8`. */
+  maxBlocks?: number
+}
+
+/** Complete agentic compaction configuration. */
+export interface AgenticCompactionConfig extends CompactionPolicyFields {
+  /** Exact provider/model overrides; duplicate targets fail plugin load. */
+  modelPolicies?: ModelAgenticPolicyConfig[]
+  /** Enable automatic nudge and overflow-recovery listeners. Defaults to `true`. */
+  auto?: boolean
+  /** Nudge policy. */
+  nudge?: NudgeConfig
+  /** Tier policy. */
+  tiers?: TierConfig
+  /** Quality gate. */
+  qualityGate?: QualityGateConfig
+  /** Deterministic fallback. */
+  fallback?: FallbackConfig
+  /** Protection policy. */
+  protection?: ProtectionConfig
+  /** Decompression budget. */
+  decompress?: DecompressConfig
+}
+
+/** Exactly one validated retention form. */
+export type ResolvedRetention =
+  | { readonly retainRatio: number; readonly retainTokens?: never }
+  | { readonly retainRatio?: never; readonly retainTokens: number }
+
+/** Validated immutable config. */
+export interface ResolvedConfig {
+  readonly thresholdRatio: number
+  readonly retainRatio: number
+  /** Absolute recent-tail budget; when present it wins over `retainRatio`. */
+  readonly retainTokens?: number
+  readonly auto: boolean
+  readonly modelPolicies: readonly Readonly<ModelAgenticPolicyConfig>[]
+  readonly nudge: Required<Omit<NudgeConfig, 'force'>> & { readonly force: 'soft' | 'strong' }
+  readonly tiers: Required<TierConfig>
+  readonly qualityGate: Required<QualityGateConfig>
+  readonly fallback: Required<FallbackConfig>
+  readonly protection: Required<ProtectionConfig>
+  readonly decompress: Required<DecompressConfig>
+}
+
+/** One model-chosen compression range with its model-written summary. */
+export interface ModelCompressionRange {
+  /** First surface seq, inclusive. */
+  readonly startSeq: number
+  /** Last surface seq, inclusive. */
+  readonly endSeq: number
+  /** Model-written summary replacing the range. */
+  readonly summary: string
+  /** Optional per-range topic label. */
+  readonly topic?: string
+}
+
+/** Outcome of one committed compression. */
+export interface CompressionOutcome {
+  readonly compactionId: CompactionId
+  /** Checkpoint tier derived from the shadow chain. */
+  readonly tier: number
+  readonly startSeq: number
+  readonly endSeq: number
+  readonly shadowedSeqs: readonly number[]
+  readonly shadowedTokenCount: number
+  /** Estimated tokens of the framed checkpoint node. */
+  readonly summaryTokenCount: number
+  readonly author: 'model' | 'fallback'
+  readonly quality?: QualityReport
+}
+
+/** One failed compression entry, reported without committing anything. */
+export interface CompressionFailure {
+  readonly index: number
+  readonly reason: string
+}
+
+/** Complete result of a model-driven compress call. */
+export interface ModelCompressResult {
+  readonly compressed: readonly CompressionOutcome[]
+  readonly failures: readonly CompressionFailure[]
+}
+
+/** Quality-gate report for one summary. */
+export interface QualityReport {
+  readonly gate: 'rouge-recall-v1'
+  readonly passed: boolean
+  readonly blocking: boolean
+  readonly layer: 1 | 2 | 'pass'
+  readonly note?: string
+}
+
+/** One decompression target resolved from the log. */
+export interface DecompressTarget {
+  readonly compactionId: CompactionId
+  readonly tier: number
+  readonly checkpointSeq: number
+  readonly restoredSeqs: readonly number[]
+  readonly restoredTokens: number
+  readonly restoredChars: number
+  readonly preview: string
+}
+
+/** Complete result of a decompress call. */
+export interface DecompressResult {
+  readonly restored: readonly DecompressTarget[]
+  readonly skipped: readonly string[]
+}
+
+/** One recommended compression range shown to the model. */
+export interface RecommendedRange {
+  readonly startSeq: number
+  readonly endSeq: number
+  readonly tokens: number
+  readonly kind: 'history' | 'tool-result'
+  readonly reason: string
+}
+
+/** Snapshot of one checkpoint for `context_status`. */
+export interface CheckpointView {
+  readonly compactionId: CompactionId
+  readonly seq: number
+  readonly tier: number
+  readonly shadowedSeqs: readonly number[]
+  readonly shadowedTokenCount: number
+  readonly summaryChars: number
+  readonly author: 'model' | 'fallback'
+}
+
+/** Per-tier summary token totals for the current surface. */
+export interface TierTokenUsage {
+  [tier: number]: number
+}
+
+/** One surface-node preview for `context_status`. */
+export interface SurfaceNodePreview {
+  readonly seq: number
+  readonly kind: 'user' | 'assistant' | 'tool' | 'checkpoint' | 'nudge' | 'restored'
+  readonly tokens: number
+  readonly tier: number
+  readonly preview: string
+}
+
+/** Complete `context_status` payload. */
+export interface ContextStatus {
+  readonly sessionId: string
+  readonly totalTokens: number
+  readonly surfaceTokens: number
+  readonly baselineKind: string
+  readonly baselineTokens: number
+  readonly contextWindow?: number
+  readonly usagePercent?: number
+  readonly surfaceNodes: number
+  readonly checkpoints: readonly CheckpointView[]
+  readonly tierTokens: TierTokenUsage
+  readonly protectedSeqs: readonly number[]
+  readonly recommendations: readonly RecommendedRange[]
+  readonly recentNodes: readonly SurfaceNodePreview[]
+  readonly lastCompression?: { readonly compactionId: CompactionId; readonly totalTokens: number; readonly author: 'model' | 'fallback' }
+}

@@ -1,2 +1,9 @@
 packages:
   - 'packages/*'
+
+# The whole DeepSeek Harness family publishes coherent rc releases; pin every
+# transitive @deepseek-ai dependency to the same generation so compiled types
+# and runtime exports never disagree.
+overrides:
+  '@deepseek-ai/cordis': 4.0.1
+  '@deepseek-ai/dsh-*': 0.1.0-rc.6
