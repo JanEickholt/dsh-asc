@@ -17,13 +17,18 @@ import type { SessionEventSearchRequest, SessionSearchRequest } from '@deepseek-
 import type { AgenticCompactionEngine } from './engine.ts'
 import { textPreview } from './text.ts'
 
-const TOOL_OUTPUT_CHARS = 600
+const TOOL_OUTPUT_CHARS = 8000
 
 /** The maximum nodes shown in the status tool's recent-surface preview. */
 const STATUS_NODES_CAP = 40
 
-/** Render a tool result to plain text without echoing huge payloads. */
-function renderText(value: unknown): { type: 'text'; text: string }[] {
+/**
+ * Render a tool result to plain text. `defineTool` calls `render(args,
+ * value)` — the canonical value is the SECOND argument; a one-argument
+ * renderer would serialize the arguments instead.
+ */
+function renderText(args: unknown, value: unknown): { type: 'text'; text: string }[] {
+  void args
   return [{ type: 'text', text: textPreview(JSON.stringify(value, null, 2), TOOL_OUTPUT_CHARS) }]
 }
 

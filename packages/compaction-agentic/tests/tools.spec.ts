@@ -17,6 +17,9 @@ interface RecordedTool {
     }>
     required?: string[]
   }
+  readonly output: {
+    render(args: unknown, value: unknown): { type: string; text: string }[]
+  }
 }
 
 /** A recording registry that captures registrations and honors disposal. */
@@ -24,10 +27,16 @@ function recordingRegistry(ctx: Context): { tools: RecordedTool[]; disposeAll():
   const tools: RecordedTool[] = []
   const disposers: Array<() => void> = []
   ctx.provide('tools', {
-    register: (tool: RecordedTool) => {
-      tools.push(tool)
+    register: (tool: RecordedTool & { output: { render?: (args: unknown, value: unknown) => unknown[] } }) => {
+      const recorded: RecordedTool = {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+        output: tool.output as RecordedTool['output'],
+      }
+      tools.push(recorded)
       const dispose = (): void => {
-        const index = tools.indexOf(tool)
+        const index = tools.indexOf(recorded)
         if (index !== -1) tools.splice(index, 1)
       }
       disposers.push(dispose)
@@ -77,5 +86,24 @@ describe('registerContextTools', () => {
     dispose()
     expect(registry.tools).toHaveLength(0)
     void registry.disposeAll
+  })
+
+  it('renders the canonical VALUE, not the arguments', () => {
+    const ctx = createContext()
+    const registry = recordingRegistry(ctx)
+    const engine = new AgenticCompactionEngine(ctx, { auto: false })
+    registerContextTools(ctx, engine)
+    const status = registry.tools.find(tool => tool.name === 'context_status')!
+    const search = registry.tools.find(tool => tool.name === 'context_search')!
+    const value = { scope: 'session', query: 'needle', hits: [{ seq: 1, surface: 'shadowed' }] }
+    // defineTool calls render(args, value): a one-argument renderer would
+    // serialize the args and silently drop the actual result.
+    const rendered = status.output.render({}, value as never)
+    const text = rendered.map(block => (block as { text: string }).text).join('')
+    expect(text).toContain('"hits"')
+    expect(text).toContain('"shadowed"')
+    expect(text).not.toContain('"scope": "workspace"')
+    void search
+    void engine
   })
 })
