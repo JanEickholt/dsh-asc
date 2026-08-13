@@ -21,7 +21,7 @@ import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ResolvedConfig } from './types.ts'
-import { isNudgeSource, isRestoredSource, nodeKindOf, tierSnapshot } from './tier.ts'
+import { nodeKindOf, tierSnapshot } from './tier.ts'
 
 /** Tools whose calls and results are never compressible. */
 const FORCE_PROTECTED_TOOLS = new Set(['context_compress', 'context_decompress'])

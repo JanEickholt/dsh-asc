@@ -42,18 +42,14 @@ describe('freshNudgeState and baselines', () => {
   })
 
   it('records a nudge baseline with tier totals', () => {
-    const state = applyNudgeBaseline(
-      freshNudgeState(),
-      1000,
-      new Map([[0, 700], [1, 300]]),
-    )
+    const state = applyNudgeBaseline(1000, new Map([[0, 700], [1, 300]]))
     expect(state.lastBaselineTokens).toBe(1000)
     expect(state.tierBaselines.get(1)).toBe(300)
     expect(state.stepsSinceBaseline).toBe(0)
   })
 
   it('resets only the consumed tier on a distillation compression', () => {
-    const base = applyNudgeBaseline(freshNudgeState(), 1000, new Map([[1, 300], [2, 100]]))
+    const base = applyNudgeBaseline(1000, new Map([[1, 300], [2, 100]]))
     const after = applyCompressionBaseline(base, 500, 2, new Map([[1, 50], [2, 200]]))
     expect(after.lastBaselineTokens).toBe(500)
     expect(after.tierBaselines.get(1)).toBe(50)
@@ -79,7 +75,7 @@ describe('decideNudge', () => {
       nudge: { frequency: 5 },
       protection: { retainRecentMessages: 0 },
     })
-    let state = applyNudgeBaseline(freshNudgeState(), ctx.tokenMeter.measure(session).totalTokens, new Map())
+    let state = applyNudgeBaseline(ctx.tokenMeter.measure(session).totalTokens, new Map())
     // Tiny window: total (~200) >= 0.8 * 100 = 80 → over max, but the step
     // counter (1) is below the frequency gate (5) → quiet.
     const quiet = decideNudge(nudgeInput(session, ctx, config, 100, { ...state, stepsSinceBaseline: 1 }))
@@ -112,7 +108,7 @@ describe('decideNudge', () => {
     )
     // A zero tier-1 baseline makes all tier-1 tokens growth.
     const config = resolveConfig({ tiers: { growthTokens: 1 } })
-    const state = applyNudgeBaseline(freshNudgeState(), 0, new Map([[1, 0]]))
+    const state = applyNudgeBaseline(0, new Map([[1, 0]]))
     const decision = decideNudge(nudgeInput(session, ctx, config, 100_000, state))
     expect(decision.kind).toBe('tier')
     expect(decision.tier).toBe(2)
@@ -128,14 +124,13 @@ describe('decideNudge', () => {
       }), { surfaceOp: 'append' })
     }
     const config = resolveConfig({ nudge: { iterationThreshold: 10 } })
-    const state = applyNudgeBaseline(freshNudgeState(), 0, new Map())
+    const state = applyNudgeBaseline(0, new Map())
     // Window 600: min 270 < total ~300 < max 480 → over-min, under-max.
     const decision = decideNudge(nudgeInput(session, ctx, config, 600, { ...state, stepsSinceBaseline: 1 }))
     expect(decision.kind).toBe('iteration')
   })
 
   it('ignores nudges injected by this plugin when counting user messages', () => {
-    const ctx = createContext()
     const session = conversationSession(2)
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: '[context-management] nudge' }],
@@ -162,7 +157,7 @@ describe('decideNudge', () => {
     const ctx = createContext()
     const session = conversationSession(2)
     const config = resolveConfig({ nudge: { enabled: false } })
-    const state = applyNudgeBaseline(freshNudgeState(), 0, new Map())
+    const state = applyNudgeBaseline(0, new Map())
     const decision = decideNudge(nudgeInput(session, ctx, config, 100, state))
     expect(decision.kind).toBe('none')
   })
@@ -176,7 +171,7 @@ describe('buildNudgeText', () => {
       nudge: { frequency: 1 },
       protection: { retainRecentMessages: 0 },
     })
-    const state = applyNudgeBaseline(freshNudgeState(), 0, new Map())
+    const state = applyNudgeBaseline(0, new Map())
     const input = nudgeInput(session, ctx, config, 100, { ...state, stepsSinceBaseline: 1 })
     const decision = decideNudge(input)
     expect(decision.kind).not.toBe('none')
@@ -197,7 +192,7 @@ describe('buildNudgeText', () => {
     const ctx = createContext()
     const session = conversationSession(2)
     const config = resolveConfig({ nudge: { force: 'strong', frequency: 1 } })
-    const state = applyNudgeBaseline(freshNudgeState(), 0, new Map())
+    const state = applyNudgeBaseline(0, new Map())
     const input = nudgeInput(session, ctx, config, 100, { ...state, stepsSinceBaseline: 1 })
     const decision = decideNudge(input)
     const text = buildNudgeText({

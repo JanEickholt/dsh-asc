@@ -232,9 +232,13 @@ export function resolveConfig(config: AgenticCompactionConfig = {}): ResolvedCon
 
   const modelPolicies = resolveModelPolicies(config.modelPolicies)
   for (const [index, policy] of modelPolicies.entries()) {
+    const policyRetainRatio = policy.retainRatio ?? retention.retainRatio
     validateRatioRetention(
       policy.thresholdRatio ?? thresholdRatio,
-      { retainRatio: policy.retainRatio ?? retention.retainRatio, ...policy.retainTokens === undefined ? {} : { retainTokens: policy.retainTokens } },
+      {
+        ...policyRetainRatio === undefined ? {} : { retainRatio: policyRetainRatio },
+        ...policy.retainTokens === undefined ? {} : { retainTokens: policy.retainTokens },
+      },
       `AgenticCompactionConfig: modelPolicies[${index}]`,
     )
   }

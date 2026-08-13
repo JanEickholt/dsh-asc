@@ -29,9 +29,8 @@ import type { Agent, PreStepDecision, RequestErrorAction } from '@deepseek-ai/ds
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
-// Type-only: the optional pruner service and our own event vocabulary.
+// Type-only: the optional pruner service; our own event vocabulary is empty by design.
 import type {} from '@deepseek-ai/dsh-compaction-tool-result-pruner'
-import type {} from './events.ts'
 import { resolveConfig } from './config.ts'
 import type { AgenticCompactionConfig, ResolvedConfig } from './types.ts'
 import {
@@ -68,7 +67,6 @@ import type {
   ModelCompressResult,
   ModelCompressionRange,
   QualityReport,
-  RecommendedRange,
   SurfaceNodePreview,
 } from './types.ts'
 
@@ -617,7 +615,6 @@ export class AgenticCompactionEngine extends CompactionEngine {
     if (state.lastBaselineTokens === undefined) {
       // First observation: record the baseline and do not nudge.
       this.nudgeStates.set(session, applyNudgeBaseline(
-        state,
         measurement.totalTokens,
         tierTokenUsage(session, measurement),
       ))
@@ -643,7 +640,6 @@ export class AgenticCompactionEngine extends CompactionEngine {
       source: nudgeSource(),
     }), { surfaceOp: 'append' })
     this.nudgeStates.set(session, applyNudgeBaseline(
-      state,
       measurement.totalTokens,
       tierTokenUsage(session, measurement),
     ))
@@ -695,7 +691,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
         model: result.model,
         maxTokens: result.maxTokens,
         rawOutput: result.rawOutput,
-        usage: result.usage,
+        ...result.usage === undefined ? {} : { usage: result.usage },
       },
       {
         owner: options.owner,

@@ -80,14 +80,13 @@ export function applyCompressionBaseline(
 
 /**
  * Record a nudge's baseline effect: the nudge resets its own cadence and
- * every tier baseline.
- * @param state - session nudge state.
+ * every tier baseline. The previous state is not read: a nudge invalidates
+ * every baseline it has ever recorded.
  * @param totalTokens - token-meter total at emission.
  * @param tierTokens - per-tier token totals at emission.
  * @returns the updated state.
  */
 export function applyNudgeBaseline(
-  state: NudgeState,
   totalTokens: number,
   tierTokens: ReadonlyMap<number, number>,
 ): NudgeState {

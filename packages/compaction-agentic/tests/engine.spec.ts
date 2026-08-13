@@ -5,7 +5,7 @@ import { AgenticCompactionEngine, CompressRejectedError } from '../src/engine.ts
 import { registerContextTools } from '../src/tools.ts'
 import { resolveConfig } from '../src/config.ts'
 import { validateSurfaceRange, rangeIneligibility, checkpointViews } from '../src/protected.ts'
-import { createContext, conversationSession, closedSession, agentOf, eventOf, MODEL } from './helpers.ts'
+import { createContext, conversationSession, closedSession, agentOf, eventOf } from './helpers.ts'
 
 const SUMMARY = 'consolidated checkpoint preserving file paths, decisions, commands, and the pending next step in full detail'
 
@@ -45,7 +45,7 @@ function engineWith(config: Parameters<typeof resolveConfig>[0] = {}): {
 
 describe('AgenticCompactionEngine.compressByModel', () => {
   it('commits model-written summaries through the durable transaction', async () => {
-    const { ctx, engine } = engineWith()
+    const { engine } = engineWith()
     const session = conversationSession(4)
     const agent = agentOf(session)
     const nodes = session.surface.nodes
@@ -150,7 +150,7 @@ describe('AgenticCompactionEngine.compressByModel', () => {
   })
 
   it('derives tier 2 when consuming a tier-1 checkpoint', async () => {
-    const { ctx, engine } = engineWith()
+    const { engine } = engineWith()
     const session = conversationSession(6)
     const agent = agentOf(session)
     const nodes = session.surface.nodes

@@ -11,7 +11,7 @@ import {
 } from '../src/restore.ts'
 import { validateSurfaceRange } from '../src/protected.ts'
 import { resolveConfig } from '../src/config.ts'
-import { createContext, conversationSession, eventOf, MODEL } from './helpers.ts'
+import { createContext, conversationSession, MODEL } from './helpers.ts'
 
 const SUMMARY = 'checkpoint that keeps file paths, decisions, and the pending next step in full detail'
 
@@ -59,7 +59,6 @@ describe('resolveRestoreTargets', () => {
   })
 
   it('rejects an invalid range', () => {
-    const ctx = createContext()
     const session = conversationSession(4)
     const nodes = session.surface.nodes
     expect(() => resolveRestoreTargets(session, undefined, {

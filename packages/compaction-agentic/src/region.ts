@@ -251,7 +251,7 @@ export async function commitSurfaceCompaction(
 
   try {
     const prepared = prepareCompaction(dependencies, session, selection)
-    const framed = frameCheckpoint(dependencies, session, prepared, source, compactionId, options.sourceCommandId)
+    const framed = frameCheckpoint(dependencies, prepared, source, compactionId, options.sourceCommandId)
     assertStable(dependencies, session, prepared, options.stability)
     stage = 'commit'
     const pending = commitBody(session, startEvent, prepared, source, framed.message, framed.framedTokenCount)
@@ -354,7 +354,6 @@ function prepareCompaction(
 /** Build the checkpoint message and enforce the shrink invariant. */
 function frameCheckpoint(
   dependencies: CommitDependencies,
-  session: Session,
   prepared: ReturnType<typeof prepareCompaction>,
   source: SummarySource,
   compactionId: CompactionResult['compactionId'],
