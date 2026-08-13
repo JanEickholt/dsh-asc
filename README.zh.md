@@ -35,17 +35,25 @@
 pnpm install && pnpm test && pnpm build
 ```
 
-挂载到 DSH 组合（composition）：
+挂载到 DSH 组合（profile 的 `cordis.patch.yml`）：
 
 ```yaml
-- name: "@dsh-asc/compaction-agentic"
-  config:
-    auto: true
-- name: "@dsh-asc/compaction-agentic/invariant"   # 可选，推荐
-- name: "@deepseek-ai/dsh-session-query-sqlite"   # 可选：context_search 需要
+- insert:
+    - id: compaction-agentic
+      name: "@dsh-asc/compaction-agentic"
+      config:
+        auto: true
+    - id: compaction-agentic-invariant   # 可选，推荐
+      name: "@dsh-asc/compaction-agentic/invariant"
+    - id: session-query-sqlite           # 可选：context_search 需要
+      name: "@deepseek-ai/dsh-session-query-sqlite"
+- id: compaction-basic                   # 禁用 basic 后端
+  disabled: true
 ```
 
-移除或禁用 `@deepseek-ai/dsh-compaction-basic` 行——`ctx.compaction` 同一时刻只能有一个提供者。完整配置与运维说明见 [docs/usage.md](docs/usage.md)。
+`ctx.compaction` 同一时刻只能有一个提供者，因此需移除或禁用
+`@deepseek-ai/dsh-compaction-basic` 行。完整配置与运维说明见
+[docs/usage.md](docs/usage.md)。
 
 ## 文档
 

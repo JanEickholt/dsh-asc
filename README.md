@@ -53,14 +53,20 @@ without the model.
 pnpm install && pnpm test && pnpm build
 ```
 
-Mount in a DSH composition:
+Mount in a DSH composition (profile `cordis.patch.yml`):
 
 ```yaml
-- name: "@dsh-asc/compaction-agentic"
-  config:
-    auto: true
-- name: "@dsh-asc/compaction-agentic/invariant"   # optional, recommended
-- name: "@deepseek-ai/dsh-session-query-sqlite"   # optional: context_search
+- insert:
+    - id: compaction-agentic
+      name: "@dsh-asc/compaction-agentic"
+      config:
+        auto: true
+    - id: compaction-agentic-invariant   # optional, recommended
+      name: "@dsh-asc/compaction-agentic/invariant"
+    - id: session-query-sqlite           # optional: context_search
+      name: "@deepseek-ai/dsh-session-query-sqlite"
+- id: compaction-basic                   # disable the basic backend
+  disabled: true
 ```
 
 Remove or disable the `@deepseek-ai/dsh-compaction-basic` row — only one

@@ -22,41 +22,28 @@ pnpm add @dsh-asc/compaction-agentic
 
 The package is a function plugin on the standard `ctx.compaction` seam.
 Mount it in a profile patch (`cordis.patch.yml`), a profile bundle, or a
-preset composition:
+preset composition. DSH patches either insert rows or replace a row's whole
+config by id:
 
 ```yaml
-# cordis.patch.yml (or any layer above the base bundle)
-patch:
-  - id: compaction
-    # replace the basic backend row with the agentic backend
-    config:
-      auto: true
-      nudge:
-        maxRatio: 0.8
-        minRatio: 0.45
-      tiers:
-        maxTier: 3
-      qualityGate:
-        enabled: true
-        blocking: true
-      fallback:
-        enabled: true
-  - id: compaction-agentic
-    name: "@dsh-asc/compaction-agentic"
-    config: {}
+# cordis.patch.yml — insert the agentic backend
+- insert:
+    - id: compaction-agentic
+      name: "@dsh-asc/compaction-agentic"
+      config:
+        auto: true
 ```
 
-How the rows are named depends on the deployment's base bundle. The
-simplest reliable approach: add one new row
+Then remove or disable the basic backend row, because only one provider can
+own `ctx.compaction`:
 
 ```yaml
-- name: "@dsh-asc/compaction-agentic"
-  config:
-    auto: true
+# target the base bundle's compaction-basic row by id
+- id: compaction-basic
+  disabled: true
 ```
 
-and remove or disable the `@deepseek-ai/dsh-compaction-basic` row, because
-only one provider can own `ctx.compaction`. Verify the composed tree with:
+Verify the composed tree with:
 
 ```sh
 dsh --profile web --dump-config | grep -A 20 compaction
@@ -65,7 +52,9 @@ dsh --profile web --dump-config | grep -A 20 compaction
 ### Optional: the invariant companion
 
 ```yaml
-- name: "@dsh-asc/compaction-agentic/invariant"
+- insert:
+    - id: compaction-agentic-invariant
+      name: "@dsh-asc/compaction-agentic/invariant"
 ```
 
 It requires the `@deepseek-ai/dsh-invariants` service (shipped in the base
@@ -77,8 +66,9 @@ relations of the `context/*` events.
 `context_search` needs a session-query backend:
 
 ```yaml
-- name: "@deepseek-ai/dsh-session-query-sqlite"
-  config: {}
+- insert:
+    - id: session-query-sqlite
+      name: "@deepseek-ai/dsh-session-query-sqlite"
 ```
 
 Without it, `context_search` fails with a clear message; the other three
@@ -90,9 +80,11 @@ Mount the upstream pruner to make overflow recovery first prune oversized
 tool results before summarizing:
 
 ```yaml
-- name: "@deepseek-ai/dsh-compaction-tool-result-pruner"
-  config:
-    thresholdChars: 20000
+- insert:
+    - id: tool-result-pruner
+      name: "@deepseek-ai/dsh-compaction-tool-result-pruner"
+      config:
+        thresholdChars: 20000
 ```
 
 ## Configuration

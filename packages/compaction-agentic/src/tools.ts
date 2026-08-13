@@ -27,9 +27,6 @@ function renderText(value: unknown): { type: 'text'; text: string }[] {
   return [{ type: 'text', text: textPreview(JSON.stringify(value, null, 2), TOOL_OUTPUT_CHARS) }]
 }
 
-/** The session-query engine service name. */
-const SESSION_QUERY_SERVICE = 'sessionQuery'
-
 /** The agent-bound execution guard: context tools only run for an agent. */
 function requireAgent(exec: ToolRunContext): NonNullable<ToolRunContext['agent']> {
   if (exec.agent === undefined) {
