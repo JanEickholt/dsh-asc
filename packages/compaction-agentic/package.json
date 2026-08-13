@@ -89,7 +89,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "clean": "node -e \"const fs=require('fs');for(const d of ['lib','dist'])fs.rmSync(d,{recursive:true,force:true})\""
+    "prepack": "node -e \"const fs=require('fs'),p=process.env.INIT_CWD??process.cwd();for(const f of ['README.md','README.zh.md','LICENSE','NOTICE']){fs.copyFileSync(require('path').join(p,'..','..',f),require('path').join(p,f))}\"",
+    "clean": "node -e \"const fs=require('fs');for(const d of ['lib','dist'])fs.rmSync(d,{recursive:true,force:true});for(const f of ['README.md','README.zh.md','LICENSE','NOTICE'])try{fs.rmSync(f)}catch{}\""
   },
   "engines": {
     "node": "^22.19 || >=24"

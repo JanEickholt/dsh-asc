@@ -6,3 +6,10 @@ coverage/
 .env
 *.log
 .DS_Store
+*.tgz
+
+# prepack copies of the repo-root docs into the package directory
+packages/compaction-agentic/README.md
+packages/compaction-agentic/README.zh.md
+packages/compaction-agentic/LICENSE
+packages/compaction-agentic/NOTICE
