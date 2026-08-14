@@ -35,17 +35,28 @@ to deterministic selection plus cache-friendly LLM summarization.
 - **`context_compress`** — replace surface ranges with model-written
   checkpoints, one durable `compaction/*` transaction per range, with
   balanced tool-pairing, protection, shrink, and quality-gate validation.
+  Ranges that would split a tool call from its result are automatically
+  extended to the minimal complete tool turns (configurable via
+  `compress.autoExpandToolPairs`), and every recommended range is
+  pre-validated so acting on one never hits a commit-time rejection.
+  Failures teach the repair: unbalanced spans name the nearest balanced
+  range, and quality-gate rejections report the measured metrics.
 - **`context_decompress`** — restore compressed content by replaying the
   log (tier-aware: one tier up by default, `full: true` to the raw bottom).
+  An optional `toFile` path writes the transcript through the filesystem
+  service instead of inflating the context window.
 - **`context_status`** — usage, checkpoints by tier, per-tier token totals,
-  protected content, recommendations, and a preview of the recent surface.
+  protected content (per-node flags), pre-validated recommendations, and a
+  preview of the recent surface.
 - **`context_search`** — full-text search over the whole session log,
   including shadowed (compressed) content.
 
-Plus automatic, logged, token-priced **nudges** that tell the model when
-context is high and what to consider compressing — and a deterministic
+Plus a pinned compression-philosophy section in the system prompt (the two
+failure modes, the single test, proactive frugality), automatic, logged,
+token-priced **nudges** gated on real context growth and a cadence floor
+so a session that declined compression goes quiet — and a deterministic
 **fallback** that handles provider-confirmed overflow and manual compaction
-without the model.
+without the model, announcing each automatic compaction on the surface.
 
 ## Quick start
 

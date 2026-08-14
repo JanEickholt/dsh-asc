@@ -101,6 +101,12 @@ All fields are optional; every unknown key fails plugin load.
 | `retainTokens` | — | Absolute recent-tail budget; mutually exclusive with `retainRatio`. |
 | `modelPolicies` | `[]` | Per `{provider, model}` overrides of the three fields above; duplicate targets fail load. |
 
+### `compress`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `autoExpandToolPairs` | `true` | Extend a compress request that would split a tool-call/result pair to the minimal complete tool turns instead of rejecting it. The extension is reported in the result (`expandedFrom`). Disable to reject unbalanced ranges (the failure names the nearest balanced span). |
+
 ### `nudge`
 
 | Key | Default | Meaning |
@@ -108,9 +114,9 @@ All fields are optional; every unknown key fails plugin load.
 | `enabled` | `true` | Master switch for automatic nudge injection. |
 | `minRatio` | `0.45` | Below this fraction of the window, no nudges fire. |
 | `maxRatio` | `0.8` | Above this fraction, strong nudges fire every `frequency` steps. |
-| `growthTokens` | `50000` | Token growth since the last baseline required to nudge again. |
-| `frequency` | `5` | Step interval for over-max nudges. |
-| `iterationThreshold` | `15` | Nudge after this many messages since the last user prompt (in the over-min band). |
+| `growthTokens` | `50000` | Token growth since the last baseline required to nudge again. Applies to iteration nudges (and tiers have their own); without real growth a session the model chose not to compress stays quiet. |
+| `frequency` | `5` | Step interval for pressure and iteration nudges. |
+| `iterationThreshold` | `15` | Nudge after this many messages since the last user prompt (in the over-min band, past the growth floor and frequency gate). |
 | `force` | `"soft"` | Nudge wording intensity: `"soft"` or `"strong"`. |
 
 ### `tiers`
@@ -158,15 +164,29 @@ All fields are optional; every unknown key fails plugin load.
 | `maxTokens` | `60000` | Combined restored-token budget per call; over-budget targets are skipped and reported. |
 | `maxBlocks` | `8` | Maximum checkpoints restored per call; exceeding it is a hard error. |
 
+The `context_decompress` tool additionally accepts `toFile`: the restored
+transcript is written through the mounted filesystem service instead of
+being returned inline, so very large restores do not inflate the context
+window. Requires a filesystem provider; without one the call fails loudly.
+
 ## Model experience
 
+The plugin injects a pinned compression-philosophy section into the system
+prompt (`tool:compaction-agentic`, order 114): the two failure modes, the
+single test ("is this content still needed by the current task step?"),
+proactive frugality, reversibility, and the four-tool workflow. The model
+therefore compresses proactively instead of waiting for nudges or overflow.
+
 The tools are self-describing: `context_status` lists the current surface
-with seqs, kinds, tiers, and previews; `context_compress` takes exactly
-those seqs; `context_decompress` takes the `compactionId`s that
-`context_status` reports. Recommended ranges appear both in `context_status`
-and in nudges. The nudge text is pinned and test-asserted; it always tells
-the model that context management is optional and that content is never
-lost (it can be searched with `context_search` and restored with
+with seqs, kinds, tiers, protection flags, and previews (and every
+recommended range is pre-validated, so acting on one never hits a
+commit-time rejection); `context_compress` takes exactly those seqs and
+auto-extends tool-pair-splitting ranges; `context_decompress` takes the
+`compactionId`s that `context_status` reports (or writes to `toFile`).
+Recommended ranges appear both in `context_status` and in nudges. The nudge
+text is pinned and test-asserted; it always tells the model that context
+management is optional and that content is never lost (it can be searched
+with `context_search` and restored with
 `context_decompress`).
 
 ## Operation notes
