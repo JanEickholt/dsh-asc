@@ -4,20 +4,25 @@ import { createContext } from './helpers.ts'
 import { COMPACTION_PHILOSOPHY, PHILOSOPHY_SECTION_NAME, registerPhilosophyPrompt } from '../src/prompt.ts'
 
 describe('registerPhilosophyPrompt', () => {
-  it('registers a section whose text teaches the active-compression philosophy', async () => {
+  it('registers a section teaching the complete context-management doctrine', async () => {
     const ctx = createContext()
     void new SystemPrompt(ctx, {})
     const dispose = registerPhilosophyPrompt(ctx)
     const assembled = await ctx.systemPrompt.assemble({})
     const section = assembled.sections.find(section => section.name === PHILOSOPHY_SECTION_NAME)
     expect(section).toBeDefined()
-    expect(section!.text).toContain('CONTEXT MANAGEMENT PHILOSOPHY')
-    expect(section!.text).toContain('is this content still needed by the current task step?')
-    expect(section!.text).toContain('Compression is reversible')
+    expect(section!.text).toContain('CONTEXT MANAGEMENT DOCTRINE')
+    expect(section!.text).toContain('Is this still needed by the current task step?')
+    expect(section!.text).toContain('Compression is fully reversible')
     expect(section!.text).toContain('context_status')
     expect(section!.text).toContain('context_compress')
     expect(section!.text).toContain('context_decompress')
     expect(section!.text).toContain('context_search')
+    // The doctrine is an operating procedure, not just principles: it names
+    // the tier system, the per-turn cadence, and the batch rule.
+    expect(section!.text).toContain('THE TIER SYSTEM')
+    expect(section!.text).toContain('THE OPERATING CADENCE')
+    expect(section!.text).toContain('batch 2–3 ranges in a single context_compress call')
     // Guidance, not a command: the model may decline a nudge.
     expect(section!.text).toContain('the nudge is guidance, not a command')
     dispose()
@@ -39,12 +44,14 @@ describe('registerPhilosophyPrompt', () => {
     expect(() => registerPhilosophyPrompt(ctx)).toThrow()
   })
 
-  it('pins the philosophy text verbatim for model-visible stability', () => {
+  it('pins the doctrine text verbatim for model-visible stability', () => {
     // The model sees this text every request; wording changes must be
     // deliberate. Tests assert key phrases so edits are noticed.
     expect(COMPACTION_PHILOSOPHY).toContain('Over-compression')
     expect(COMPACTION_PHILOSOPHY).toContain('Under-compression')
-    expect(COMPACTION_PHILOSOPHY).toContain('Be frugal proactively')
-    expect(COMPACTION_PHILOSOPHY).toContain('Never compress the current user instruction')
+    expect(COMPACTION_PHILOSOPHY).toContain('THE JUDGMENT TEST')
+    expect(COMPACTION_PHILOSOPHY).toContain('THE TIER SYSTEM')
+    expect(COMPACTION_PHILOSOPHY).toContain('THE OPERATING CADENCE')
+    expect(COMPACTION_PHILOSOPHY).toContain('Never compress: the current user instruction')
   })
 })

@@ -16,7 +16,7 @@ describe('resolveConfig', () => {
     expect(config.nudge.iterationThreshold).toBe(15)
     expect(config.nudge.force).toBe('soft')
     expect(config.tiers.maxTier).toBe(3)
-    expect(config.tiers.growthTokens).toBe(50000)
+    expect(config.tiers.growthTokens).toBe(10000)
     expect(config.qualityGate.enabled).toBe(true)
     expect(config.qualityGate.blocking).toBe(true)
     expect(config.fallback.enabled).toBe(true)

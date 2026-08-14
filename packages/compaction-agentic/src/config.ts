@@ -142,7 +142,7 @@ export function resolveConfig(config: AgenticCompactionConfig = {}): ResolvedCon
   const tiers = resolveGroup(config.tiers, TIER_KEYS, 'AgenticCompactionConfig.tiers', {
     enabled: true,
     maxTier: 3,
-    growthTokens: 50000,
+    growthTokens: 10000,
   } as const, (group, name) => {
     if (group.maxTier !== undefined
       && (typeof group.maxTier !== 'number' || !Number.isInteger(group.maxTier)

@@ -48,7 +48,7 @@ export interface TierConfig {
   enabled?: boolean
   /** Deepest checkpoint tier; nodes at this tier cannot be consumed again. Defaults to `3`. */
   maxTier?: number
-  /** Per-tier summary-token growth that triggers the next-tier nudge. Defaults to `50000`. */
+  /** Per-tier summary-token growth that triggers the next-tier nudge. Defaults to `10000`. */
   growthTokens?: number
 }
 
