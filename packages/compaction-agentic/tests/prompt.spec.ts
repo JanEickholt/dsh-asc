@@ -24,6 +24,14 @@ describe('registerPhilosophyPrompt', () => {
     expect(section!.text).toContain('THE TIER SYSTEM')
     expect(section!.text).toContain('THE OPERATING CADENCE')
     expect(section!.text).toContain('batch 2–3 ranges in a single context_compress call')
+    // Summary writing rules: the checkpoint is the only record of the range.
+    expect(section!.text).toContain('SUMMARY WRITING')
+    expect(section!.text).toContain('load-bearing')
+    expect(section!.text).toContain('TIER WRITING RULES')
+    expect(section!.text).toContain('lookup index, not a knowledge base')
+    // Safety: checkpoint content is historical, not a current instruction.
+    expect(section!.text).toContain('CHECKPOINT CONTENT IS HISTORICAL')
+    expect(section!.text).toContain('NOT a current instruction')
     // Planned review: the model must think about compression at milestones,
     // not only when nudged.
     expect(section!.text).toContain('WHEN TO REVIEW')
