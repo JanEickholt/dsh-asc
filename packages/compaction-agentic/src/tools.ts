@@ -99,6 +99,14 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
                   shadowedTokenCount: { type: 'number', required: true },
                   summaryTokenCount: { type: 'number', required: true },
                   author: { type: 'string', required: true },
+                  expandedFrom: {
+                    type: 'object',
+                    additionalProperties: true,
+                    properties: {
+                      startSeq: { type: 'number', required: true },
+                      endSeq: { type: 'number', required: true },
+                    },
+                  },
                 },
               },
             },
@@ -119,10 +127,14 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
         render: (_args, value) => {
           const lines: string[] = []
           for (const entry of value.compressed) {
+            const expanded = entry.expandedFrom === undefined
+              ? ''
+              : ` (extended from seqs ${entry.expandedFrom.startSeq}..${entry.expandedFrom.endSeq} `
+                + 'to keep tool calls paired with their results)'
             lines.push(
               `compressed seqs ${entry.startSeq}..${entry.endSeq} (${entry.shadowedSeqs.length} nodes, `
               + `~${entry.shadowedTokenCount} tokens) into checkpoint ${entry.compactionId} `
-              + `(tier ${entry.tier}, ~${entry.summaryTokenCount} summary tokens)`,
+              + `(tier ${entry.tier}, ~${entry.summaryTokenCount} summary tokens)${expanded}`,
             )
           }
           for (const failure of value.failures) {
@@ -147,6 +159,9 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
             shadowedTokenCount: entry.shadowedTokenCount,
             summaryTokenCount: entry.summaryTokenCount,
             author: entry.author,
+            ...entry.expandedFrom === undefined
+              ? {}
+              : { expandedFrom: { ...entry.expandedFrom } },
           })),
           failures: result.failures.map(failure => ({ ...failure })),
         }

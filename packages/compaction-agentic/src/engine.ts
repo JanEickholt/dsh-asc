@@ -53,6 +53,7 @@ import { evaluateQuality } from './quality-gate.ts'
 import {
   checkpointViews,
   isProtectedNode,
+  nearestBalancedRange,
   rangeIneligibility,
   validateSurfaceRange,
 } from './protected.ts'
@@ -113,6 +114,9 @@ function engineConfigSchema(): z<AgenticCompactionConfig> {
       retainRatio: retainRatioSchema,
       retainTokens: retainTokensSchema,
     })),
+    compress: z.object({
+      autoExpandToolPairs: z.boolean(),
+    }),
     nudge: z.object({
       enabled: z.boolean(),
       minRatio: ratioSchema,
@@ -401,10 +405,22 @@ export class AgenticCompactionEngine extends CompactionEngine {
       throw new Error(`context_compress accepts at most ${MAX_RANGES_PER_CALL} ranges per call`)
     }
     const failures: CompressionFailure[] = []
-    const plans: { range: ModelCompressionRange; selection: ReturnType<typeof validateSurfaceRange> }[] = []
+    const plans: { range: ModelCompressionRange; selection: ReturnType<typeof validateSurfaceRange>; requested?: { startSeq: number; endSeq: number } }[] = []
     for (const [index, range] of ranges.entries()) {
       try {
-        const selection = validateSurfaceRange(session, range.startSeq, range.endSeq)
+        let selection: ReturnType<typeof validateSurfaceRange>
+        try {
+          selection = validateSurfaceRange(session, range.startSeq, range.endSeq)
+        } catch (error: unknown) {
+          // A tool-call/result pair may not be split: when the policy allows,
+          // extend the requested span to the minimal complete tool turns
+          // instead of rejecting. The model is told exactly what was added.
+          if (!this.config.compress.autoExpandToolPairs) throw error
+          const expanded = nearestBalancedRange(session, range.startSeq, range.endSeq)
+          if (expanded === null) throw error
+          if (expanded.start === range.startSeq && expanded.end === range.endSeq) throw error
+          selection = validateSurfaceRange(session, expanded.start, expanded.end)
+        }
         const ineligibility = rangeIneligibility(session, selection, this.config)
         if (ineligibility !== undefined) {
           throw new Error(rangeIneligibilityMessage(ineligibility))
@@ -412,7 +428,13 @@ export class AgenticCompactionEngine extends CompactionEngine {
         if (typeof range.summary !== 'string' || range.summary.trim().length === 0) {
           throw new Error('summary must be a non-empty string')
         }
-        plans.push({ range, selection })
+        plans.push({
+          range,
+          selection,
+          ...selection.start !== range.startSeq || selection.end !== range.endSeq
+            ? { requested: { startSeq: range.startSeq, endSeq: range.endSeq } }
+            : {},
+        })
       } catch (error: unknown) {
         failures.push({ index, reason: errorMessage(error) })
       }
@@ -462,8 +484,8 @@ export class AgenticCompactionEngine extends CompactionEngine {
         const outcome = await commitSurfaceCompaction(
           { meter: this.ctx.tokenMeter },
           session,
-          plan.range.startSeq,
-          plan.range.endSeq,
+          plan.selection.start,
+          plan.selection.end,
           {
             kind: 'model',
             summary: plan.range.summary,
@@ -483,6 +505,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
           shadowedTokenCount: outcome.shadowedTokenCount,
           summaryTokenCount: outcome.summaryTokenCount,
           author: 'model',
+          ...plan.requested === undefined ? {} : { expandedFrom: plan.requested },
           ...report === undefined ? {} : { quality: report },
         })
         this.applyPostCompressionBaseline(session, outcome.tier)

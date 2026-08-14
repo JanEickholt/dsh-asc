@@ -45,6 +45,7 @@ const AGENTIC_CONFIG_KEYS: ReadonlySet<string> = new Set([
   ...POLICY_KEYS,
   'modelPolicies',
   'auto',
+  'compress',
   'nudge',
   'tiers',
   'qualityGate',
@@ -52,6 +53,8 @@ const AGENTIC_CONFIG_KEYS: ReadonlySet<string> = new Set([
   'protection',
   'decompress',
 ])
+
+const COMPRESS_KEYS: ReadonlySet<string> = new Set(['autoExpandToolPairs'])
 
 const NUDGE_KEYS: ReadonlySet<string> = new Set([
   'enabled',
@@ -230,6 +233,14 @@ export function resolveConfig(config: AgenticCompactionConfig = {}): ResolvedCon
     }
   })
 
+  const compress = resolveGroup(config.compress, COMPRESS_KEYS, 'AgenticCompactionConfig.compress', {
+    autoExpandToolPairs: true,
+  } as const, (group, name) => {
+    if (group.autoExpandToolPairs !== undefined && typeof group.autoExpandToolPairs !== 'boolean') {
+      throw new Error(`${name}.autoExpandToolPairs must be a boolean`)
+    }
+  })
+
   const modelPolicies = resolveModelPolicies(config.modelPolicies)
   for (const [index, policy] of modelPolicies.entries()) {
     const policyRetainRatio = policy.retainRatio ?? retention.retainRatio
@@ -249,6 +260,7 @@ export function resolveConfig(config: AgenticCompactionConfig = {}): ResolvedCon
     ...retention.retainTokens === undefined ? {} : { retainTokens: retention.retainTokens },
     auto: config.auto ?? true,
     modelPolicies,
+    compress,
     nudge,
     tiers,
     qualityGate,

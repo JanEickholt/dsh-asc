@@ -104,12 +104,25 @@ export interface DecompressConfig {
   maxBlocks?: number
 }
 
+/** Model-facing compress-tool policy: how requests are validated and repaired. */
+export interface CompressToolConfig {
+  /**
+   * When a requested range would split a tool-call/result pair, extend it to
+   * the nearest balanced boundaries (the minimal complete tool turns) and
+   * commit instead of rejecting. The extension is reported to the model.
+   * Defaults to `true`.
+   */
+  autoExpandToolPairs?: boolean
+}
+
 /** Complete agentic compaction configuration. */
 export interface AgenticCompactionConfig extends CompactionPolicyFields {
   /** Exact provider/model overrides; duplicate targets fail plugin load. */
   modelPolicies?: ModelAgenticPolicyConfig[]
   /** Enable automatic nudge and overflow-recovery listeners. Defaults to `true`. */
   auto?: boolean
+  /** Model-facing compress-tool policy. */
+  compress?: CompressToolConfig
   /** Nudge policy. */
   nudge?: NudgeConfig
   /** Tier policy. */
@@ -137,6 +150,7 @@ export interface ResolvedConfig {
   readonly retainTokens?: number
   readonly auto: boolean
   readonly modelPolicies: readonly Readonly<ModelAgenticPolicyConfig>[]
+  readonly compress: Required<CompressToolConfig>
   readonly nudge: Required<Omit<NudgeConfig, 'force'>> & { readonly force: 'soft' | 'strong' }
   readonly tiers: Required<TierConfig>
   readonly qualityGate: Required<QualityGateConfig>
@@ -170,6 +184,12 @@ export interface CompressionOutcome {
   readonly summaryTokenCount: number
   readonly author: 'model' | 'fallback'
   readonly quality?: QualityReport
+  /**
+   * The requested range before automatic tool-pair extension, when the
+   * committed range was extended beyond what the model asked for. The model
+   * must be told what was added and why.
+   */
+  readonly expandedFrom?: { readonly startSeq: number; readonly endSeq: number }
 }
 
 /** One failed compression entry, reported without committing anything. */
@@ -225,6 +245,14 @@ export interface RecommendedRange {
   readonly tokens: number
   readonly kind: 'history' | 'tool-result'
   readonly reason: string
+  /**
+   * Whether the range is guaranteed to pass the commit-time validation
+   * (balanced tool pairing at both edges, no protected node inside). Every
+   * recommendation is pre-validated before it is shown, so this is always
+   * `true` today; the field exists so the model can trust recommendations
+   * without re-checking the surface itself.
+   */
+  readonly balanced: true
 }
 
 /** Snapshot of one checkpoint for `context_status`. */

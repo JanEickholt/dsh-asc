@@ -170,6 +170,51 @@ export function validateSurfaceRange(session: Session, start: number, end: numbe
   return { start, end, startIdx, endIdx, shadowedSeqs: nodes.slice(startIdx, endIdx + 1) }
 }
 
+/**
+ * Extend an unbalanced inclusive span to the nearest balanced boundaries:
+ * the minimal complete tool turns containing the requested nodes.
+ *
+ * A tool-call/result pair can never be split by a compression, and a
+ * complete tool turn (the assistant message carrying the calls plus every
+ * paired result) is the smallest unit that keeps both edges balanced. The
+ * start edge walks forward from the requested span's leading cut to the
+ * nearest balanced cut; the end edge walks backward from its trailing cut.
+ * Nothing outside the minimal enclosing turns is added.
+ *
+ * @param session - session owning the surface.
+ * @param start - first requested surface seq, inclusive.
+ * @param end - last requested surface seq, inclusive.
+ * @returns the minimal balanced span, or `null` when no balanced span
+ *   encloses the request (e.g. the request already spans the whole surface).
+ */
+export function nearestBalancedRange(
+  session: Session,
+  start: number,
+  end: number,
+): { start: number; end: number } | null {
+  const nodes = session.surface.nodes
+  let startIdx = nodes.indexOf(start)
+  let endIdx = nodes.indexOf(end)
+  if (startIdx === -1 || endIdx === -1 || startIdx > endIdx) return null
+
+  // Walk outward until both edges sit on balanced cuts. Each step moves one
+  // cut, so an unbalanced assistant node pulls in its results (or the reverse).
+  while (!toolPairingBalancedBefore(session, nodes[startIdx]!)) {
+    if (startIdx === 0) return null
+    startIdx -= 1
+  }
+  while (!toolPairingBalancedAfter(session, nodes[endIdx]!)) {
+    if (endIdx === nodes.length - 1) return null
+    endIdx += 1
+  }
+  // A forward walk can expose a new unbalanced leading cut (the expanded
+  // start may sit after an assistant whose results now fall inside the span);
+  // re-validate the closed form before returning.
+  if (!toolPairingBalancedBefore(session, nodes[startIdx]!)) return null
+  if (!toolPairingBalancedAfter(session, nodes[endIdx]!)) return null
+  return { start: nodes[startIdx]!, end: nodes[endIdx]! }
+}
+
 /** Why a range is not eligible; undefined means eligible. */
 export type RangeIneligibility =
   | { reason: 'empty' }

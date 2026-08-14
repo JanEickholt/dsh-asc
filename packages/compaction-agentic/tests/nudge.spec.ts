@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import {
   commitSurfaceCompaction,
 } from '../src/region.ts'
@@ -219,4 +219,64 @@ describe('recommendRanges', () => {
     expect(ranges[0]!.startSeq).not.toBe(session.surface.nodes[0])
     expect(ranges[0]!.startPosition).toBeLessThan(ranges[0]!.endPosition)
   })
+
+  it('marks every recommendation commit-ready and balanced', () => {
+    const ctx = createContext()
+    const session = conversationSession(5)
+    const config = resolveConfig({ protection: { retainRecentMessages: 0 } })
+    const ranges = recommendRanges(session, ctx.tokenMeter.measure(session), config)
+    expect(ranges.length).toBeGreaterThan(0)
+    for (const range of ranges) {
+      expect(range.balanced).toBe(true)
+      // A model acting on the recommendation must never hit a rejection.
+      expect(() => validateSurfaceRange(session, range.startSeq, range.endSeq)).not.toThrow()
+    }
+  })
+
+  it('never recommends a single tool/result node without its paired call', () => {
+    const ctx = createContext()
+    const session = toolSession()
+    const config = resolveConfig({ protection: { retainRecentMessages: 0 } })
+    const ranges = recommendRanges(session, ctx.tokenMeter.measure(session), config)
+    for (const range of ranges) {
+      expect(() => validateSurfaceRange(session, range.startSeq, range.endSeq)).not.toThrow()
+    }
+  })
 })
+
+/**
+ * A session whose tail holds one assistant tool call plus a large result.
+ */
+function toolSession(): ReturnType<typeof conversationSession> {
+  const session = conversationSession(2)
+  const turn = 3
+  const callId = CallId('call-0')
+  session.append('turn/start', { turn })
+  session.append('user/message', createUserMessage({
+    content: [{ type: 'text', text: 'inspect' }],
+    source: { kind: 'user' },
+  }), { surfaceOp: 'append' })
+  session.append('step/start', { turn, step: 1 })
+  session.append('assistant/message', {
+    turn,
+    step: 1,
+    message: createAssistantMessage({
+      content: [
+        { type: 'text', text: 'calling' },
+        { type: 'tool-call', id: callId, name: 'probe', arguments: '{}' },
+      ],
+      source: { provider: MODEL, model: MODEL },
+    }),
+  }, { surfaceOp: 'append' })
+  session.append('tool/result', {
+    turn,
+    step: 1,
+    message: createToolResultMessage({
+      callId,
+      content: [{ type: 'tool-result', toolCallId: callId, content: [{ type: 'text', text: 'huge output '.repeat(200) }] }],
+      isError: false,
+    }),
+  }, { surfaceOp: 'append' })
+  session.append('step/end', { turn, step: 1 })
+  return session
+}

@@ -24,8 +24,11 @@ import { toolPairingBalancedAfter } from '@deepseek-ai/dsh-compaction'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
 import type { ResolvedConfig, RecommendedRange } from './types.ts'
-import { isProtectedNode } from './protected.ts'
+import { isProtectedNode, nearestBalancedRange, validateSurfaceRange } from './protected.ts'
 import { nodeKindOf, tierSnapshot, tierTokenUsage } from './tier.ts'
+
+/** A recommended range before commit-readiness validation. */
+type RecommendedRangeCandidate = Omit<RecommendedRange, 'balanced'>
 
 /** Nudge kinds. */
 export type NudgeKind = 'pressure' | 'iteration' | 'tier'
@@ -171,7 +174,9 @@ export function decideNudge(input: NudgeInput): NudgeDecision {
           reason: `tier-${inputTier} summaries grew by `
             + `${tierTokens - tierBaseline} tokens since the last baseline`,
           growth,
-          recommendations: recommendTierRanges(session, measurement, config, inputTier),
+          recommendations: recommendTierRanges(session, measurement, config, inputTier)
+            .map(candidate => commitReadyRange(session, measurement, candidate))
+            .filter((range): range is RecommendedRange => range !== null),
         }
       }
     }
@@ -229,24 +234,74 @@ export function nodesSinceLastUser(session: Session): number {
 
 /**
  * Build up to three recommended ranges: the head-history span and the two
- * largest eligible tool results.
+ * largest eligible tool results. Every returned range is pre-validated so a
+ * model acting on a recommendation never hits a commit-time rejection: an
+ * unbalanced candidate is extended to the minimal complete tool turns, and a
+ * candidate that cannot be made valid is dropped.
  * @param session - session owning the surface.
  * @param measurement - current measurement.
  * @param config - resolved policy.
- * @returns recommended ranges in priority order.
+ * @returns recommendations in priority order, all commit-ready.
  */
 export function recommendRanges(
   session: Session,
   measurement: TokenMeasurement,
   config: ResolvedConfig,
 ): RecommendedRange[] {
-  const recommendations: RecommendedRange[] = []
+  const recommendations: RecommendedRangeCandidate[] = []
   const head = recommendHeadRange(session, measurement, config)
   if (head !== null) recommendations.push(head)
   for (const big of recommendBigToolResults(session, measurement, config, 2)) {
     recommendations.push(big)
   }
   return recommendations
+    .map(candidate => commitReadyRange(session, measurement, candidate))
+    .filter((range): range is RecommendedRange => range !== null)
+}
+
+/**
+ * Extend or drop one candidate range so it is guaranteed commit-ready.
+ * @param session - session owning the surface.
+ * @param measurement - current measurement.
+ * @param candidate - unvalidated recommended range.
+ * @returns the same range when already balanced, the minimal balanced
+ *   extension when it can be made valid, or `null` when no valid span
+ *   encloses the candidate.
+ */
+function commitReadyRange(
+  session: Session,
+  measurement: TokenMeasurement,
+  candidate: RecommendedRangeCandidate,
+): RecommendedRange | null {
+  try {
+    validateSurfaceRange(session, candidate.startSeq, candidate.endSeq)
+    return { ...candidate, balanced: true }
+  } catch {
+    // Fall through to extension; validateSurfaceRange only fails on missing,
+    // reversed, or unbalanced spans, so a recommendation that is stale or
+    // unbalanced is either repaired to a balanced enclosing span or dropped.
+  }
+  const nodes = session.surface.nodes
+  const expanded = nearestBalancedRange(session, candidate.startSeq, candidate.endSeq)
+  if (expanded === null) return null
+  const startPosition = nodes.indexOf(expanded.start)
+  const endPosition = nodes.indexOf(expanded.end)
+  if (startPosition === -1 || endPosition === -1) return null
+  let tokens = 0
+  for (const node of measurement.nodes) {
+    tokens += node.tokens
+    if (node.seq === expanded.end) break
+  }
+  return {
+    startSeq: expanded.start,
+    endSeq: expanded.end,
+    startPosition,
+    endPosition,
+    tokens,
+    kind: candidate.kind,
+    reason: `${candidate.reason} (extended to keep tool calls paired)`,
+    balanced: true,
+  }
 }
 
 /**
@@ -263,9 +318,9 @@ export function recommendTierRanges(
   measurement: TokenMeasurement,
   config: ResolvedConfig,
   tier: number,
-): RecommendedRange[] {
+): RecommendedRangeCandidate[] {
   const snap = tierSnapshot(session)
-  const recommendations: RecommendedRange[] = []
+  const recommendations: RecommendedRangeCandidate[] = []
   let runStartIdx = -1
   let runTokens = 0
   const flush = (): void => {
@@ -313,7 +368,7 @@ function recommendHeadRange(
   session: Session,
   measurement: TokenMeasurement,
   config: ResolvedConfig,
-): RecommendedRange | null {
+): RecommendedRangeCandidate | null {
   const nodes = session.surface.nodes
   if (nodes.length === 0) return null
   const tailBoundary = nodes.length - config.protection.retainRecentMessages
@@ -354,11 +409,11 @@ function recommendBigToolResults(
   measurement: TokenMeasurement,
   config: ResolvedConfig,
   limit: number,
-): RecommendedRange[] {
+): RecommendedRangeCandidate[] {
   const candidates = measurement.nodes
     .filter(node => nodeKindOf(session, node.seq) === 'tool')
     .sort((left, right) => right.tokens - left.tokens)
-  const results: RecommendedRange[] = []
+  const results: RecommendedRangeCandidate[] = []
   for (const node of candidates) {
     if (results.length >= limit) break
     if (isProtectedNode(session, node.seq, config)) continue
