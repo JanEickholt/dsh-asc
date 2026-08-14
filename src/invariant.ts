@@ -20,7 +20,7 @@ import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 const PACKAGE_NAME = 'dsh-asc'
 
 /** Cordis companion plugin name. */
-export const name = 'compaction-agentic-invariant'
+export const name = 'dsh-asc-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 

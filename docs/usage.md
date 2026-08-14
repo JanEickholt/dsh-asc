@@ -28,7 +28,7 @@ config by id:
 ```yaml
 # cordis.patch.yml — insert the agentic backend
 - insert:
-    - id: compaction-agentic
+    - id: dsh-asc
       name: "dsh-asc"
       config:
         auto: true
@@ -53,7 +53,7 @@ dsh --profile web --dump-config | grep -A 20 compaction
 
 ```yaml
 - insert:
-    - id: compaction-agentic-invariant
+    - id: dsh-asc-invariant
       name: "dsh-asc/invariant"
 ```
 
@@ -174,7 +174,7 @@ only; large restores are governed by the `maxTokens` budget instead.
 ## Model experience
 
 The plugin injects a pinned compression-philosophy section into the system
-prompt (`tool:compaction-agentic`, order 114): the two failure modes, the
+prompt (`tool:dsh-asc`, order 114): the two failure modes, the
 single test ("is this content still needed by the current task step?"),
 proactive frugality, reversibility, and the four-tool workflow. The model
 therefore compresses proactively instead of waiting for nudges or overflow.

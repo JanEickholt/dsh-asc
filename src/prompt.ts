@@ -19,7 +19,7 @@ import type { Context } from '@deepseek-ai/cordis'
 const PHILOSOPHY_ORDER = 114
 
 /** Stable model-visible section name; tests assert its phrases verbatim. */
-export const PHILOSOPHY_SECTION_NAME = 'tool:compaction-agentic'
+export const PHILOSOPHY_SECTION_NAME = 'tool:dsh-asc'
 
 /**
  * The pinned doctrine text. Written from the model's perspective with only

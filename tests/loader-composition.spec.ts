@@ -108,7 +108,7 @@ describe('real Loader composition', () => {
 
     // The compression doctrine rides the system-prompt section seam.
     const assembled = await loaded.systemPrompt.assemble({})
-    expect(assembled.sections.some(section => section.name === 'tool:compaction-agentic'
+    expect(assembled.sections.some(section => section.name === 'tool:dsh-asc'
       && section.text.includes('CONTEXT MANAGEMENT DOCTRINE'))).toBe(true)
 
     // The pruner is an optional sibling and the engine sees it.
@@ -163,7 +163,7 @@ describe('real Loader composition', () => {
     // Five tools + the doctrine section are live.
     expect(loaded.tools.schemas().map(schema => schema.name)).toContain('context_recap')
     const before = await loaded.systemPrompt.assemble({})
-    expect(before.sections.some(section => section.name === 'tool:compaction-agentic')).toBe(true)
+    expect(before.sections.some(section => section.name === 'tool:dsh-asc')).toBe(true)
 
     // Find and dispose the plugin's fiber: registration is an effect.
     const fiber = [...loaded.loader.entries()]
@@ -172,7 +172,7 @@ describe('real Loader composition', () => {
     await fiber!.dispose()
 
     const after = await loaded.systemPrompt.assemble({})
-    expect(after.sections.some(section => section.name === 'tool:compaction-agentic')).toBe(false)
+    expect(after.sections.some(section => section.name === 'tool:dsh-asc')).toBe(false)
     expect(loaded.tools.schemas().map(schema => schema.name))
       .not.toContain('context_recap')
   })

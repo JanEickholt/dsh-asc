@@ -70,7 +70,7 @@ export type {
 } from './types.ts'
 
 /** Cordis plugin name. */
-export const name = 'compaction-agentic'
+export const name = 'dsh-asc'
 /** Hard dependencies required before the backend can register. */
 export const inject = ['llm', 'tokenMeter', 'sessions', 'tools', 'systemPrompt']
 /** Plugin configuration schema. */

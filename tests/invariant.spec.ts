@@ -16,7 +16,7 @@ async function contextWithInvariants(): Promise<Context> {
   return ctx
 }
 
-describe('compaction-agentic invariant companion', () => {
+describe('dsh-asc invariant companion', () => {
   it('mounts and registers under the package name', async () => {
     const ctx = await contextWithInvariants()
     expect(ctx.get('invariants')).toBeInstanceOf(InvariantRegistry)
