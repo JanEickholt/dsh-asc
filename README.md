@@ -71,7 +71,7 @@ and reconciles it into the profile's `dsh.profile.bundles` layer list):
 ```sh
 dsh plugin --profile <name> add ./packages/compaction-agentic   # local checkout
 dsh plugin --profile <name> add dsh-asc     # npm (when published)
-dsh plugin --profile <name> add github:you/dsh-asc  # git (runs prepare)
+dsh plugin --profile <name> add github:lmst2/dsh-asc  # git (runs prepare)
 ```
 
 The bundle patch mounts the backend row. Then disable the basic backend in
