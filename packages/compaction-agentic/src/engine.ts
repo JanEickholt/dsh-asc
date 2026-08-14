@@ -531,11 +531,12 @@ export class AgenticCompactionEngine extends CompactionEngine {
 
   /**
    * Model-driven decompression: resolve targets, replay their content from
-   * the log, and append the restored transcript as a durable user message.
+   * the log, and commit each transcript back into the surface at its
+   * checkpoint's position (in-place restore — the compression is undone).
    * @param agent - agent whose session is read and mutated.
    * @param target - compaction ids and/or a surface range, plus `full`.
    * @param signal - optional cancellation.
-   * @returns restored targets and skipped records.
+   * @returns restored targets (statistics only) and skipped records.
    */
   async decompressByModel(
     agent: Agent,
@@ -544,13 +545,6 @@ export class AgenticCompactionEngine extends CompactionEngine {
       startSeq?: number
       endSeq?: number
       full?: boolean
-      /**
-       * When set, the restored transcript is written to this path through the
-       * fs service instead of being returned inline, so large restores do not
-       * inflate the context window. Requires a mounted fs provider; without
-       * one the call fails loudly rather than silently inflating context.
-       */
-      toFile?: string
     },
     signal?: AbortSignal,
   ): Promise<DecompressResult> {
@@ -570,23 +564,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
       )
     }
     const restored = restoreTargets(session, targets, target.full === true, this.ctx.tokenMeter, this.config)
-    if (target.toFile === undefined) {
-      return { restored: restored.restored, skipped: [...unknown, ...restored.skipped] }
-    }
-    // toFile: persist the full transcripts to the fs seam and return only
-    // paths plus previews, so the model can reference the file without
-    // re-inflating its context window.
-    const fs = this.ctx.get('fs')
-    if (fs === null || fs === undefined) {
-      throw new Error('context_decompress toFile requires the fs service (mount a filesystem provider)')
-    }
-    const written: DecompressTarget[] = []
-    for (const entry of restored.restored) {
-      const resolved = await fs.resolve(target.toFile)
-      await fs.writeText(resolved, entry.content, undefined, signal)
-      written.push({ ...entry, content: '', preview: `written to ${target.toFile} (${entry.restoredChars} chars)` })
-    }
-    return { restored: written, skipped: [...unknown, ...restored.skipped] }
+    return { restored: restored.restored, skipped: [...unknown, ...restored.skipped] }
   }
 
   /** Full context status for `context_status`. */

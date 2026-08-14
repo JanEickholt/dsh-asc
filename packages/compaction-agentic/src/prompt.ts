@@ -1,11 +1,19 @@
 /**
  * The context-management doctrine injected into the system prompt.
  *
- * The four context tools are powerful but inert without guidance. This
- * section teaches a complete operating procedure — not just principles:
- * the judgment test, the tier system, the per-turn cadence, and exactly
- * which tool to use when. A model that reads this once should know how to
- * run its own context for the whole session without being told again.
+ * Two layers, deliberately separated:
+ *
+ * 1. PHILOSOPHY — WHY: the principles that make proactive compression
+ *    correct (the judgment test, reversibility, the two failure modes).
+ *    This is the worldview the model carries every turn.
+ *
+ * 2. DOCTRINE — HOW: the operating procedure that turns the philosophy
+ *    into action (the four tools, the tier system, the per-turn cadence).
+ *    This is the manual the model follows when it acts.
+ *
+ * A model that reads both knows not only what to do but why it is right —
+ * the organic understanding the philosophy alone or the manual alone
+ * cannot give.
  *
  * @module @dsh-asc/compaction-agentic/prompt
  */
@@ -24,9 +32,9 @@ export const PHILOSOPHY_SECTION_NAME = 'tool:compaction-agentic'
  * deliberate.
  */
 export const COMPACTION_PHILOSOPHY = [
-  'CONTEXT MANAGEMENT DOCTRINE',
+  'CONTEXT MANAGEMENT PHILOSOPHY',
   '',
-  'You operate in a context-constrained environment. Context management exists to serve the primary task — it must never distract from it. Your goal is to keep the working surface small and sharp, so retrieval quality stays high and the window never overflows. Two failure modes to avoid:',
+  'You operate in a context-constrained environment. Context management exists to serve the primary task — it must never distract from it. Two failure modes to avoid:',
   '- Over-compression: discarding details, decisions, or state the current work still needs.',
   '- Under-compression: letting verbose consumed output pile up until it degrades accuracy or overflows.',
   '',
@@ -34,14 +42,17 @@ export const COMPACTION_PHILOSOPHY = [
   'For any content, ask: "Is this still needed by the current task step?"',
   '- If yes — keep it verbatim.',
   '- If no — compress it now, not later. "Later" becomes "overflow".',
-  'Compress the moment content is consumed: verbose tool outputs you have already extracted the facts from, duplicate reads, abandoned explorations, completed task phases, long intermediate reasoning. Do not wait for nudges or for the window to fill.',
   '',
   'Compression is fully reversible. Every compressed range stays in the session log and can be restored exactly (context_decompress) or searched (context_search). There is no information loss — only a smaller working surface. Compress confidently.',
+  '',
+  'Never compress the current user instruction or content you still need exactly. When a nudge suggests compression but you judge the content still needed, say so and continue — the nudge is guidance, not a command.',
+  '',
+  'CONTEXT MANAGEMENT DOCTRINE',
   '',
   'THE TOOLS',
   '- context_status — your dashboard. Lists token usage, checkpoints by tier, protected nodes, recommended ranges, and the recent surface with seqs. Run it before deciding what to compress.',
   '- context_compress — your main tool. Replaces one or more surface ranges with checkpoints you write. Each entry: startSeq, endSeq, summary. Preserve file paths, identifiers, decisions, and the pending next step in every summary. Ranges that would split a tool call from its result are extended automatically; the result tells you when.',
-  '- context_decompress — restores compressed content by replaying the log (one tier up by default; full: true reaches raw content). Use when a checkpoint summary is not enough.',
+  '- context_decompress — undoes a compression. The original content is committed back into the surface at the checkpoint\'s own position — the compression is undone, not copied. Use when a checkpoint summary is not enough.',
   '- context_search — full-text search over the whole log, including compressed originals. Use to find specific facts without restoring.',
   '',
   'THE TIER SYSTEM',

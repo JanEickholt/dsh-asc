@@ -350,7 +350,7 @@ function toolTurnSession(results = 1): Session {
 }
 
 describe('AgenticCompactionEngine.decompressByModel', () => {
-  it('restores by compaction id and returns the full transcript', async () => {
+  it('restores by compaction id and replaces the checkpoint in place', async () => {
     const { engine } = engineWith()
     const session = conversationSession(4)
     const agent = agentOf(session)
@@ -361,14 +361,21 @@ describe('AgenticCompactionEngine.decompressByModel', () => {
       summary: TURN_SUMMARY,
     }])
     const id = compressed.compressed[0]!.compactionId
+    const view = checkpointViews(session).find(candidate => candidate.compactionId === id)!
     const result = await engine.decompressByModel(agent, { compactionIds: [id] })
     expect(result.skipped).toEqual([])
     expect(result.restored).toHaveLength(1)
     expect(result.restored[0]!.compactionId).toBe(id)
-    expect(result.restored[0]!.content).toContain('user 1')
-    // The restore writes no session events: the transcript travels in the
-    // tool result, keeping the tool-call/result pairing legal.
-    expect(session.events.length).toBeLessThan(60)
+    // Statistics only; the transcript is back in the surface at the
+    // checkpoint's old position (in-place restore, no duplicated copy).
+    expect(result.restored[0]!.content).toBe('')
+    expect(session.surface.nodes).not.toContain(view.seq)
+    const restoredSeq = session.surface.nodes.find(seq => {
+      const event = session.events[seq]
+      return event?.type === 'user/message'
+        && (event.data.source as { op?: string }).op === 'decompress'
+    })
+    expect(restoredSeq).toBeDefined()
   })
 
   it('restores every overlapping checkpoint for a range', async () => {
@@ -422,16 +429,8 @@ describe('AgenticCompactionEngine.decompressByModel', () => {
     expect(result.restored).toEqual([])
     expect(result.skipped).toEqual(['missing'])
   })
-  it('writes restored content to a file when toFile is set', async () => {
-    const { ctx, engine } = engineWith()
-    const writes: Array<{ path: string; content: string }> = []
-    ctx.provide('fs', {
-      resolve: async (path: string) => ({ path }),
-      writeText: async (target: { path: string }, content: string) => {
-        writes.push({ path: target.path, content })
-        return { version: 1 }
-      },
-    } as never)
+  it('restores content IN PLACE: the checkpoint node is replaced by the transcript', async () => {
+    const { engine } = engineWith()
     const session = conversationSession(2)
     const agent = agentOf(session)
     const nodes = [...session.surface.nodes]
@@ -440,20 +439,28 @@ describe('AgenticCompactionEngine.decompressByModel', () => {
       endSeq: nodes[0]!,
       summary: 'tiny',
     }])
-    const id = checkpointViews(session)[0]!.compactionId
-    const result = await engine.decompressByModel(agent, { compactionIds: [id], toFile: '/tmp/restore.txt' })
+    const view = checkpointViews(session)[0]!
+    const id = view.compactionId
+    const result = await engine.decompressByModel(agent, { compactionIds: [id] })
     expect(result.skipped).toEqual([])
     expect(result.restored).toHaveLength(1)
-    // The inline content is emptied and the preview points at the file.
+    // The checkpoint node is gone from the surface: the restored transcript
+    // replaced it at its own position.
+    expect(session.surface.nodes).not.toContain(view.seq)
+    // The restored node carries the original content and the restored source.
+    const restoredSeq = session.surface.nodes.find(seq => {
+      const event = session.events[seq]
+      return event?.type === 'user/message'
+        && (event.data.source as { op?: string }).op === 'decompress'
+    })
+    expect(restoredSeq).toBeDefined()
+    // Statistics only in the result — no inline content.
     expect(result.restored[0]!.content).toBe('')
-    expect(result.restored[0]!.preview).toContain('/tmp/restore.txt')
-    expect(writes).toHaveLength(1)
-    expect(writes[0]!.path).toBe('/tmp/restore.txt')
-    expect(writes[0]!.content.length).toBeGreaterThan(0)
+    expect(result.restored[0]!.restoredChars).toBeGreaterThan(0)
   })
 
-  it('fails loudly when toFile is set without an fs service', async () => {
-    const { engine } = engineWith()
+  it('keeps the checkpoint when restore exceeds the token budget', async () => {
+    const { engine } = engineWith({ decompress: { maxTokens: 10 } })
     const session = conversationSession(2)
     const agent = agentOf(session)
     const nodes = [...session.surface.nodes]
@@ -462,25 +469,12 @@ describe('AgenticCompactionEngine.decompressByModel', () => {
       endSeq: nodes[0]!,
       summary: 'tiny',
     }])
-    const id = checkpointViews(session)[0]!.compactionId
-    await expect(engine.decompressByModel(agent, { compactionIds: [id], toFile: '/tmp/x.txt' }))
-      .rejects.toThrow(/toFile requires the fs service/)
-  })
-
-  it('restores inline by default when toFile is absent', async () => {
-    const { engine } = engineWith()
-    const session = conversationSession(2)
-    const agent = agentOf(session)
-    const nodes = [...session.surface.nodes]
-    await engine.compressByModel(agent, [{
-      startSeq: nodes[0]!,
-      endSeq: nodes[0]!,
-      summary: 'tiny',
-    }])
-    const id = checkpointViews(session)[0]!.compactionId
-    const result = await engine.decompressByModel(agent, { compactionIds: [id] })
-    expect(result.restored).toHaveLength(1)
-    expect(result.restored[0]!.content.length).toBeGreaterThan(0)
+    const view = checkpointViews(session)[0]!
+    const result = await engine.decompressByModel(agent, { compactionIds: [view.compactionId] })
+    expect(result.restored).toEqual([])
+    expect(result.skipped).toHaveLength(1)
+    // The checkpoint survives untouched.
+    expect(session.surface.nodes).toContain(view.seq)
   })
 })
 

@@ -179,9 +179,9 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
     ctx.tools.register(defineTool({
       name: 'context_decompress',
       description: [
-        'Restore previously compressed content into the visible conversation.',
+        'Restore previously compressed content INTO the conversation surface.',
         'Compressed content is never lost: it stays in the session log and is restored by replay. Use this when you need exact details a checkpoint summary cannot provide.',
-        'The complete restored transcript is returned as this tool\'s result and appears in your next context window. A short preview is included in the result metadata.',
+        'The restored transcript is committed back into the surface at the checkpoint\'s own position — the compression is undone, and the original content appears where it used to be in your next context window. The tool result reports statistics and a preview only.',
         '',
         'Two targeting modes (mutually exclusive):',
         '- compactionIds: exact checkpoint ids from context_status (e.g. ["bd2a1c5e-..."]). Array-only transports may pass the bare id array.',
@@ -207,10 +207,6 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
           type: 'boolean',
           description: 'Expand recursively to raw content. Default false (restore one tier up).',
         },
-        toFile: {
-          type: 'string',
-          description: 'Write the restored transcript to this path through the filesystem service instead of returning it inline. Use for very large restores that would otherwise inflate the context window; the result reports the path and size.',
-        },
       },
       output: {
         schema: {
@@ -231,7 +227,6 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
                   restoredTokens: { type: 'number', required: true },
                   restoredChars: { type: 'number', required: true },
                   preview: { type: 'string', required: true },
-                  content: { type: 'string', required: true },
                 },
               },
             },
@@ -243,9 +238,10 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
           for (const entry of value.restored) {
             lines.push(
               `restored checkpoint ${entry.compactionId} (tier ${entry.tier}): ${entry.restoredSeqs.length} `
-              + `events, ~${entry.restoredTokens} tokens, ${entry.restoredChars} chars`,
+              + `events, ~${entry.restoredTokens} tokens, ${entry.restoredChars} chars — content is back `
+              + 'in the surface at its original position',
             )
-            lines.push(entry.content)
+            if (entry.preview.length > 0) lines.push(`preview: ${entry.preview}`)
           }
           for (const skip of value.skipped) lines.push(`skipped: ${skip}`)
           if (lines.length === 0) lines.push('nothing restored')
@@ -265,7 +261,6 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
           ...args.startSeq === undefined ? {} : { startSeq: args.startSeq },
           ...args.endSeq === undefined ? {} : { endSeq: args.endSeq },
           ...args.full === undefined ? {} : { full: args.full },
-          ...args.toFile === undefined ? {} : { toFile: args.toFile },
         }, exec.signal)
         return {
           restored: result.restored.map(entry => ({
@@ -276,7 +271,6 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
             restoredTokens: entry.restoredTokens,
             restoredChars: entry.restoredChars,
             preview: entry.preview,
-            content: entry.content,
           })),
           skipped: [...result.skipped],
         }

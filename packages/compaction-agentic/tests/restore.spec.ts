@@ -100,24 +100,35 @@ describe('expandRestoreSeqs', () => {
 })
 
 describe('buildRestoredContent and restoreTargets', () => {
-  it('replays the shadowed transcript into the result without log writes', async () => {
+  it('restores IN PLACE: replaces the checkpoint node with the transcript', async () => {
     const ctx = createContext()
     const session = conversationSession(4)
     const result = await commitT1(session, ctx.tokenMeter)
     const config = resolveConfig({})
     const { targets } = resolveRestoreTargets(session, [result.compactionId], undefined)
-    const logLength = session.events.length
+    const checkpointSeq = targets[0]!.checkpointSeq
+    expect(session.surface.nodes).toContain(checkpointSeq)
     const { restored, skipped } = restoreTargets(session, targets, false, ctx.tokenMeter, config)
     expect(skipped).toEqual([])
     expect(restored).toHaveLength(1)
     expect(restored[0]!.compactionId).toBe(result.compactionId)
     expect(restored[0]!.restoredTokens).toBeGreaterThan(0)
-    // The full transcript travels in the tool result (the event following
-    // the assistant tool-call must be the tool result itself), so the
-    // restore performs no session writes at all.
-    expect(restored[0]!.content).toContain('user 1')
+    // Statistics only: no inline content in the result.
+    expect(restored[0]!.content).toBe('')
     expect(restored[0]!.preview.length).toBeGreaterThan(0)
-    expect(session.events.length).toBe(logLength)
+    // The checkpoint node is gone from the surface — replaced in place by
+    // the restored transcript, which carries the restored source marker.
+    expect(session.surface.nodes).not.toContain(checkpointSeq)
+    const restoredSeq = session.surface.nodes.find(seq => {
+      const event = session.events[seq]
+      return event?.type === 'user/message'
+        && (event.data.source as { op?: string }).op === 'decompress'
+    })
+    expect(restoredSeq).toBeDefined()
+    const restoredEvent = session.events[restoredSeq!]
+    const text = (restoredEvent as { data: { content: Array<{ text: string }> } }).data.content
+      .map(block => block.text).join('')
+    expect(text).toContain('user 1')
   })
 
   it('skips targets over the restore budget', async () => {

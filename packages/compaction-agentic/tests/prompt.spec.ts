@@ -4,25 +4,29 @@ import { createContext } from './helpers.ts'
 import { COMPACTION_PHILOSOPHY, PHILOSOPHY_SECTION_NAME, registerPhilosophyPrompt } from '../src/prompt.ts'
 
 describe('registerPhilosophyPrompt', () => {
-  it('registers a section teaching the complete context-management doctrine', async () => {
+  it('registers a two-layer section: philosophy (why) then doctrine (how)', async () => {
     const ctx = createContext()
     void new SystemPrompt(ctx, {})
     const dispose = registerPhilosophyPrompt(ctx)
     const assembled = await ctx.systemPrompt.assemble({})
     const section = assembled.sections.find(section => section.name === PHILOSOPHY_SECTION_NAME)
     expect(section).toBeDefined()
-    expect(section!.text).toContain('CONTEXT MANAGEMENT DOCTRINE')
+    // Layer 1 — philosophy: principles, judgment test, reversibility.
+    expect(section!.text).toContain('CONTEXT MANAGEMENT PHILOSOPHY')
     expect(section!.text).toContain('Is this still needed by the current task step?')
     expect(section!.text).toContain('Compression is fully reversible')
+    // Layer 2 — doctrine: tools, tiers, cadence, batch rule.
+    expect(section!.text).toContain('CONTEXT MANAGEMENT DOCTRINE')
     expect(section!.text).toContain('context_status')
     expect(section!.text).toContain('context_compress')
     expect(section!.text).toContain('context_decompress')
     expect(section!.text).toContain('context_search')
-    // The doctrine is an operating procedure, not just principles: it names
-    // the tier system, the per-turn cadence, and the batch rule.
     expect(section!.text).toContain('THE TIER SYSTEM')
     expect(section!.text).toContain('THE OPERATING CADENCE')
     expect(section!.text).toContain('batch 2–3 ranges in a single context_compress call')
+    // Philosophy comes first, doctrine second: the why precedes the how.
+    expect(section!.text.indexOf('CONTEXT MANAGEMENT PHILOSOPHY'))
+      .toBeLessThan(section!.text.indexOf('CONTEXT MANAGEMENT DOCTRINE'))
     // Guidance, not a command: the model may decline a nudge.
     expect(section!.text).toContain('the nudge is guidance, not a command')
     dispose()

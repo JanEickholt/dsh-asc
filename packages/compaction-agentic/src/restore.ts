@@ -5,16 +5,16 @@
  * restoring compressed content costs zero stored state: resolve the target
  * checkpoint, expand its shadow chain (one tier by default, `full` to the
  * raw bottom), replay the leaf events into derived messages, serialize them,
- * and return the transcript for the tool result. The transcript therefore
- * lands in the `tool/result` event that immediately follows the assistant's
- * tool-call — an interleaved user message would violate the provider's
- * tool-call pairing contract — and the model sees the full restored content
- * in the next request, mirroring the upstream decompression semantics.
+ * and commit the transcript BACK into the surface at the checkpoint's own
+ * position (an in-place replace). The model sees the original content where
+ * it used to be — the compression is undone, exactly like ACP's
+ * deactivate-and-restore — instead of a duplicated copy in a tool/result.
  *
  * @module @dsh-asc/compaction-agentic/restore
  */
 
 import type { Message } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import type { CompactionId } from '@deepseek-ai/dsh-compaction'
 import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
@@ -57,6 +57,25 @@ export type OverflowNoticeSource = typeof OVERFLOW_NOTICE_SOURCE
  */
 export function overflowNoticeSource(): OverflowNoticeSource {
   return OVERFLOW_NOTICE_SOURCE
+}
+
+const RESTORED_SOURCE = Object.freeze({
+  kind: 'plugin',
+  plugin: PLUGIN_NAME,
+  op: 'decompress',
+} as const)
+
+/** Message provenance carried by an in-place restored transcript. */
+export type RestoredSource = typeof RESTORED_SOURCE & { readonly compactionId: CompactionId }
+
+/**
+ * Create provenance for a restored transcript committed back into the
+ * surface, marking it as plugin-restored content (not a fresh user prompt).
+ * @param compactionId - the checkpoint whose content was restored.
+ * @returns immutable restored source.
+ */
+export function restoredSource(compactionId: CompactionId): RestoredSource {
+  return Object.freeze({ ...RESTORED_SOURCE, compactionId })
 }
 
 /** The preview length included in tool results. */
@@ -207,17 +226,21 @@ export function buildRestoredContent(
 }
 
 /**
- * Restore a list of targets under the configured budget. The restored
- * transcript is returned for the tool result; no log-only audit event is
- * written because this harness release has no registration surface for
- * out-of-tree event types (the persistence layer refuses unknown types).
- * The transcript itself is durable in the `tool/result` event.
+ * Restore a list of targets under the configured budget. Each restored
+ * transcript is committed back INTO the surface at its checkpoint's
+ * position (an in-place replace: the checkpoint node is shadowed by a
+ * user/message carrying the original content), so the model sees the
+ * original content where it used to be — the same semantics as ACP's
+ * deactivate-and-restore, without leaving the restored copy in a
+ * tool/result that doubles the footprint. The tool result reports the
+ * statistics and a preview only.
  * @param session - session owning the log.
  * @param targets - resolved targets in restore order.
  * @param full - whether to expand to raw content.
  * @param meter - token meter pricing restored messages.
  * @param config - resolved budget policy.
- * @returns the restored targets (with full content) and skipped ids.
+ * @returns the restored targets (statistics only, no inline content) and
+ *   skipped ids.
  */
 export function restoreTargets(
   session: Session,
@@ -239,6 +262,21 @@ export function restoreTargets(
       continue
     }
     budgetUsed += tokens
+    // Commit the restored transcript back into the surface at the
+    // checkpoint's own position. The checkpoint node is shadowed by the
+    // restored content, exactly as if the compression had been undone.
+    const checkpointIdx = session.surface.nodes.indexOf(target.checkpointSeq)
+    if (checkpointIdx === -1) {
+      skipped.push(`${target.compactionId} (checkpoint seq ${target.checkpointSeq} is no longer on the surface)`)
+      continue
+    }
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text }],
+      source: restoredSource(target.compactionId),
+    }), {
+      surfaceOp: { op: 'replace', start: target.checkpointSeq, end: target.checkpointSeq },
+      sourceEventSeqs: [target.checkpointSeq, ...restoredSeqs],
+    })
     restored.push({
       compactionId: target.compactionId,
       tier: target.tier,
@@ -247,7 +285,7 @@ export function restoreTargets(
       restoredTokens: tokens,
       restoredChars: chars,
       preview: textPreview(text, RESTORE_PREVIEW_CHARS),
-      content: text,
+      content: '',
     })
   }
   return { restored, skipped }
