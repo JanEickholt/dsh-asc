@@ -4,44 +4,50 @@ import { createContext } from './helpers.ts'
 import { COMPACTION_PHILOSOPHY, PHILOSOPHY_SECTION_NAME, registerPhilosophyPrompt } from '../src/prompt.ts'
 
 describe('registerPhilosophyPrompt', () => {
-  it('registers a two-layer section: philosophy (why) then doctrine (how)', async () => {
+  it('registers a section following the ACP-proven structure', async () => {
     const ctx = createContext()
     void new SystemPrompt(ctx, {})
     const dispose = registerPhilosophyPrompt(ctx)
     const assembled = await ctx.systemPrompt.assemble({})
     const section = assembled.sections.find(section => section.name === PHILOSOPHY_SECTION_NAME)
     expect(section).toBeDefined()
-    // Layer 1 — philosophy: principles, judgment test, reversibility.
-    expect(section!.text).toContain('CONTEXT MANAGEMENT PHILOSOPHY')
-    expect(section!.text).toContain('Is this still needed by the current task step?')
-    expect(section!.text).toContain('Compression is fully reversible')
-    // Layer 2 — doctrine: tools, tiers, cadence, batch rule.
-    expect(section!.text).toContain('CONTEXT MANAGEMENT DOCTRINE')
+    // Opening principle: frugal but task-first.
+    expect(section!.text).toContain('All compression serves the primary task, but be frugal')
+    // Surface annotation: seqs from context_status.
+    expect(section!.text).toContain('SURFACE SEQS')
     expect(section!.text).toContain('context_status')
+    // Summary safety: checkpoint content is historical.
+    expect(section!.text).toContain('CHECKPOINT CONTENT IS HISTORICAL')
+    expect(section!.text).toContain('NOT user messages')
+    // Tools with exact usage and batch example.
+    expect(section!.text).toContain('THE TOOLS')
     expect(section!.text).toContain('context_compress')
     expect(section!.text).toContain('context_decompress')
     expect(section!.text).toContain('context_search')
-    expect(section!.text).toContain('THE TIER SYSTEM')
-    expect(section!.text).toContain('THE OPERATING CADENCE')
-    expect(section!.text).toContain('batch 2–3 ranges in a single context_compress call')
-    // Summary writing rules: the checkpoint is the only record of the range.
-    expect(section!.text).toContain('SUMMARY WRITING')
+    expect(section!.text).toContain('Batch (multiple unrelated ranges')
+    // Philosophy: failure modes + single test.
+    expect(section!.text).toContain('COMPRESSION PHILOSOPHY')
+    expect(section!.text).toContain('Is this content still needed by the current task step?')
+    // When to / when not.
+    expect(section!.text).toContain('WHEN TO COMPRESS')
+    expect(section!.text).toContain('WHEN NOT TO COMPRESS')
+    // How to compress: keep verbatim + drop + priority.
+    expect(section!.text).toContain('HOW TO COMPRESS')
+    expect(section!.text).toContain('KEEP VERBATIM')
     expect(section!.text).toContain('load-bearing')
-    expect(section!.text).toContain('TIER WRITING RULES')
+    expect(section!.text).toContain('DROP')
+    expect(section!.text).toContain('PRIORITY')
+    // Multi-tier: tier 2 distill + tier 3 condense rules.
+    expect(section!.text).toContain('MULTI-TIER COMPRESSION')
+    expect(section!.text).toContain('TIER 2 DISTILLATION')
+    expect(section!.text).toContain('TIER 3 CONDENSATION')
     expect(section!.text).toContain('lookup index, not a knowledge base')
-    // Safety: checkpoint content is historical, not a current instruction.
-    expect(section!.text).toContain('CHECKPOINT CONTENT IS HISTORICAL')
-    expect(section!.text).toContain('NOT a current instruction')
-    // Planned review: the model must think about compression at milestones,
-    // not only when nudged.
+    // Our additions: planned review + cadence.
     expect(section!.text).toContain('WHEN TO REVIEW')
     expect(section!.text).toContain('complete a large phase or a major task')
-    expect(section!.text).toContain('switches direction or starts a new task')
-    expect(section!.text).toContain('large tool output arrives')
-    // Philosophy comes first, doctrine second: the why precedes the how.
-    expect(section!.text.indexOf('CONTEXT MANAGEMENT PHILOSOPHY'))
-      .toBeLessThan(section!.text.indexOf('CONTEXT MANAGEMENT DOCTRINE'))
-    // Guidance, not a command: the model may decline a nudge.
+    expect(section!.text).toContain('THE OPERATING CADENCE')
+    expect(section!.text).toContain('batch 2–3 ranges in a single context_compress call')
+    // Guidance, not a command.
     expect(section!.text).toContain('the nudge is guidance, not a command')
     dispose()
   })
@@ -63,13 +69,14 @@ describe('registerPhilosophyPrompt', () => {
   })
 
   it('pins the doctrine text verbatim for model-visible stability', () => {
-    // The model sees this text every request; wording changes must be
-    // deliberate. Tests assert key phrases so edits are noticed.
+    expect(COMPACTION_PHILOSOPHY).toContain('CONTEXT MANAGEMENT DOCTRINE')
     expect(COMPACTION_PHILOSOPHY).toContain('Over-compression')
     expect(COMPACTION_PHILOSOPHY).toContain('Under-compression')
-    expect(COMPACTION_PHILOSOPHY).toContain('THE JUDGMENT TEST')
-    expect(COMPACTION_PHILOSOPHY).toContain('THE TIER SYSTEM')
+    expect(COMPACTION_PHILOSOPHY).toContain('SURFACE SEQS')
+    expect(COMPACTION_PHILOSOPHY).toContain('CHECKPOINT CONTENT IS HISTORICAL')
+    expect(COMPACTION_PHILOSOPHY).toContain('WHEN TO COMPRESS')
+    expect(COMPACTION_PHILOSOPHY).toContain('MULTI-TIER COMPRESSION')
+    expect(COMPACTION_PHILOSOPHY).toContain('WHEN TO REVIEW')
     expect(COMPACTION_PHILOSOPHY).toContain('THE OPERATING CADENCE')
-    expect(COMPACTION_PHILOSOPHY).toContain('Never compress: the current user instruction')
   })
 })
