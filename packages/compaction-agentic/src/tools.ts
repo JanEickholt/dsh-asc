@@ -179,9 +179,10 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
     ctx.tools.register(defineTool({
       name: 'context_decompress',
       description: [
-        'Restore previously compressed content INTO the conversation surface.',
+        'Restore previously compressed content.',
         'Compressed content is never lost: it stays in the session log and is restored by replay. Use this when you need exact details a checkpoint summary cannot provide.',
-        'The restored transcript is committed back into the surface at the checkpoint\'s own position — the compression is undone, and the original content appears where it used to be in your next context window. The tool result reports statistics and a preview only.',
+        'By default the restored transcript is committed back INTO the surface at the checkpoint\'s own position — the compression is undone, and the original content appears where it used to be in your next context window. The tool result reports statistics and a preview only.',
+        'With toFile, the transcript is written to that path through the filesystem service and the checkpoint stays compressed — use for very large restores that would otherwise inflate context; the result reports the path.',
         '',
         'Two targeting modes (mutually exclusive):',
         '- compactionIds: exact checkpoint ids from context_status (e.g. ["bd2a1c5e-..."]). Array-only transports may pass the bare id array.',
@@ -206,6 +207,10 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
         full: {
           type: 'boolean',
           description: 'Expand recursively to raw content. Default false (restore one tier up).',
+        },
+        toFile: {
+          type: 'string',
+          description: 'Write the restored transcript to this path through the filesystem service instead of restoring in place; the checkpoint stays compressed. Requires a mounted fs provider.',
         },
       },
       output: {
@@ -261,6 +266,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
           ...args.startSeq === undefined ? {} : { startSeq: args.startSeq },
           ...args.endSeq === undefined ? {} : { endSeq: args.endSeq },
           ...args.full === undefined ? {} : { full: args.full },
+          ...args.toFile === undefined ? {} : { toFile: args.toFile },
         }, exec.signal)
         return {
           restored: result.restored.map(entry => ({

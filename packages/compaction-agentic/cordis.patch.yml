@@ -1,0 +1,42 @@
+# @dsh-asc/compaction-agentic bundle patch: mounts the agentic compaction
+# backend into a dsh profile's host composition.
+#
+# Install: `dsh plugin --profile <name> add <this package>` (npm name, local
+# path, git URL, or tarball). The `dsh plugin` command pnpm-installs the
+# package into the profile and reconciles it into the profile's
+# `dsh.profile.bundles` layer list; this patch inserts the plugin rows.
+#
+# The backend replaces @deepseek-ai/dsh-compaction-basic on the same
+# ctx.compaction seam — disable that row in the profile's own
+# cordis.patch.yml (or a --patch overlay) so only one provider owns the seam:
+#
+#   - id: compaction-basic
+#     disabled: true
+#
+# Optional rows to add in the profile layer:
+#   - id: session-query-sqlite          (context_search full-text backend)
+#   - id: compaction-agentic-invariant  (runtime invariant companion)
+- insert:
+    - id: compaction-agentic
+      name: '@dsh-asc/compaction-agentic'
+      config:
+        auto: true
+        nudge:
+          minRatio: 0.10
+          maxRatio: 0.8
+          frequency: 5
+          growthTokens: 50000
+        tiers:
+          maxTier: 3
+          growthTokens: 10000
+        qualityGate:
+          enabled: true
+          blocking: true
+        fallback:
+          enabled: true
+        protection:
+          retainRecentMessages: 20
+          protectFirstUserMessage: true
+        decompress:
+          maxTokens: 60000
+          maxBlocks: 8

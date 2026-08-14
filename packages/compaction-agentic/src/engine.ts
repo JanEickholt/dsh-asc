@@ -58,13 +58,14 @@ import {
   validateSurfaceRange,
 } from './protected.ts'
 import { nodeKindOf, tierSnapshot, tierTokenUsage } from './tier.ts'
-import { nudgeSource, overflowNoticeSource, PLUGIN_NAME, resolveRestoreTargets, restoreTargets } from './restore.ts'
+import { buildRestoredContent, nudgeSource, overflowNoticeSource, PLUGIN_NAME, resolveRestoreTargets, restoreTargets } from './restore.ts'
 import { serializeMessages, textPreview } from './text.ts'
 import type {
   CompressionFailure,
   CompressionOutcome,
   ContextStatus,
   DecompressResult,
+  DecompressTarget,
   ModelCompressResult,
   ModelCompressionRange,
   QualityMetrics,
@@ -561,6 +562,11 @@ export class AgenticCompactionEngine extends CompactionEngine {
    * Model-driven decompression: resolve targets, replay their content from
    * the log, and commit each transcript back into the surface at its
    * checkpoint's position (in-place restore — the compression is undone).
+   *
+   * With `toFile`, the restored transcript is instead written through the
+   * optional fs service and the checkpoint is left compressed — the model
+   * can read the file without inflating its context window. Requires a
+   * mounted fs provider; without one the call fails loudly.
    * @param agent - agent whose session is read and mutated.
    * @param target - compaction ids and/or a surface range, plus `full`.
    * @param signal - optional cancellation.
@@ -573,6 +579,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
       startSeq?: number
       endSeq?: number
       full?: boolean
+      toFile?: string
     },
     signal?: AbortSignal,
   ): Promise<DecompressResult> {
@@ -590,6 +597,41 @@ export class AgenticCompactionEngine extends CompactionEngine {
         `context_decompress restores at most ${this.config.decompress.maxBlocks} blocks per call `
         + `(resolved ${targets.length}); narrow the range or pass explicit compactionIds`,
       )
+    }
+    if (target.toFile !== undefined) {
+      // toFile mode: write the transcripts through the fs seam, keep the
+      // checkpoints compressed, return paths + previews only.
+      const fs = this.ctx.get('fs')
+      if (fs === null || fs === undefined) {
+        throw new Error('context_decompress toFile requires the fs service (mount a filesystem provider)')
+      }
+      const restored: DecompressTarget[] = []
+      const skipped: string[] = [...unknown]
+      let budgetUsed = 0
+      for (const t of targets) {
+        const { restoredSeqs, text, tokens, chars } = buildRestoredContent(session, t, target.full === true, this.ctx.tokenMeter)
+        if (budgetUsed + tokens > this.config.decompress.maxTokens) {
+          skipped.push(
+            `${t.compactionId} (${tokens} tokens; combined ${budgetUsed + tokens} exceeds `
+            + `the ${this.config.decompress.maxTokens}-token restore budget)`,
+          )
+          continue
+        }
+        budgetUsed += tokens
+        const resolved = await fs.resolve(target.toFile)
+        await fs.writeText(resolved, text, undefined, signal)
+        restored.push({
+          compactionId: t.compactionId,
+          tier: t.tier,
+          checkpointSeq: t.checkpointSeq,
+          restoredSeqs,
+          restoredTokens: tokens,
+          restoredChars: chars,
+          preview: `written to ${target.toFile} (${chars} chars)`,
+          content: '',
+        })
+      }
+      return { restored, skipped }
     }
     const restored = restoreTargets(session, targets, target.full === true, this.ctx.tokenMeter, this.config)
     return { restored: restored.restored, skipped: [...unknown, ...restored.skipped] }

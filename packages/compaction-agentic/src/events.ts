@@ -14,8 +14,11 @@
  *   `llmStreamCall` flag (model-written vs fallback LLM call);
  * - nudges are appended `user/message` events whose source is
  *   `{ kind: 'plugin', plugin: 'dsh-asc', purpose: 'nudge' }`;
- * - decompressed transcripts travel in the `tool/result` of
- *   `context_decompress`.
+ * - decompression restores in place: the checkpoint node is replaced by a
+ *   `user/message` whose source is `{ kind: 'plugin', plugin: 'dsh-asc',
+ *   op: 'decompress' }` carrying the replayed transcript.
+ * - automatic (fallback) compactions announce themselves with a
+ *   `user/message` whose source purpose is `overflow-notice`.
  *
  * Nudge cadence and tier baselines are transient in-memory state (a fresh
  * process re-establishes the baseline before nudging again), documented in

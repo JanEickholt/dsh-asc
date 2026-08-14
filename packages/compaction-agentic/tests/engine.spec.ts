@@ -476,6 +476,57 @@ describe('AgenticCompactionEngine.decompressByModel', () => {
     // The checkpoint survives untouched.
     expect(session.surface.nodes).toContain(view.seq)
   })
+
+  it('writes the transcript to a file with toFile and keeps the checkpoint compressed', async () => {
+    const { ctx, engine } = engineWith()
+    const writes: Array<{ path: string; content: string }> = []
+    ctx.provide('fs', {
+      resolve: async (path: string) => ({ path }),
+      writeText: async (target: { path: string }, content: string) => {
+        writes.push({ path: target.path, content })
+        return { version: 1 }
+      },
+    } as never)
+    const session = conversationSession(2)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    await engine.compressByModel(agent, [{
+      startSeq: nodes[0]!,
+      endSeq: nodes[0]!,
+      summary: 'tiny',
+    }])
+    const view = checkpointViews(session)[0]!
+    const result = await engine.decompressByModel(agent, {
+      compactionIds: [view.compactionId],
+      toFile: '/tmp/restore.txt',
+    })
+    expect(result.skipped).toEqual([])
+    expect(result.restored).toHaveLength(1)
+    expect(result.restored[0]!.content).toBe('')
+    expect(result.restored[0]!.preview).toContain('/tmp/restore.txt')
+    expect(writes).toHaveLength(1)
+    expect(writes[0]!.path).toBe('/tmp/restore.txt')
+    expect(writes[0]!.content.length).toBeGreaterThan(0)
+    // The checkpoint stays compressed: NOT replaced in place.
+    expect(session.surface.nodes).toContain(view.seq)
+  })
+
+  it('fails loudly when toFile is set without an fs service', async () => {
+    const { engine } = engineWith()
+    const session = conversationSession(2)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    await engine.compressByModel(agent, [{
+      startSeq: nodes[0]!,
+      endSeq: nodes[0]!,
+      summary: 'tiny',
+    }])
+    const view = checkpointViews(session)[0]!
+    await expect(engine.decompressByModel(agent, {
+      compactionIds: [view.compactionId],
+      toFile: '/tmp/x.txt',
+    })).rejects.toThrow(/toFile requires the fs service/)
+  })
 })
 
 describe('AgenticCompactionEngine.recapByModel', () => {

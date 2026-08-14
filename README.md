@@ -41,13 +41,14 @@ to deterministic selection plus cache-friendly LLM summarization.
   pre-validated so acting on one never hits a commit-time rejection.
   Failures teach the repair: unbalanced spans name the nearest balanced
   range, and quality-gate rejections report the measured metrics.
-- **`context_decompress`** — restore compressed content by replaying the
-  log (tier-aware: one tier up by default, `full: true` to the raw bottom).
-  An optional `toFile` path writes the transcript through the filesystem
-  service instead of inflating the context window.
+- **`context_decompress`** — undo a compression: the original content is
+  committed back into the surface at the checkpoint's own position
+  (tier-aware: one tier up by default, `full: true` to the raw bottom).
 - **`context_status`** — usage, checkpoints by tier, per-tier token totals,
-  protected content (per-node flags), pre-validated recommendations, and a
-  preview of the recent surface.
+  a system/conversation breakdown, protected content (per-node flags),
+  pre-validated recommendations, and a preview of the recent surface.
+- **`context_recap`** — re-fetch checkpoint summaries without decompressing
+  the original content, read from the durable log.
 - **`context_search`** — full-text search over the whole session log,
   including shadowed (compressed) content.
 
@@ -64,25 +65,31 @@ without the model, announcing each automatic compaction on the surface.
 pnpm install && pnpm test && pnpm build
 ```
 
-Mount in a DSH composition (profile `cordis.patch.yml`):
+Install into a DSH profile (standard bundle install — pnpm-links the package
+and reconciles it into the profile's `dsh.profile.bundles` layer list):
 
-```yaml
-- insert:
-    - id: compaction-agentic
-      name: "@dsh-asc/compaction-agentic"
-      config:
-        auto: true
-    - id: compaction-agentic-invariant   # optional, recommended
-      name: "@dsh-asc/compaction-agentic/invariant"
-    - id: session-query-sqlite           # optional: context_search
-      name: "@deepseek-ai/dsh-session-query-sqlite"
-- id: compaction-basic                   # disable the basic backend
-  disabled: true
+```sh
+dsh plugin --profile <name> add ./packages/compaction-agentic   # local checkout
+dsh plugin --profile <name> add @dsh-asc/compaction-agentic     # npm (when published)
+dsh plugin --profile <name> add github:you/dsh-compaction-agentic  # git (runs prepare)
 ```
 
-Remove or disable the `@deepseek-ai/dsh-compaction-basic` row — only one
-provider owns `ctx.compaction`. See [docs/usage.md](docs/usage.md) for the
-full configuration reference and operation notes.
+The bundle patch mounts the backend row. Then disable the basic backend in
+the profile's own `cordis.patch.yml` — only one provider owns `ctx.compaction`:
+
+```yaml
+- id: compaction-basic
+  disabled: true
+# optional rows:
+- insert:
+    - id: compaction-agentic-invariant   # runtime invariant companion
+      name: "@dsh-asc/compaction-agentic/invariant"
+    - id: session-query-sqlite           # context_search full-text backend
+      name: "@deepseek-ai/dsh-session-query-sqlite"
+```
+
+See [docs/usage.md](docs/usage.md) for the full configuration reference and
+operation notes.
 
 ## Documentation
 
