@@ -1,7 +1,7 @@
 /**
  * Message serialization for quality evaluation and decompression.
  *
- * @module @dsh-asc/compaction-agentic/text
+ * @module dsh-asc/text
  */
 
 import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'

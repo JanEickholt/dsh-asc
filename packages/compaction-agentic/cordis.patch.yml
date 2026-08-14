@@ -1,5 +1,5 @@
-# @dsh-asc/compaction-agentic bundle patch: mounts the agentic compaction
-# backend into a dsh profile's host composition.
+# dsh-asc bundle patch: mounts the agentic compaction backend into a dsh
+# profile's host composition.
 #
 # Install: `dsh plugin --profile <name> add <this package>` (npm name, local
 # path, git URL, or tarball). The `dsh plugin` command pnpm-installs the
@@ -15,10 +15,10 @@
 #
 # Optional rows to add in the profile layer:
 #   - id: session-query-sqlite          (context_search full-text backend)
-#   - id: compaction-agentic-invariant  (runtime invariant companion)
+#   - id: dsh-asc-invariant             (runtime invariant companion)
 - insert:
-    - id: compaction-agentic
-      name: '@dsh-asc/compaction-agentic'
+    - id: dsh-asc
+      name: 'dsh-asc'
       config:
         auto: true
         nudge:

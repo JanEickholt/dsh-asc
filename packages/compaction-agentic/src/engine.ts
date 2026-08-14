@@ -8,7 +8,7 @@
  * replays the log, and only overflow recovery and explicit manual compaction
  * fall back to deterministic selection plus LLM summarization.
  *
- * @module @dsh-asc/compaction-agentic/engine
+ * @module dsh-asc/engine
  */
 
 import { Context } from '@deepseek-ai/cordis'

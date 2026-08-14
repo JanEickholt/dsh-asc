@@ -13,7 +13,7 @@
  * exactly one `compaction/end` attempt so the unmatched start stays
  * detectable.
  *
- * @module @dsh-asc/compaction-agentic/region
+ * @module dsh-asc/region
  */
 
 import { randomUUID } from 'node:crypto'

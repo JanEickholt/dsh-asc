@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-asc/compaction-agentic",
+  "name": "dsh-asc",
   "description": "Agentic Surface Compaction backend for DeepSeek Harness: the model decides when and what to compact, committed as durable session-log replacements with full replay, search, and degradation",
   "version": "0.1.0",
   "publishConfig": {
@@ -7,7 +7,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dsh-asc/compaction-agentic.git"
+    "url": "git+https://github.com/lmst2/dsh-asc.git"
   },
   "type": "module",
   "main": "lib/types/index.js",

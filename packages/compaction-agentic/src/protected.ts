@@ -14,7 +14,7 @@
  * the summary lives inside the compress call itself and the call must be
  * preserved; here the durable record is the event, not the call.)
  *
- * @module @dsh-asc/compaction-agentic/protected
+ * @module dsh-asc/protected
  */
 
 import {

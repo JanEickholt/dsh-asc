@@ -24,5 +24,5 @@
  * process re-establishes the baseline before nudging again), documented in
  * the design and usage documents.
  *
- * @module @dsh-asc/compaction-agentic/events
+ * @module dsh-asc/events
  */

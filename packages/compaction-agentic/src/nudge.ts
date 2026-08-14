@@ -17,7 +17,7 @@
  * tier-1 pile), while a tier-1 capture only grows the tier-1 pile and must
  * not reset it — otherwise tier distillation could never accumulate growth.
  *
- * @module @dsh-asc/compaction-agentic/nudge
+ * @module dsh-asc/nudge
  */
 
 import { toolPairingBalancedAfter } from '@deepseek-ai/dsh-compaction'

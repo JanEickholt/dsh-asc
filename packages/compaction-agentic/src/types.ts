@@ -1,7 +1,7 @@
 /**
  * Configuration and result vocabulary for the agentic compaction backend.
  *
- * @module @dsh-asc/compaction-agentic/types
+ * @module dsh-asc/types
  */
 
 import type { CompactionId } from '@deepseek-ai/dsh-compaction'

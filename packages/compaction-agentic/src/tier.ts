@@ -7,7 +7,7 @@
  * `1 + max(tier of its shadowed nodes)`, computed in surface order because a
  * replacement always shadows earlier nodes. No side state exists to drift.
  *
- * @module @dsh-asc/compaction-agentic/tier
+ * @module dsh-asc/tier
  */
 
 import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'

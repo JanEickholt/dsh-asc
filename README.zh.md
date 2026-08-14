@@ -1,4 +1,4 @@
-# dsh-compaction-agentic —— DeepSeek Harness 的自主表面压缩（ASC）
+# dsh-asc —— DeepSeek Harness 的自主表面压缩（ASC）
 
 [English](./README.md) | [中文](./README.zh.md)
 
@@ -41,11 +41,11 @@ pnpm install && pnpm test && pnpm build
 ```yaml
 - insert:
     - id: compaction-agentic
-      name: "@dsh-asc/compaction-agentic"
+      name: "dsh-asc"
       config:
         auto: true
     - id: compaction-agentic-invariant   # 可选，推荐
-      name: "@dsh-asc/compaction-agentic/invariant"
+      name: "dsh-asc/invariant"
     - id: session-query-sqlite           # 可选：context_search 需要
       name: "@deepseek-ai/dsh-session-query-sqlite"
 - id: compaction-basic                   # 禁用 basic 后端

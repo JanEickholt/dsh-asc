@@ -10,7 +10,7 @@
  * it used to be — the compression is undone, exactly like ACP's
  * deactivate-and-restore — instead of a duplicated copy in a tool/result.
  *
- * @module @dsh-asc/compaction-agentic/restore
+ * @module dsh-asc/restore
  */
 
 import type { Message } from '@deepseek-ai/dsh-llm'

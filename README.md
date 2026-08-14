@@ -1,4 +1,4 @@
-# dsh-compaction-agentic — Agentic Surface Compaction for DeepSeek Harness
+# dsh-asc — Agentic Surface Compaction for DeepSeek Harness
 
 [English](./README.md) | [中文](./README.zh.md)
 
@@ -70,8 +70,8 @@ and reconciles it into the profile's `dsh.profile.bundles` layer list):
 
 ```sh
 dsh plugin --profile <name> add ./packages/compaction-agentic   # local checkout
-dsh plugin --profile <name> add @dsh-asc/compaction-agentic     # npm (when published)
-dsh plugin --profile <name> add github:you/dsh-compaction-agentic  # git (runs prepare)
+dsh plugin --profile <name> add dsh-asc     # npm (when published)
+dsh plugin --profile <name> add github:you/dsh-asc  # git (runs prepare)
 ```
 
 The bundle patch mounts the backend row. Then disable the basic backend in
@@ -83,7 +83,7 @@ the profile's own `cordis.patch.yml` — only one provider owns `ctx.compaction`
 # optional rows:
 - insert:
     - id: compaction-agentic-invariant   # runtime invariant companion
-      name: "@dsh-asc/compaction-agentic/invariant"
+      name: "dsh-asc/invariant"
     - id: session-query-sqlite           # context_search full-text backend
       name: "@deepseek-ai/dsh-session-query-sqlite"
 ```

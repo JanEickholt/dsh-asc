@@ -13,14 +13,14 @@ The package mounts on the standard `ctx.compaction` seam — the same seam
 ```yaml
 # cordis.yml (profile patch or preset)
 plugins:
-  - name: "@dsh-asc/compaction-agentic"
+  - name: "dsh-asc"
     config:
       auto: true
 ```
 
 It also registers four model-facing tools (`context_compress`,
 `context_decompress`, `context_status`, `context_search`) and, optionally,
-the invariant companion row (`@dsh-asc/compaction-agentic/invariant`).
+the invariant companion row (`dsh-asc/invariant`).
 
 Nothing in the agent loop changes. Everything the plugin produces is either
 a session event on the existing log or a registration on an existing seam:
@@ -194,7 +194,7 @@ writes a standalone bracket (owner `null`), and flushes through
 
 ## 8. Invariants (the companion row)
 
-The companion (`@dsh-asc/compaction-agentic/invariant`) registers under the
+The companion (`dsh-asc/invariant`) registers under the
 package name and is currently an empty installer: the backend declares no
 custom event vocabulary, and the `compaction/*` bracket structure is
 enforced by the upstream `@deepseek-ai/dsh-compaction/invariant` companion.

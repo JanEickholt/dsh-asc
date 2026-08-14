@@ -8,7 +8,7 @@
  * are logged and precisely priced, and overflow recovery or manual
  * compaction falls back to the deterministic LLM summarizer.
  *
- * @module @dsh-asc/compaction-agentic
+ * @module dsh-asc
  */
 
 import type { Context } from '@deepseek-ai/cordis'

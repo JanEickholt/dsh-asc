@@ -44,8 +44,8 @@ async function loadYaml(lines: readonly string[]): Promise<Context> {
     ['@deepseek-ai/dsh-tools', ToolRuntime],
     ['@deepseek-ai/dsh-invariants', InvariantRegistry],
     ['@deepseek-ai/dsh-compaction-tool-result-pruner', ToolResultPruner],
-    ['@dsh-asc/compaction-agentic', pluginEntry],
-    ['@dsh-asc/compaction-agentic/invariant', invariantCompanion],
+    ['dsh-asc', pluginEntry],
+    ['dsh-asc/invariant', invariantCompanion],
   ])
   context.loader.internal = {
     version: 'v2',
@@ -76,14 +76,14 @@ describe('real Loader composition', () => {
       "    thresholdChars: 20000",
       "    headChars: 5000",
       "    tailChars: 100",
-      "- name: '@dsh-asc/compaction-agentic'",
+      "- name: 'dsh-asc'",
       '  config:',
       '    auto: false',
       '    nudge:',
       '      maxRatio: 0.75',
       "    tiers:",
       "      maxTier: 2",
-      "- name: '@dsh-asc/compaction-agentic/invariant'",
+      "- name: 'dsh-asc/invariant'",
     ])
 
     const unloaded = [...loaded.loader.entries()]
@@ -136,10 +136,10 @@ describe('real Loader composition', () => {
       "- name: '@deepseek-ai/dsh-system-prompt'",
       "- name: '@deepseek-ai/dsh-tools'",
       "- name: '@deepseek-ai/dsh-invariants'",
-      "- name: '@dsh-asc/compaction-agentic'",
+      "- name: 'dsh-asc'",
       '  config:',
       '    auto: false',
-      "- name: '@dsh-asc/compaction-agentic/invariant'",
+      "- name: 'dsh-asc/invariant'",
     ])
     const unloaded = [...loaded.loader.entries()]
       .filter(entry => entry.fiber === undefined && !entry.disabled)
@@ -156,7 +156,7 @@ describe('real Loader composition', () => {
       "- name: '@deepseek-ai/dsh-system-prompt'",
       "- name: '@deepseek-ai/dsh-tools'",
       "- name: '@deepseek-ai/dsh-invariants'",
-      "- name: '@dsh-asc/compaction-agentic'",
+      "- name: 'dsh-asc'",
       '  config:',
       '    auto: false',
     ])
@@ -167,7 +167,7 @@ describe('real Loader composition', () => {
 
     // Find and dispose the plugin's fiber: registration is an effect.
     const fiber = [...loaded.loader.entries()]
-      .find(entry => entry.options.name === '@dsh-asc/compaction-agentic')?.fiber
+      .find(entry => entry.options.name === 'dsh-asc')?.fiber
     expect(fiber).toBeDefined()
     await fiber!.dispose()
 

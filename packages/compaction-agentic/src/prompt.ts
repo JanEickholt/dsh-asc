@@ -10,7 +10,7 @@
  * TIER2_DISTILL_RULES, TIER3_CONDENSE_RULES — paraphrased here at
  * system-prompt density.
  *
- * @module @dsh-asc/compaction-agentic/prompt
+ * @module dsh-asc/prompt
  */
 
 import type { Context } from '@deepseek-ai/cordis'

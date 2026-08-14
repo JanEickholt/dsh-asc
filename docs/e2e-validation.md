@@ -1,4 +1,4 @@
-﻿# End-to-End Validation on a Real Deployment
+# End-to-End Validation on a Real Deployment
 
 > This is the evidence record of running the plugin inside a real DeepSeek
 > Harness deployment (headless profile `asc-test`, real `DEEPSEEK_API_KEY`,
@@ -42,7 +42,7 @@ documented in-place contract in [design.md](design.md).
 - **Date**: 2026-08-14 (this file now covers **four executions** of the canonical E2E sequence)
 - **Run 4 driver**: session `session-2a2d1144-be77-4cb9-893b-9361c44077cf` (workspace `E:\WorkSpace`, DSH file policy `workspace-write`, approval `ask`; context window 1,000,000 tokens, usage 2% at start)
 - **Input (all runs)**: the triggering message contained **no step list** 鈥?only a runtime-context snapshot. The canonical E2E sequence was executed instead: baseline 鈫?compress 鈫?verify checkpoint 鈫?search shadowed content 鈫?decompress 鈫?verify restore, plus error-path probes.
-- **Plugin under test**: dsh-compaction-agentic (ASC 鈥?Agentic Surface Compaction), repo at `E:\WorkSpace\dsh-compaction-agentic` (7 commits, 103 unit tests green per HANDOFF.md).
+- **Plugin under test**: dsh-asc (ASC 鈥?Agentic Surface Compaction), repo at `E:\WorkSpace\dsh-asc` (7 commits, 103 unit tests green per HANDOFF.md).
 - **Run history**: Run 1 = session `68001db5-4550-4190-b16d-1ffe72c50a1f` (鈮?1.8脳 ratio; `context/nudge` unknown-event error at seq 2047 blocked `context_search`). Run 2 = session `1d47d797-8948-4eb4-892d-1fc36f8d28de` (鈮?.0脳 ratio; same nudge error at seq 466). Run 3 = session `a207d246-7fdf-49c5-a701-1740860b6957` (鈮?.35脳 ratio; `context_status` `{}`, search silent zero-hit). **Run 4 = this execution** (see below; first fully green run).
 
 ---

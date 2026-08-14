@@ -1,5 +1,5 @@
 {
-  "name": "dsh-compaction-agentic",
+  "name": "dsh-asc",
   "version": "0.1.0",
   "private": true,
   "description": "Agentic Surface Compaction (ASC) for DeepSeek Harness — the model decides when and what to compact, on top of the event-sourced session log",

@@ -10,14 +10,14 @@
  * user messages are core `user/message` events with plugin sources, and
  * their relations are enforced at the owning engine.
  *
- * @module @dsh-asc/compaction-agentic/invariant
+ * @module dsh-asc/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@dsh-asc/compaction-agentic'
+const PACKAGE_NAME = 'dsh-asc'
 
 /** Cordis companion plugin name. */
 export const name = 'compaction-agentic-invariant'

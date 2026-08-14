@@ -7,7 +7,7 @@
  * recommendations; `context_search` runs full-text search over the complete
  * session log — including shadowed (compressed) events.
  *
- * @module @dsh-asc/compaction-agentic/tools
+ * @module dsh-asc/tools
  */
 
 import type { Context } from '@deepseek-ai/cordis'

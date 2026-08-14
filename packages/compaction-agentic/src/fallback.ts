@@ -8,7 +8,7 @@
  * reused instead of invalidated. The summary is then committed through the
  * same durable transaction as a model-written summary.
  *
- * @module @dsh-asc/compaction-agentic/fallback
+ * @module dsh-asc/fallback
  */
 
 import type { Context } from '@deepseek-ai/cordis'

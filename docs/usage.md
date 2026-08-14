@@ -8,12 +8,12 @@ compaction backend.
 
 ```sh
 # inside the deployment that runs dsh (where dsh's node_modules live)
-npm install @dsh-asc/compaction-agentic
+npm install dsh-asc
 # or with pnpm
-pnpm add @dsh-asc/compaction-agentic
+pnpm add dsh-asc
 ```
 
-> The package is published to npm as `@dsh-asc/compaction-agentic`. Until
+> The package is published to npm as `dsh-asc`. Until
 > the first publish, build from source and link it:
 > `pnpm install && pnpm build` in this repository, then reference the
 > package path in your composition.
@@ -29,7 +29,7 @@ config by id:
 # cordis.patch.yml — insert the agentic backend
 - insert:
     - id: compaction-agentic
-      name: "@dsh-asc/compaction-agentic"
+      name: "dsh-asc"
       config:
         auto: true
 ```
@@ -54,7 +54,7 @@ dsh --profile web --dump-config | grep -A 20 compaction
 ```yaml
 - insert:
     - id: compaction-agentic-invariant
-      name: "@dsh-asc/compaction-agentic/invariant"
+      name: "dsh-asc/invariant"
 ```
 
 It requires the `@deepseek-ai/dsh-invariants` service (shipped in the base

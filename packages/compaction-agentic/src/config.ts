@@ -1,7 +1,7 @@
 /**
  * Load-time validation for the agentic compaction backend.
  *
- * @module @dsh-asc/compaction-agentic/config
+ * @module dsh-asc/config
  */
 
 import { deepFreeze } from '@deepseek-ai/dsh-llm'

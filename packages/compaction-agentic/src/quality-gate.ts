@@ -8,7 +8,7 @@
  * two-layer design follows the idea of non-blocking quality evaluation from
  * model-driven context pruning systems.
  *
- * @module @dsh-asc/compaction-agentic/quality-gate
+ * @module dsh-asc/quality-gate
  */
 
 import type { QualityGateConfig, QualityReport } from './types.ts'

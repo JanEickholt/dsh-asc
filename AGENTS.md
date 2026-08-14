@@ -1,6 +1,6 @@
 # AGENTS.md
 
-dsh-compaction-agentic is a standalone plugin repository for
+dsh-asc is a standalone plugin repository for
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH). It
 implements **Agentic Surface Compaction (ASC)**: the model decides when and
 what to compact, and every compaction is committed as a durable
