@@ -9,23 +9,22 @@ session-log replacement on DSH's event-sourced surface.
 ## Where things live
 
 ```
-packages/compaction-agentic/   the one package: engine + four tools + policy
-  src/
-    index.ts                   plugin entry: registers ctx.compaction + tools
-    engine.ts                  AgenticCompactionEngine (extends CompactionEngine)
-    config.ts                  strict config validation
-    types.ts                   config and result vocabulary
-    events.ts                  SessionEventMap declaration merges
-    region.ts                  the compaction transaction bracket
-    quality-gate.ts            model-summary quality gate (L1 floor + L2 recall)
-    tier.ts                    checkpoint tier derivation from the log
-    protected.ts               protected-node policy
-    nudge.ts                   nudge state machine (pure fold + decision)
-    restore.ts                 decompression by replaying the log
-    fallback.ts                LLM summarizer for overflow/manual fallback
-    invariant.ts               runtime invariant companion
-  tests/                       vitest suites
-docs/                          analysis, design, usage (English + Chinese)
+src/           engine + five tools + policy
+  index.ts     plugin entry: registers ctx.compaction + tools
+  engine.ts    AgenticCompactionEngine (extends CompactionEngine)
+  config.ts    strict config validation
+  types.ts     config and result vocabulary
+  events.ts    SessionEventMap declaration merges
+  region.ts    the compaction transaction bracket
+  quality-gate.ts  model-summary quality gate (L1 floor + L2 recall)
+  tier.ts      checkpoint tier derivation from the log
+  protected.ts protected-node policy
+  nudge.ts     nudge state machine (pure fold + decision)
+  restore.ts   decompression by replaying the log
+  fallback.ts  LLM summarizer for overflow/manual fallback
+  invariant.ts runtime invariant companion
+tests/         vitest suites
+docs/          analysis, design, usage (English + Chinese)
 ```
 
 ## Non-negotiables

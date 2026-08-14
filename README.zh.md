@@ -1,78 +1,99 @@
-# dsh-asc —— DeepSeek Harness 的自主表面压缩（ASC）
+# dsh-asc
+
+[![npm](https://img.shields.io/npm/v/dsh-asc.svg)](https://www.npmjs.com/package/dsh-asc)
+[![license](https://img.shields.io/npm/l/dsh-asc.svg)](LICENSE)
 
 [English](./README.md) | [中文](./README.zh.md)
 
-由**模型自己决定何时、压缩什么**，并以持久化会话日志替换事件（`surfaceOp: replace`）提交到 DeepSeek Harness 的事件溯源表面之上。
+**dsh-asc**（全名 **DeepSeek Harness Agentic Surface Compaction**）是
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的上下文压缩插件：由**模型自己决定何时压缩、压缩什么**，每个压缩决策都以持久化会话日志替换事件（`surfaceOp: replace`）提交，可回放、可检索、可撤销。
 
-这是 [opencode-acp](https://github.com/ranxianglei/opencode-acp) 验证过的"模型自主压缩"哲学，重建在一个让它可以被信赖的地基上：追加式会话日志——每个决策都是可回放的持久事件，每个压缩块都是从日志派生的视图，任何内容都不会丢失。
+灵感来自 [opencode-acp](https://github.com/ranxianglei/opencode-acp) 的"模型自主压缩"哲学，但建在 DSH 事件溯源日志之上——压缩不产生任何侧面状态文件，解压靠日志回放，搜索覆盖包括压缩原文在内的全量日志。
 
-## 为什么
+## 安装
 
-| | 经典压缩（basic 后端） | ACP 式模型自主 | 本包 |
-|---|---|---|---|
-| 谁来选压缩范围 | 固定策略 | 模型 | 模型 |
-| 谁来写摘要 | 额外一次 LLM 调用 | 模型 | 模型 |
-| 可逆（解压缩） | 否 | 是（侧面状态） | 是（日志回放） |
-| 压缩后可检索 | 否 | 是（侧面状态） | 是（全日志 FTS） |
-| 可审计 / 可回放 | 是 | 否 | 是 |
-| 状态与消息流漂移 | 不适用 | 39 个 bug 的根源 | 结构上不可能 |
-| 溢出安全网 | 是 | 硬编码 GC | 确定性降级 |
-
-**融合点：** 压缩决策交给模型，压缩表示落在日志上。解压缩回放被 shadow 的事件（零存储状态），压缩块层级从 shadow 链推导（无侧面文件），nudge 写入日志并由 token 计量精确计价，搜索覆盖包括压缩原文在内的全量日志，溢出恢复则降级为确定性选择 + KV 缓存友好的 LLM 摘要。
-
-## 四个工具
-
-- **`context_compress`** —— 用模型书写的检查点替换表面区间，每个区间一次持久化 `compaction/*` 事务，并强制工具配对平衡、保护策略、收缩校验与质量门。会拆开工具调用/结果对的区间会自动扩展到最小完整工具轮次（`compress.autoExpandToolPairs` 可配置），所有推荐区间都经过预校验，照着推荐操作绝不会撞上提交期拒绝；失败会教学：不平衡区间给出最近的平衡范围，质量门拒绝会报告实测指标。
-- **`context_decompress`** —— 撤销压缩：原文被提交回表面中检查点原位置（层级感知：默认还原上一层，`full: true` 递归到底层原文）。
-- **`context_status`** —— 用量、按层级的检查点、各层 token 总量、系统/对话构成占比、受保护内容（逐节点标记）、预校验推荐区间、近期表面节点预览。
-- **`context_recap`** —— 从持久化日志重取检查点摘要，无需 decompress 原文。
-- **`context_search`** —— 对完整会话日志（含被压缩的 shadowed 内容）做全文检索。
-
-另有注入系统提示词的压缩哲学区块（两种失败模式、唯一判据、主动精简），自动、入日志、按 token 精确计价的 **nudge**——以真实上下文增长与节奏门控，被模型拒绝压缩的会话会安静下来；以及不依赖模型的确定性**降级**路径，处理提供商确认的溢出与手动压缩，每次自动压缩都会在表面上可见地告知模型。
-
-## 快速开始
+**前置要求**：已安装 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh` 命令可用）；Node.js `^22.19` 或 `>=24`。
 
 ```sh
-pnpm install && pnpm test && pnpm build
+dsh plugin --profile <name> add dsh-asc
 ```
 
-挂载到 DSH 组合（profile 的 `cordis.patch.yml`）：
+`dsh plugin` 会把插件加入 profile，并根据包内的 `dsh.bundle` 声明自动启用它；工具和系统提示随该 profile 一起加载。
+
+> **重启生效**：安装完成后，重启正在运行的 DeepSeek Harness 服务。
+
+### 其他安装方式
+
+**从 GitHub 安装**——想用尚未发布到 npm 的最新提交：
+
+```sh
+dsh plugin --profile <name> add github:lmst2/dsh-asc
+```
+
+**从源码安装**——要改插件本身，或参与开发：
+
+```sh
+git clone https://github.com/lmst2/dsh-asc.git
+cd dsh-asc
+pnpm install
+pnpm build
+dsh plugin --profile <name> add "link:$(pwd)"
+```
+
+### 禁用 basic 后端
+
+`ctx.compaction` 同一时刻只能有一个提供者。在 profile 自己的 `cordis.patch.yml` 里禁用默认的 basic 后端：
 
 ```yaml
-- insert:
-    - id: compaction-agentic
-      name: "dsh-asc"
-      config:
-        auto: true
-    - id: compaction-agentic-invariant   # 可选，推荐
-      name: "dsh-asc/invariant"
-    - id: session-query-sqlite           # 可选：context_search 需要
-      name: "@deepseek-ai/dsh-session-query-sqlite"
-- id: compaction-basic                   # 禁用 basic 后端
+- id: compaction-basic
   disabled: true
 ```
 
-`ctx.compaction` 同一时刻只能有一个提供者，因此需移除或禁用
-`@deepseek-ai/dsh-compaction-basic` 行。完整配置与运维说明见
-[docs/usage.md](docs/usage.md)。
+可选：挂载不变式伴生和全文检索后端：
+
+```yaml
+- insert:
+    - id: dsh-asc-invariant          # 运行时不变式检查（可选，推荐）
+      name: "dsh-asc/invariant"
+    - id: session-query-sqlite       # context_search 全文检索后端（可选）
+      name: "@deepseek-ai/dsh-session-query-sqlite"
+```
+
+## 使用
+
+安装并重启后，无需任何配置——插件会：
+
+- 在系统提示中注入**上下文管理规范**（判断测试、工具用法、分层压缩节奏），模型从第一轮起就主动管理上下文；
+- 在上下文偏高时按需注入 **nudge 提示**（以真实增长与节奏门控，不会每轮打扰）；
+- 在溢出或手动压缩时走**确定性降级**（工具结果修剪 + LLM 摘要），无需模型配合。
+
+插件提供五个模型工具：
+
+| 工具 | 作用 |
+|---|---|
+| `context_status` | 上下文用量、分层检查点、系统/对话构成、推荐压缩区间、近期表面节点 |
+| `context_compress` | 把一段表面范围替换成你写的检查点（支持批量；自动扩展工具调用对；质量门把关） |
+| `context_decompress` | 撤销压缩：原文回到表面中检查点原位置（层级感知，`full: true` 到原始内容） |
+| `context_recap` | 重新读取检查点摘要，不解压原文 |
+| `context_search` | 全量日志全文检索（含已压缩内容） |
+
+压缩后的内容永不丢失：原文保留在会话日志里，随时可解压或检索。
+
+## 工作原理
+
+- **事件溯源**：压缩 = 日志里的一个事务（`compaction/start` → `compaction/summary` → 替换 `user/message` → `compaction/end`），无侧面状态。
+- **分层压缩**：检查点分 tier（T1 全细节 → T2 决策蒸馏 → T3 裸事实），摘要越用越薄。
+- **可逆**：解压回放日志中被 shadow 的事件，零存储成本。
+- **可审计**：谁压的、压了什么、摘要全文、token 成本都在日志里。
 
 ## 文档
 
-- [docs/analysis.md](docs/analysis.md) —— 对 DeepSeek Harness 与 opencode-acp 上下文管理的一手架构分析，以及本设计的推导过程。
-- [docs/design.md](docs/design.md) —— 已实现契约：事件、工具、自动行为、降级、保护、不变量。
-- [docs/usage.md](docs/usage.md) —— 安装、挂载、配置、模型体验、运维。
+| 文档 | 内容 |
+|---|---|
+| [docs/usage.md](docs/usage.md) | 安装、配置、模型体验、运维 |
+| [docs/design.md](docs/design.md) | 已实现契约：事件、工具、自动行为、保护、不变式 |
+| [docs/analysis.md](docs/analysis.md) | DSH 与 opencode-acp 上下文管理的对比分析 |
 
-## 开发
+## License
 
-```sh
-pnpm install
-pnpm test          # vitest：98 个单元 + 集成测试
-pnpm typecheck
-pnpm build         # tsc 产出 lib/types
-```
-
-仓库遵循 DSH 约定：ESM、严格 TypeScript、`.ts` 导入后缀、注册即效应（可逆）、"模型可见 ⟺ 已记录"、闭联集 switch 带文档化默认分支、每包一个 invariant companion。
-
-## 许可证
-
-MIT。本项目改编自 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（MIT）的算法，且仅借鉴 [opencode-acp](https://github.com/ranxianglei/opencode-acp)（AGPL）的**思想**——未复制其任何源码。见 [NOTICE](NOTICE)。
+MIT。算法借鉴 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（MIT），仅借鉴 [opencode-acp](https://github.com/ranxianglei/opencode-acp)（AGPL）的思想，无源码。见 [NOTICE](NOTICE)。
