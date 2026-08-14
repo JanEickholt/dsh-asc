@@ -4,9 +4,15 @@
  * A compression range must never shadow protected content: human prompts
  * (when configured), the first user message, recent working context, the
  * calls/results of protected tools, or injected content from protected
- * plugin sources. The `context_compress`/`context_decompress` tools are
- * force-protected because their calls carry the only record of compressed
- * conversation and must never be consumed by a later compression.
+ * plugin sources.
+ *
+ * The `context_compress`/`context_decompress` tool calls themselves are NOT
+ * force-protected: the summaries and audit trail live in log-only
+ * `compaction/*` events that never enter the surface, so consuming the
+ * surface call records loses nothing — the audit stays in the session file,
+ * exactly like any other compression target. (This differs from ACP, where
+ * the summary lives inside the compress call itself and the call must be
+ * preserved; here the durable record is the event, not the call.)
  *
  * @module @dsh-asc/compaction-agentic/protected
  */
@@ -22,9 +28,6 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ResolvedConfig } from './types.ts'
 import { nodeKindOf, tierSnapshot } from './tier.ts'
-
-/** Tools whose calls and results are never compressible. */
-const FORCE_PROTECTED_TOOLS = new Set(['context_compress', 'context_decompress'])
 
 /** Tool-call blocks inside one assistant message. */
 export interface ToolCallFacts {
@@ -82,9 +85,9 @@ export function toolNameIndex(session: Session): ToolNameIndex {
   return index
 }
 
-/** Protected-tool name set combining the force list and configuration. */
+/** Protected-tool name set from configuration (no force-protected tools). */
 export function protectedToolSet(config: ResolvedConfig): Set<string> {
-  return new Set([...FORCE_PROTECTED_TOOLS, ...config.protection.protectedTools])
+  return new Set(config.protection.protectedTools)
 }
 
 /** Whether one surface node is protected from compression. */

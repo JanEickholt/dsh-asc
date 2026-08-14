@@ -109,12 +109,21 @@ export function evaluateQuality(
   const summaryChars = Array.from(input.summaryText).length
   const originalTokens = Math.max(1, input.shadowedTokens)
   const retentionPct = (input.summaryTokens * 100) / originalTokens
+  const originalTokensList = wordTokens(input.originalText)
+  // Repetitive noise (a stuck command re-printing one error line) has almost
+  // no unique tokens; forcing retention and ROUGE floors on it would block
+  // exactly the content most worth compressing. A length-adequate summary is
+  // enough when the unique ratio is below the configured noise threshold.
+  const uniqueRatio = originalTokensList.length === 0
+    ? 0
+    : new Set(originalTokensList).size / originalTokensList.length
+  const isNoise = uniqueRatio < config.noiseUniqueRatio
   const noteParts: string[] = []
 
   if (summaryChars < config.layer1MinChars) {
     noteParts.push(`summary ${summaryChars} chars below the ${config.layer1MinChars}-char floor`)
   }
-  if (retentionPct < config.layer1MinRetentionPct) {
+  if (!isNoise && retentionPct < config.layer1MinRetentionPct) {
     noteParts.push(
       `summary retains ${retentionPct.toFixed(2)}% of shadowed tokens, below the `
       + `${config.layer1MinRetentionPct}% floor`,
@@ -140,11 +149,10 @@ export function evaluateQuality(
     }
   }
 
-  const originalTokensList = wordTokens(input.originalText)
   const summaryTokensList = wordTokens(input.summaryText)
   const rouge = rouge1F1(originalTokensList, summaryTokensList)
   const recall = topKeywordRecall(originalTokensList, summaryTokensList)
-  if (rouge < config.layer2MaxRougeF1 && recall < config.layer2MaxTop20Recall) {
+  if (!isNoise && rouge < config.layer2MaxRougeF1 && recall < config.layer2MaxTop20Recall) {
     return {
       gate: 'rouge-recall-v1',
       passed: false,

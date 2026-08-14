@@ -8,6 +8,7 @@ const GATE: Required<import('../src/types.ts').QualityGateConfig> = {
   layer1MinRetentionPct: 1.0,
   layer2MaxRougeF1: 0.05,
   layer2MaxTop20Recall: 0.20,
+  noiseUniqueRatio: 0.02,
 }
 
 const LONG_ORIGINAL = Array.from({ length: 80 }, (_, i) => `word${i} token${i} concept${i % 7}`).join(' ')
@@ -110,6 +111,34 @@ describe('evaluateQuality', () => {
       summaryTokens: 40,
     }, GATE)
     expect(report.passed).toBe(true)
+  })
+
+  it('waives retention and ROUGE for repetitive noise, keeping the length floor', () => {
+    // A stuck command re-printing one error line: thousands of tokens, almost
+    // no unique content. The length floor still applies; retention and ROUGE
+    // are waived because there is nothing to preserve.
+    const noise = 'ReadError: cannot resolve the name. '.repeat(2000)
+    const noiseTokens = wordTokens(noise)
+    expect(new Set(noiseTokens).size / noiseTokens.length).toBeLessThan(GATE.noiseUniqueRatio)
+
+    const adequate = evaluateQuality({
+      originalText: noise,
+      shadowedTokens: 10_000,
+      summaryText: `Get-ChildItem failed with repeated ReadError on node_modules symlink loops; command timed out at 120s. Fix: exclude node_modules or use glob. ${'x'.repeat(60)}`,
+      summaryTokens: 40,
+    }, GATE)
+    expect(adequate.passed).toBe(true)
+
+    // The length floor is NOT waived: a one-line summary of noise still fails.
+    const tooShort = evaluateQuality({
+      originalText: noise,
+      shadowedTokens: 10_000,
+      summaryText: 'repeated ReadError',
+      summaryTokens: 5,
+    }, GATE)
+    expect(tooShort.passed).toBe(false)
+    expect(tooShort.layer).toBe(1)
+    expect(tooShort.note).toContain('chars below')
   })
 
   it('reports blocking from config', () => {

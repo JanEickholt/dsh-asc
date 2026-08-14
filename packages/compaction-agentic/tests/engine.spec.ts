@@ -122,6 +122,46 @@ describe('AgenticCompactionEngine.compressByModel', () => {
     expect(retried.compressed).toHaveLength(1)
   })
 
+  it('accepts acknowledgeRisk declared inside a content entry (array-only transports)', async () => {
+    const { engine } = engineWith({ qualityGate: { enabled: true } })
+    const session = conversationSession(4)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    const selection = validateSurfaceRange(session, nodes[0]!, nodes[Math.floor(nodes.length / 2)]!)
+    const ranges = [{ startSeq: selection.start, endSeq: selection.end, summary: 'x' }]
+    // First attempt without the flag: blocked, pending rejection recorded.
+    await expect(engine.compressByModel(agent, ranges)).rejects.toThrow(CompressRejectedError)
+    // Retry with the flag INSIDE the entry: the engine honors it.
+    const retried = await engine.compressByModel(agent, [
+      { ...ranges[0]!, acknowledgeRisk: true },
+    ])
+    expect(retried.compressed).toHaveLength(1)
+  })
+
+  it('compresses its own context_compress call records like any other content', async () => {
+    const { engine } = engineWith({ qualityGate: { enabled: false } })
+    const session = conversationSession(4)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    // Perform one model compression; the call record (assistant message with
+    // the tool-call, plus its result) is now on the surface.
+    await engine.compressByModel(agent, [{
+      startSeq: nodes[0]!,
+      endSeq: nodes[0]!,
+      summary: TURN_SUMMARY,
+    }])
+    // The call record must NOT be force-protected: a later compression over
+    // it is allowed, because the audit lives in the log-only compaction/*
+    // events, not in the surface call.
+    const after = [...session.surface.nodes]
+    const result = await engine.compressByModel(agent, [{
+      startSeq: after[0]!,
+      endSeq: after[after.length - 2]!,
+      summary: `${TURN_SUMMARY} consolidating the earlier call records`,
+    }])
+    expect(result.compressed).toHaveLength(1)
+  })
+
   it('records non-blocking gate outcomes without rejecting', async () => {
     const { engine } = engineWith({ qualityGate: { blocking: false } })
     const session = conversationSession(4)

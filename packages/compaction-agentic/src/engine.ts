@@ -142,6 +142,7 @@ function engineConfigSchema(): z<AgenticCompactionConfig> {
       layer1MinRetentionPct: ratioSchema,
       layer2MaxRougeF1: ratioSchema,
       layer2MaxTop20Recall: ratioSchema,
+      noiseUniqueRatio: ratioSchema,
     }),
     fallback: z.object({
       enabled: z.boolean(),
@@ -452,7 +453,12 @@ export class AgenticCompactionEngine extends CompactionEngine {
 
     if (gate.enabled) {
       const pending = this.qualityPending.get(session)
-      if (options.acknowledgeRisk === true) {
+      // The call-level option or any per-entry flag both count as an
+      // acknowledgement: some tool-call transports can only pass the content
+      // array, so the model declares acceptance inside each entry.
+      const acknowledged = options.acknowledgeRisk === true
+        || ranges.some(range => range.acknowledgeRisk === true)
+      if (acknowledged) {
         if (pending === undefined) {
           throw new Error('no quality-gate rejection is pending; remove acknowledgeRisk')
         }

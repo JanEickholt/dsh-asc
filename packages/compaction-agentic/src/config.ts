@@ -75,6 +75,7 @@ const QUALITY_GATE_KEYS: ReadonlySet<string> = new Set([
   'layer1MinRetentionPct',
   'layer2MaxRougeF1',
   'layer2MaxTop20Recall',
+  'noiseUniqueRatio',
 ])
 
 const FALLBACK_KEYS: ReadonlySet<string> = new Set([
@@ -164,6 +165,7 @@ export function resolveConfig(config: AgenticCompactionConfig = {}): ResolvedCon
       layer1MinRetentionPct: 1.0,
       layer2MaxRougeF1: 0.05,
       layer2MaxTop20Recall: 0.20,
+      noiseUniqueRatio: 0.02,
     } as const,
     (group, name) => {
       if (group.layer1MinChars !== undefined) {
@@ -177,6 +179,9 @@ export function resolveConfig(config: AgenticCompactionConfig = {}): ResolvedCon
       }
       if (group.layer2MaxTop20Recall !== undefined) {
         assertRatio(`${name}.layer2MaxTop20Recall`, group.layer2MaxTop20Recall)
+      }
+      if (group.noiseUniqueRatio !== undefined) {
+        assertRatio(`${name}.noiseUniqueRatio`, group.noiseUniqueRatio)
       }
     },
   )

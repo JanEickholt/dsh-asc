@@ -66,6 +66,13 @@ export interface QualityGateConfig {
   layer2MaxRougeF1?: number
   /** L2: fail when top-20 keyword recall is below this (AND with ROUGE-1 F1). Defaults to `0.20`. */
   layer2MaxTop20Recall?: number
+  /**
+   * Below this unique-token ratio the shadowed content is treated as
+   * repetitive noise (e.g. a stuck command re-printing one error line), and
+   * the retention and ROUGE floors are waived — a length-adequate summary is
+   * enough, since there is no real content to preserve. Defaults to `0.02`.
+   */
+  noiseUniqueRatio?: number
 }
 
 /** Deterministic fallback summarization for overflow recovery and manual compaction. */
@@ -169,6 +176,13 @@ export interface ModelCompressionRange {
   readonly summary: string
   /** Optional per-range topic label. */
   readonly topic?: string
+  /**
+   * Per-range acceptance of a blocked quality-gate rejection, equivalent to
+   * the call-level `acknowledgeRisk` option. Some tool-call transports can
+   * only pass the content array (not the top-level option), so the engine
+   * honors this field on each entry.
+   */
+  readonly acknowledgeRisk?: boolean
 }
 
 /** Outcome of one committed compression. */
