@@ -151,6 +151,8 @@ export function decideNudge(input: NudgeInput): NudgeDecision {
   const overMax = contextWindow !== undefined && total >= contextWindow * nudge.maxRatio
   const overMin = contextWindow !== undefined && total >= contextWindow * nudge.minRatio
 
+  // Over-max pressure keeps its own cadence: the window itself is the
+  // threshold, so a step counter plus the frequency gate is enough.
   if (overMax && state.stepsSinceBaseline >= nudge.frequency) {
     return {
       kind: 'pressure',
@@ -182,7 +184,14 @@ export function decideNudge(input: NudgeInput): NudgeDecision {
     }
   }
 
-  if (overMin && state.stepsSinceBaseline >= 1) {
+  // Iteration nudges are the highest-frequency class and the one that
+  // historically re-fired every step: they require BOTH a real token
+  // growth floor (context must actually have grown since the last nudge)
+  // and the same frequency gate as pressure, so a session that the model
+  // chose not to compress goes quiet instead of nagging every step.
+  if (overMin
+    && growth >= nudge.growthTokens
+    && state.stepsSinceBaseline >= nudge.frequency) {
     const sinceUser = nodesSinceLastUser(session)
     if (sinceUser >= nudge.iterationThreshold) {
       return {

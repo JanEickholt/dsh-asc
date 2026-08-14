@@ -123,11 +123,36 @@ describe('decideNudge', () => {
         source: { kind: 'plugin', plugin: 'other' },
       }), { surfaceOp: 'append' })
     }
-    const config = resolveConfig({ nudge: { iterationThreshold: 10 } })
+    const config = resolveConfig({
+      nudge: { iterationThreshold: 10, growthTokens: 100, frequency: 5 },
+    })
     const state = applyNudgeBaseline(0, new Map())
-    // Window 600: min 270 < total ~300 < max 480 → over-min, under-max.
-    const decision = decideNudge(nudgeInput(session, ctx, config, 600, { ...state, stepsSinceBaseline: 1 }))
+    // Window 1000: min 450 < total ~700 < max 800 → over-min, under-max.
+    // Growth 700 ≥ floor 100 and the frequency gate (5 steps) is satisfied.
+    const decision = decideNudge(nudgeInput(session, ctx, config, 1000, { ...state, stepsSinceBaseline: 5 }))
     expect(decision.kind).toBe('iteration')
+  })
+
+  it('does not re-fire the iteration nudge until context grows past the floor', () => {
+    const ctx = createContext()
+    const session = conversationSession(2)
+    for (let i = 0; i < 20; i += 1) {
+      session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: `injected context ${i}` }],
+        source: { kind: 'plugin', plugin: 'other' },
+      }), { surfaceOp: 'append' })
+    }
+    const config = resolveConfig({
+      nudge: { iterationThreshold: 10, growthTokens: 100, frequency: 5 },
+    })
+    // Baseline equals the current total: zero growth since the last nudge,
+    // so the iteration nudge must stay silent even past the frequency gate.
+    // Window 3000: max ratio 0.8*3000 = 2400, far above the ~700 total, so
+    // pressure cannot fire either.
+    const baseline = ctx.tokenMeter.measure(session).totalTokens
+    const state = applyNudgeBaseline(baseline, new Map())
+    const decision = decideNudge(nudgeInput(session, ctx, config, 3000, { ...state, stepsSinceBaseline: 5 }))
+    expect(decision.kind).toBe('none')
   })
 
   it('ignores nudges injected by this plugin when counting user messages', () => {
