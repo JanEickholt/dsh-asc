@@ -184,7 +184,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
         'The complete restored transcript is returned as this tool\'s result and appears in your next context window. A short preview is included in the result metadata.',
         '',
         'Two targeting modes (mutually exclusive):',
-        '- compactionIds: exact checkpoint ids from context_status (e.g. ["bd2a1c5e-..."]).',
+        '- compactionIds: exact checkpoint ids from context_status (e.g. ["bd2a1c5e-..."]). Array-only transports may pass the bare id array.',
         '- startSeq/endSeq: every checkpoint whose shadowed span overlaps the given surface range is restored.',
         '',
         'Tier-aware restore: by default a checkpoint is restored one tier up (a tier-2 checkpoint reveals its tier-1 summaries). Pass full: true to expand recursively all the way to the original raw content — expensive, use only when necessary.',
@@ -194,6 +194,11 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
         compactionIds: {
           type: 'array',
           description: 'Checkpoint ids to restore, from context_status.',
+          items: { type: 'string' },
+        },
+        content: {
+          type: 'array',
+          description: 'Array-only transport alias for compactionIds: pass the bare id array and it is treated as the checkpoint list.',
           items: { type: 'string' },
         },
         startSeq: { type: 'number', description: 'Range start (surface seq); restores every overlapping checkpoint.' },
@@ -249,8 +254,14 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
       },
       async execute(args, exec: ToolRunContext) {
         const agent = requireAgent(exec)
+        // Array-only transports wrap the single array parameter as
+        // `{"content": [...]}` (the same convention context_compress uses for
+        // its content array); treat that as the compaction-id list.
+        const compactionIds = args.compactionIds !== undefined
+          ? args.compactionIds
+          : Array.isArray(args.content) ? args.content : undefined
         const result = await engine.decompressByModel(agent, {
-          ...args.compactionIds === undefined ? {} : { compactionIds: args.compactionIds },
+          ...compactionIds === undefined ? {} : { compactionIds },
           ...args.startSeq === undefined ? {} : { startSeq: args.startSeq },
           ...args.endSeq === undefined ? {} : { endSeq: args.endSeq },
           ...args.full === undefined ? {} : { full: args.full },
