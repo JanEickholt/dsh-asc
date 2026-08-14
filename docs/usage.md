@@ -125,7 +125,7 @@ All fields are optional; every unknown key fails plugin load.
 |---|---|---|
 | `enabled` | `true` | Enable tier-distillation nudges. |
 | `maxTier` | `3` | Deepest checkpoint tier (1–5). Checkpoints at this tier cannot be consumed. |
-| `growthTokens` | `50000` | Per-tier summary-token growth that triggers the next-tier nudge. |
+| `growthTokens` | `10000` | Per-tier summary-token growth that triggers the next-tier nudge. 10K fits real sessions; 50K made distillation nudges unreachable. |
 
 ### `qualityGate`
 
