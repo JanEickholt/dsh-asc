@@ -14,5 +14,8 @@
   "engines": {
     "node": "^22.19 || >=24"
   },
-  "packageManager": "pnpm@10.13.1"
+  "packageManager": "pnpm@10.13.1",
+  "devDependencies": {
+    "@deepseek-ai/dsh-fs": "0.1.0-rc.6"
+  }
 }

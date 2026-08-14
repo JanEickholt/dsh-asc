@@ -382,6 +382,66 @@ describe('AgenticCompactionEngine.decompressByModel', () => {
     expect(result.restored).toEqual([])
     expect(result.skipped).toEqual(['missing'])
   })
+  it('writes restored content to a file when toFile is set', async () => {
+    const { ctx, engine } = engineWith()
+    const writes: Array<{ path: string; content: string }> = []
+    ctx.provide('fs', {
+      resolve: async (path: string) => ({ path }),
+      writeText: async (target: { path: string }, content: string) => {
+        writes.push({ path: target.path, content })
+        return { version: 1 }
+      },
+    } as never)
+    const session = conversationSession(2)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    await engine.compressByModel(agent, [{
+      startSeq: nodes[0]!,
+      endSeq: nodes[0]!,
+      summary: 'tiny',
+    }])
+    const id = checkpointViews(session)[0]!.compactionId
+    const result = await engine.decompressByModel(agent, { compactionIds: [id], toFile: '/tmp/restore.txt' })
+    expect(result.skipped).toEqual([])
+    expect(result.restored).toHaveLength(1)
+    // The inline content is emptied and the preview points at the file.
+    expect(result.restored[0]!.content).toBe('')
+    expect(result.restored[0]!.preview).toContain('/tmp/restore.txt')
+    expect(writes).toHaveLength(1)
+    expect(writes[0]!.path).toBe('/tmp/restore.txt')
+    expect(writes[0]!.content.length).toBeGreaterThan(0)
+  })
+
+  it('fails loudly when toFile is set without an fs service', async () => {
+    const { engine } = engineWith()
+    const session = conversationSession(2)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    await engine.compressByModel(agent, [{
+      startSeq: nodes[0]!,
+      endSeq: nodes[0]!,
+      summary: 'tiny',
+    }])
+    const id = checkpointViews(session)[0]!.compactionId
+    await expect(engine.decompressByModel(agent, { compactionIds: [id], toFile: '/tmp/x.txt' }))
+      .rejects.toThrow(/toFile requires the fs service/)
+  })
+
+  it('restores inline by default when toFile is absent', async () => {
+    const { engine } = engineWith()
+    const session = conversationSession(2)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    await engine.compressByModel(agent, [{
+      startSeq: nodes[0]!,
+      endSeq: nodes[0]!,
+      summary: 'tiny',
+    }])
+    const id = checkpointViews(session)[0]!.compactionId
+    const result = await engine.decompressByModel(agent, { compactionIds: [id] })
+    expect(result.restored).toHaveLength(1)
+    expect(result.restored[0]!.content.length).toBeGreaterThan(0)
+  })
 })
 
 describe('AgenticCompactionEngine.status', () => {

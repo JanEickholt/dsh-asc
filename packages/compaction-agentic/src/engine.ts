@@ -31,6 +31,8 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
 // Type-only: the optional pruner service; our own event vocabulary is empty by design.
 import type {} from '@deepseek-ai/dsh-compaction-tool-result-pruner'
+// Type-only: the optional fs service used by context_decompress toFile.
+import type {} from '@deepseek-ai/dsh-fs'
 import { resolveConfig } from './config.ts'
 import type { AgenticCompactionConfig, ResolvedConfig } from './types.ts'
 import {
@@ -65,6 +67,7 @@ import type {
   CompressionOutcome,
   ContextStatus,
   DecompressResult,
+  DecompressTarget,
   ModelCompressResult,
   ModelCompressionRange,
   QualityMetrics,
@@ -530,7 +533,19 @@ export class AgenticCompactionEngine extends CompactionEngine {
    */
   async decompressByModel(
     agent: Agent,
-    target: { compactionIds?: string[]; startSeq?: number; endSeq?: number; full?: boolean },
+    target: {
+      compactionIds?: string[]
+      startSeq?: number
+      endSeq?: number
+      full?: boolean
+      /**
+       * When set, the restored transcript is written to this path through the
+       * fs service instead of being returned inline, so large restores do not
+       * inflate the context window. Requires a mounted fs provider; without
+       * one the call fails loudly rather than silently inflating context.
+       */
+      toFile?: string
+    },
     signal?: AbortSignal,
   ): Promise<DecompressResult> {
     signal?.throwIfAborted()
@@ -549,7 +564,23 @@ export class AgenticCompactionEngine extends CompactionEngine {
       )
     }
     const restored = restoreTargets(session, targets, target.full === true, this.ctx.tokenMeter, this.config)
-    return { restored: restored.restored, skipped: [...unknown, ...restored.skipped] }
+    if (target.toFile === undefined) {
+      return { restored: restored.restored, skipped: [...unknown, ...restored.skipped] }
+    }
+    // toFile: persist the full transcripts to the fs seam and return only
+    // paths plus previews, so the model can reference the file without
+    // re-inflating its context window.
+    const fs = this.ctx.get('fs')
+    if (fs === null || fs === undefined) {
+      throw new Error('context_decompress toFile requires the fs service (mount a filesystem provider)')
+    }
+    const written: DecompressTarget[] = []
+    for (const entry of restored.restored) {
+      const resolved = await fs.resolve(target.toFile)
+      await fs.writeText(resolved, entry.content, undefined, signal)
+      written.push({ ...entry, content: '', preview: `written to ${target.toFile} (${entry.restoredChars} chars)` })
+    }
+    return { restored: written, skipped: [...unknown, ...restored.skipped] }
   }
 
   /** Full context status for `context_status`. */

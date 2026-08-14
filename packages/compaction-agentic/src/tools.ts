@@ -194,6 +194,10 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
           type: 'boolean',
           description: 'Expand recursively to raw content. Default false (restore one tier up).',
         },
+        toFile: {
+          type: 'string',
+          description: 'Write the restored transcript to this path through the filesystem service instead of returning it inline. Use for very large restores that would otherwise inflate the context window; the result reports the path and size.',
+        },
       },
       output: {
         schema: {
@@ -242,6 +246,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
           ...args.startSeq === undefined ? {} : { startSeq: args.startSeq },
           ...args.endSeq === undefined ? {} : { endSeq: args.endSeq },
           ...args.full === undefined ? {} : { full: args.full },
+          ...args.toFile === undefined ? {} : { toFile: args.toFile },
         }, exec.signal)
         return {
           restored: result.restored.map(entry => ({
