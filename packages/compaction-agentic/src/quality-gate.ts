@@ -127,6 +127,16 @@ export function evaluateQuality(
       blocking: config.blocking,
       layer: 1,
       note: noteParts.join('; '),
+      metrics: {
+        summaryChars,
+        retentionPct,
+        rouge1F1: 0,
+        top20Recall: 0,
+        layer1MinChars: config.layer1MinChars,
+        layer1MinRetentionPct: config.layer1MinRetentionPct,
+        layer2MaxRougeF1: config.layer2MaxRougeF1,
+        layer2MaxTop20Recall: config.layer2MaxTop20Recall,
+      },
     }
   }
 
@@ -142,6 +152,16 @@ export function evaluateQuality(
       layer: 2,
       note: `ROUGE-1 F1 ${rouge.toFixed(3)} and top-20 keyword recall ${recall.toFixed(2)} `
         + 'both below their floors',
+      metrics: {
+        summaryChars,
+        retentionPct,
+        rouge1F1: rouge,
+        top20Recall: recall,
+        layer1MinChars: config.layer1MinChars,
+        layer1MinRetentionPct: config.layer1MinRetentionPct,
+        layer2MaxRougeF1: config.layer2MaxRougeF1,
+        layer2MaxTop20Recall: config.layer2MaxTop20Recall,
+      },
     }
   }
   return { gate: 'rouge-recall-v1', passed: true, blocking: config.blocking, layer: 'pass' }

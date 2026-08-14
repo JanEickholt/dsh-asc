@@ -67,6 +67,11 @@ describe('evaluateQuality', () => {
     expect(report.passed).toBe(false)
     expect(report.layer).toBe(1)
     expect(report.note).toContain('chars below')
+    // The metrics let the model see exactly what failed and against what.
+    expect(report.metrics).toBeDefined()
+    expect(report.metrics!.summaryChars).toBeLessThan(GATE.layer1MinChars)
+    expect(report.metrics!.layer1MinChars).toBe(GATE.layer1MinChars)
+    expect(report.metrics!.layer2MaxRougeF1).toBe(GATE.layer2MaxRougeF1)
   })
 
   it('fails L1 when retention is below the floor', () => {
@@ -79,6 +84,7 @@ describe('evaluateQuality', () => {
     expect(report.passed).toBe(false)
     expect(report.layer).toBe(1)
     expect(report.note).toContain('retains')
+    expect(report.metrics!.retentionPct).toBeLessThan(GATE.layer1MinRetentionPct)
   })
 
   it('fails L2 when both rouge and keyword recall are below floors', () => {
@@ -90,6 +96,8 @@ describe('evaluateQuality', () => {
     }, GATE)
     expect(report.passed).toBe(false)
     expect(report.layer).toBe(2)
+    expect(report.metrics!.rouge1F1).toBeLessThan(GATE.layer2MaxRougeF1)
+    expect(report.metrics!.top20Recall).toBeLessThan(GATE.layer2MaxTop20Recall)
   })
 
   it('passes L2 when only one signal is below its floor', () => {

@@ -256,6 +256,11 @@ describe('AgenticCompactionEngine auto tool-pair expansion', () => {
     }])
     expect(result.compressed).toEqual([])
     expect(result.failures[0]!.reason).toContain('balanced boundary')
+    // The failure teaches the repair: the nearest balanced span names the
+    // assistant message that must accompany the result, and points at
+    // context_status for the current surface.
+    expect(result.failures[0]!.reason).toContain('nearest balanced span is seqs')
+    expect(result.failures[0]!.reason).toContain('context_status')
   })
 })
 

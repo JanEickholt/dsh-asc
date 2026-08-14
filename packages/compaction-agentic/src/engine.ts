@@ -67,6 +67,7 @@ import type {
   DecompressResult,
   ModelCompressResult,
   ModelCompressionRange,
+  QualityMetrics,
   QualityReport,
   SurfaceNodePreview,
 } from './types.ts'
@@ -436,7 +437,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
             : {},
         })
       } catch (error: unknown) {
-        failures.push({ index, reason: errorMessage(error) })
+        failures.push({ index, reason: failureWithGuidance(session, range, error) })
       }
     }
     if (plans.length === 0) return { compressed: [], failures }
@@ -466,7 +467,10 @@ export class AgenticCompactionEngine extends CompactionEngine {
         }
         if (gateBlocked) {
           const first = [...gateReports.values()].find(report => !report.passed)
-          const message = `quality gate rejected the compression plan (${first?.note ?? 'unknown reason'}); `
+          const detail = first?.metrics === undefined
+            ? (first?.note ?? 'unknown reason')
+            : qualityGateDetail(first.metrics)
+          const message = `quality gate rejected the compression plan (${detail}); `
             + 'retry with acknowledgeRisk: true if you judge the summary acceptable'
           this.qualityPending.set(session, { rangesKey, message })
           throw new CompressRejectedError(message)
@@ -817,4 +821,55 @@ function rangeIneligibilityMessage(
     default:
       return `range is not eligible (${ineligibility.reason})`
   }
+}
+
+/**
+ * Render the measured gate metrics into the rejection detail so the model
+ * can see exactly why the summary failed and what to fix: too short, too
+ * little retention, or missing key terms.
+ * @param metrics - the measured values and thresholds.
+ * @returns a compact human-readable failure detail.
+ */
+function qualityGateDetail(metrics: QualityMetrics): string {
+  const parts: string[] = []
+  if (metrics.summaryChars < metrics.layer1MinChars) {
+    parts.push(`${metrics.summaryChars} chars < ${metrics.layer1MinChars}-char floor`)
+  }
+  if (metrics.retentionPct < metrics.layer1MinRetentionPct) {
+    parts.push(`retention ${metrics.retentionPct.toFixed(2)}% < ${metrics.layer1MinRetentionPct}% floor`)
+  }
+  if (metrics.rouge1F1 < metrics.layer2MaxRougeF1
+    && metrics.top20Recall < metrics.layer2MaxTop20Recall) {
+    parts.push(
+      `ROUGE-1 ${metrics.rouge1F1.toFixed(3)} < ${metrics.layer2MaxRougeF1} `
+      + `and recall ${metrics.top20Recall.toFixed(2)} < ${metrics.layer2MaxTop20Recall} `
+      + '(key terms missing)',
+    )
+  }
+  return parts.join('; ') || 'summary below quality floors'
+}
+
+/**
+ * Attach actionable guidance to a compress failure so the model can repair
+ * its request instead of guessing: unbalanced tool-pairing failures name the
+ * nearest balanced span, and every failure points at `context_status` for the
+ * current surface.
+ * @param session - session owning the surface.
+ * @param range - the model's requested range.
+ * @param error - the failure that rejected it.
+ * @returns the failure message, extended with guidance when applicable.
+ */
+function failureWithGuidance(
+  session: Session,
+  range: ModelCompressionRange,
+  error: unknown,
+): string {
+  const message = errorMessage(error)
+  if (!message.includes('balanced boundary')) return message
+  const expanded = nearestBalancedRange(session, range.startSeq, range.endSeq)
+  const hint = expanded === null
+    ? '; run context_status to see the current surface and its recommended ranges'
+    : `; the nearest balanced span is seqs ${expanded.start}..${expanded.end} `
+      + '(run context_status to see the current surface and its recommended ranges)'
+  return `${message}${hint}`
 }

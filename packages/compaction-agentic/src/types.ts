@@ -211,6 +211,28 @@ export interface QualityReport {
   readonly blocking: boolean
   readonly layer: 1 | 2 | 'pass'
   readonly note?: string
+  /** Measured values that failed the gate, when the summary was rejected. */
+  readonly metrics?: QualityMetrics
+}
+
+/** Measured summary values compared against the gate thresholds. */
+export interface QualityMetrics {
+  /** Summary length in characters. */
+  readonly summaryChars: number
+  /** Summary tokens as a percent of shadowed tokens. */
+  readonly retentionPct: number
+  /** ROUGE-1 F1 between the summary and the original. */
+  readonly rouge1F1: number
+  /** Top-20 keyword recall of the summary against the original. */
+  readonly top20Recall: number
+  /** L1: minimum summary length in characters. */
+  readonly layer1MinChars: number
+  /** L1: minimum retention percent. */
+  readonly layer1MinRetentionPct: number
+  /** L2: ROUGE-1 F1 floor. */
+  readonly layer2MaxRougeF1: number
+  /** L2: top-20 keyword recall floor. */
+  readonly layer2MaxTop20Recall: number
 }
 
 /** One decompression target resolved from the log. */
