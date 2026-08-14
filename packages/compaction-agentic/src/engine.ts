@@ -31,8 +31,6 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
 // Type-only: the optional pruner service; our own event vocabulary is empty by design.
 import type {} from '@deepseek-ai/dsh-compaction-tool-result-pruner'
-// Type-only: the optional fs service used by context_decompress toFile.
-import type {} from '@deepseek-ai/dsh-fs'
 import { resolveConfig } from './config.ts'
 import type { AgenticCompactionConfig, ResolvedConfig } from './types.ts'
 import {
@@ -67,7 +65,6 @@ import type {
   CompressionOutcome,
   ContextStatus,
   DecompressResult,
-  DecompressTarget,
   ModelCompressResult,
   ModelCompressionRange,
   QualityMetrics,
