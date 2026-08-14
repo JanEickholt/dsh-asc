@@ -31,8 +31,8 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
 // Type-only: the optional pruner service; our own event vocabulary is empty by design.
 import type {} from '@deepseek-ai/dsh-compaction-tool-result-pruner'
-import { resolveConfig } from './config.ts'
-import type { AgenticCompactionConfig, ResolvedConfig } from './types.ts'
+import { resolveConfig } from '../config.ts'
+import type { AgenticCompactionConfig, ResolvedConfig } from '../types.ts'
 import {
   commitSurfaceCompaction,
   regionMessages,
@@ -48,7 +48,7 @@ import {
   freshNudgeState,
   recommendRanges,
   type NudgeState,
-} from './nudge.ts'
+} from '../policy/nudge.ts'
 import { evaluateQuality } from './quality-gate.ts'
 import {
   checkpointViews,
@@ -56,10 +56,10 @@ import {
   nearestBalancedRange,
   rangeIneligibility,
   validateSurfaceRange,
-} from './protected.ts'
+} from '../policy/protected.ts'
 import { nodeKindOf, tierSnapshot, tierTokenUsage } from './tier.ts'
 import { buildRestoredContent, nudgeSource, overflowNoticeSource, PLUGIN_NAME, resolveRestoreTargets, restoreTargets } from './restore.ts'
-import { serializeMessages, textPreview } from './text.ts'
+import { serializeMessages, textPreview } from '../utils/text.ts'
 import type {
   CompressionFailure,
   CompressionOutcome,
@@ -71,7 +71,7 @@ import type {
   QualityMetrics,
   QualityReport,
   SurfaceNodePreview,
-} from './types.ts'
+} from '../types.ts'
 
 /** A blocking quality-gate rejection that must be retried with `acknowledgeRisk`. */
 export class CompressRejectedError extends Error {

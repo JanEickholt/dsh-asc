@@ -26,8 +26,8 @@ import {
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { ResolvedConfig } from './types.ts'
-import { nodeKindOf, tierSnapshot } from './tier.ts'
+import type { ResolvedConfig } from '../types.ts'
+import { nodeKindOf, tierSnapshot } from '../engine/tier.ts'
 
 /** Tool-call blocks inside one assistant message. */
 export interface ToolCallFacts {

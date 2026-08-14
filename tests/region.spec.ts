@@ -5,14 +5,14 @@ import {
   commitSurfaceCompaction,
   selectCompactableRange,
   SummaryNotSmallerError,
-} from '../src/region.ts'
-import { validateSurfaceRange, rangeIneligibility } from '../src/protected.ts'
+} from '../src/engine/region.ts'
+import { validateSurfaceRange, rangeIneligibility } from '../src/policy/protected.ts'
 import { resolveConfig } from '../src/config.ts'
 import { createContext, conversationSession, closedSession, eventOf, MODEL } from './helpers.ts'
 
 const SUMMARY = 'consolidated checkpoint preserving file paths, decisions, commands, and the pending next step'
 
-function modelSource(): import('../src/region.ts').SummarySource {
+function modelSource(): import('../src/engine/region.ts').SummarySource {
   return { kind: 'model', summary: SUMMARY, provider: MODEL, model: MODEL }
 }
 

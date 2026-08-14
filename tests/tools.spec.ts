@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import { AgenticCompactionEngine } from '../src/engine.ts'
-import { registerContextTools } from '../src/tools.ts'
+import { AgenticCompactionEngine } from '../src/engine/engine.ts'
+import { registerContextTools } from '../src/tools/tools.ts'
 import { createContext } from './helpers.ts'
 
 interface RecordedTool {

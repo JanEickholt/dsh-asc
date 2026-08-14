@@ -5,32 +5,44 @@
 
 [English](./README.md) | [中文](./README.zh.md)
 
-**dsh-asc**（全名 **DeepSeek Harness Agentic Surface Compaction**）是
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的上下文压缩插件：由**模型自己决定何时压缩、压缩什么**，每个压缩决策都以持久化会话日志替换事件（`surfaceOp: replace`）提交，可回放、可检索、可撤销。
+**dsh-asc** (full name **DeepSeek Harness Agentic Surface Compaction**) is a
+context-compaction plugin for
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): **the
+model itself decides when and what to compact**, and every compaction decision
+is committed as a durable session-log replacement event
+(`surfaceOp: replace`) — replayable, searchable, and reversible.
 
-灵感来自 [opencode-acp](https://github.com/ranxianglei/opencode-acp) 的"模型自主压缩"哲学，但建在 DSH 事件溯源日志之上——压缩不产生任何侧面状态文件，解压靠日志回放，搜索覆盖包括压缩原文在内的全量日志。
+Inspired by the model-driven compaction philosophy of
+[opencode-acp](https://github.com/ranxianglei/opencode-acp), but built on
+DSH's event-sourced log: compaction creates no side-state files,
+decompression is log replay, and search covers the full log including
+compacted originals.
 
-## 安装
+## Install
 
-**前置要求**：已安装 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh` 命令可用）；Node.js `^22.19` 或 `>=24`。
+**Prerequisites**: a working [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+installation (`dsh` CLI available); Node.js `^22.19` or `>=24`.
 
 ```sh
 dsh plugin --profile <name> add dsh-asc
 ```
 
-`dsh plugin` 会把插件加入 profile，并根据包内的 `dsh.bundle` 声明自动启用它；工具和系统提示随该 profile 一起加载。
+`dsh plugin` adds the plugin to the profile and enables it automatically
+based on the `dsh.bundle` declaration in the package; the tools and the
+system prompt load together with that profile.
 
-> **重启生效**：安装完成后，重启正在运行的 DeepSeek Harness 服务。
+> **Restart required**: after installing, restart the running DeepSeek
+> Harness service.
 
-### 其他安装方式
+### Other install options
 
-**从 GitHub 安装**——想用尚未发布到 npm 的最新提交：
+**From GitHub** — to use the latest commit that is not yet published to npm:
 
 ```sh
 dsh plugin --profile <name> add github:lmst2/dsh-asc
 ```
 
-**从源码安装**——要改插件本身，或参与开发：
+**From source** — to modify the plugin itself, or to contribute:
 
 ```sh
 git clone https://github.com/lmst2/dsh-asc.git
@@ -40,60 +52,94 @@ pnpm build
 dsh plugin --profile <name> add "link:$(pwd)"
 ```
 
-### 禁用 basic 后端
+### Disabling the basic backend
 
-`ctx.compaction` 同一时刻只能有一个提供者。在 profile 自己的 `cordis.patch.yml` 里禁用默认的 basic 后端：
+`ctx.compaction` allows only one provider at a time. Disable the default
+basic backend in your profile's own `cordis.patch.yml`:
 
 ```yaml
 - id: compaction-basic
   disabled: true
 ```
 
-可选：挂载不变式伴生和全文检索后端：
+Optionally mount the invariant companion and the full-text-search backend:
 
 ```yaml
 - insert:
-    - id: dsh-asc-invariant          # 运行时不变式检查（可选，推荐）
+    - id: dsh-asc-invariant          # runtime invariant checks (optional, recommended)
       name: "dsh-asc/invariant"
-    - id: session-query-sqlite       # context_search 全文检索后端（可选）
+    - id: session-query-sqlite       # context_search full-text backend (optional)
       name: "@deepseek-ai/dsh-session-query-sqlite"
 ```
 
-## 使用
+## Usage
 
-安装并重启后，无需任何配置——插件会：
+After installing and restarting, no configuration is required — the plugin:
 
-- 在系统提示中注入**上下文管理规范**（判断测试、工具用法、分层压缩节奏），模型从第一轮起就主动管理上下文；
-- 在上下文偏高时按需注入 **nudge 提示**（以真实增长与节奏门控，不会每轮打扰）；
-- 在溢出或手动压缩时走**确定性降级**（工具结果修剪 + LLM 摘要），无需模型配合。
+- injects the **context-management discipline** into the system prompt
+  (judgment rules, tool usage, tiered compaction cadence), so the model
+  actively manages context from the very first turn;
+- injects **nudge prompts** on demand when context usage runs high (gated by
+  real growth and cadence — no per-turn nagging);
+- provides **deterministic degradation** (tool-result pruning + LLM
+  summarization) on overflow or manual compaction, without requiring model
+  cooperation.
 
-插件提供五个模型工具：
+The plugin provides five model tools:
 
-| 工具 | 作用 |
+| Tool | Purpose |
 |---|---|
-| `context_status` | 上下文用量、分层检查点、系统/对话构成、推荐压缩区间、近期表面节点 |
-| `context_compress` | 把一段表面范围替换成你写的检查点（支持批量；自动扩展工具调用对；质量门把关） |
-| `context_decompress` | 撤销压缩：原文回到表面中检查点原位置（层级感知，`full: true` 到原始内容） |
-| `context_recap` | 重新读取检查点摘要，不解压原文 |
-| `context_search` | 全量日志全文检索（含已压缩内容） |
+| `context_status` | context usage, tiered checkpoints, system/dialogue composition, recommended ranges, recent surface nodes |
+| `context_compress` | replace a surface range with a checkpoint you write (batching supported; tool-call pairs auto-extended; quality gate) |
+| `context_decompress` | undo a compaction: the original text returns to the surface at the checkpoint's own position (tier-aware; `full: true` reaches raw content) |
+| `context_recap` | re-read checkpoint summaries without decompressing the originals |
+| `context_search` | full-text search over the whole log (including compacted content) |
 
-压缩后的内容永不丢失：原文保留在会话日志里，随时可解压或检索。
+Compacted content is never lost: the originals stay in the session log and
+can be decompressed or searched at any time.
 
-## 工作原理
+## How it works
 
-- **事件溯源**：压缩 = 日志里的一个事务（`compaction/start` → `compaction/summary` → 替换 `user/message` → `compaction/end`），无侧面状态。
-- **分层压缩**：检查点分 tier（T1 全细节 → T2 决策蒸馏 → T3 裸事实），摘要越用越薄。
-- **可逆**：解压回放日志中被 shadow 的事件，零存储成本。
-- **可审计**：谁压的、压了什么、摘要全文、token 成本都在日志里。
+- **Event sourcing**: a compaction is a transaction in the log
+  (`compaction/start` → `compaction/summary` → replaced `user/message` →
+  `compaction/end`); no side state.
+- **Tiered compaction**: checkpoints have tiers (T1 full detail → T2
+  distilled decisions → T3 bare facts); summaries get thinner as they are
+  reused.
+- **Reversible**: decompression replays the events shadowed in the log, at
+  zero storage cost.
+- **Auditable**: who compacted what, the full summary text, and the token
+  cost are all in the log.
 
-## 文档
+## Repository layout
 
-| 文档 | 内容 |
+```
+src/
+  index.ts      plugin entry: registers ctx.compaction + the five tools
+  config.ts     strict config validation
+  types.ts      shared config and result types
+  events.ts     SessionEventMap declaration merges
+  invariant.ts  runtime invariant companion (subpath export)
+  engine/       the compaction engine core (engine, region, tier,
+                quality gate, fallback, prompt, restore)
+  policy/       protected-node policy and the nudge state machine
+  tools/        the five model tools
+  utils/        shared text helpers
+tests/          vitest suites
+docs/           usage, design, analysis, e2e-validation
+```
+
+## Documentation
+
+| Doc | Contents |
 |---|---|
-| [docs/usage.md](docs/usage.md) | 安装、配置、模型体验、运维 |
-| [docs/design.md](docs/design.md) | 已实现契约：事件、工具、自动行为、保护、不变式 |
-| [docs/analysis.md](docs/analysis.md) | DSH 与 opencode-acp 上下文管理的对比分析 |
+| [docs/usage.md](docs/usage.md) | install, configuration, model experience, operations |
+| [docs/design.md](docs/design.md) | implemented contract: events, tools, automatic behavior, protection, invariants |
+| [docs/analysis.md](docs/analysis.md) | comparison of DSH and opencode-acp context management |
 
 ## License
 
-MIT。算法借鉴 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（MIT），仅借鉴 [opencode-acp](https://github.com/ranxianglei/opencode-acp)（AGPL）的思想，无源码。见 [NOTICE](NOTICE)。
+MIT. Algorithmic inspiration from
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT);
+only the ideas of [opencode-acp](https://github.com/ranxianglei/opencode-acp)
+(AGPL) are used, no source code. See [NOTICE](NOTICE).

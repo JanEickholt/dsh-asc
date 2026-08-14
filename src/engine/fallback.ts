@@ -22,7 +22,7 @@ import type {
   ToolSchema,
 } from '@deepseek-ai/dsh-llm'
 import type { CompactionAgentContext } from '@deepseek-ai/dsh-compaction'
-import type { ResolvedConfig } from './types.ts'
+import type { ResolvedConfig } from '../types.ts'
 
 /** Tags wrapping the structured summary inside the landed checkpoint node. */
 const SUMMARY_OPEN_TAG = '<compacted-summary>'

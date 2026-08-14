@@ -14,8 +14,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { JsonValue, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEventSearchRequest, SessionSearchRequest } from '@deepseek-ai/dsh-session-query'
-import type { AgenticCompactionEngine } from './engine.ts'
-import { textPreview } from './text.ts'
+import type { AgenticCompactionEngine } from '../engine/engine.ts'
+import { textPreview } from '../utils/text.ts'
 
 const TOOL_OUTPUT_CHARS = 8000
 

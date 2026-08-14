@@ -4,9 +4,9 @@ import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import {
   commitSurfaceCompaction,
   frameSummary,
-} from '../src/region.ts'
-import { tierSnapshot, tierTokenUsage, nodeKindOf } from '../src/tier.ts'
-import { checkpointViews, validateSurfaceRange } from '../src/protected.ts'
+} from '../src/engine/region.ts'
+import { tierSnapshot, tierTokenUsage, nodeKindOf } from '../src/engine/tier.ts'
+import { checkpointViews, validateSurfaceRange } from '../src/policy/protected.ts'
 import { createContext, conversationSession, eventOf, MODEL } from './helpers.ts'
 
 const M = (text: string): import('@deepseek-ai/dsh-llm').Message =>

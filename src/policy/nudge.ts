@@ -23,9 +23,9 @@
 import { toolPairingBalancedAfter } from '@deepseek-ai/dsh-compaction'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
-import type { ResolvedConfig, RecommendedRange } from './types.ts'
+import type { ResolvedConfig, RecommendedRange } from '../types.ts'
 import { isProtectedNode, nearestBalancedRange, validateSurfaceRange } from './protected.ts'
-import { nodeKindOf, tierSnapshot, tierTokenUsage } from './tier.ts'
+import { nodeKindOf, tierSnapshot, tierTokenUsage } from '../engine/tier.ts'
 
 /** A recommended range before commit-readiness validation. */
 type RecommendedRangeCandidate = Omit<RecommendedRange, 'balanced'>

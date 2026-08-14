@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   commitSurfaceCompaction,
   type CommitResult,
-} from '../src/region.ts'
+} from '../src/engine/region.ts'
 import {
   expandRestoreSeqs,
   resolveRestoreTargets,
   restoreTargets,
   buildRestoredContent,
-} from '../src/restore.ts'
-import { validateSurfaceRange } from '../src/protected.ts'
+} from '../src/engine/restore.ts'
+import { validateSurfaceRange } from '../src/policy/protected.ts'
 import { resolveConfig } from '../src/config.ts'
 import { createContext, conversationSession, MODEL } from './helpers.ts'
 

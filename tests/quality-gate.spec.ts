@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { evaluateQuality, rouge1F1, topKeywordRecall, wordTokens } from '../src/quality-gate.ts'
+import { evaluateQuality, rouge1F1, topKeywordRecall, wordTokens } from '../src/engine/quality-gate.ts'
 
 const GATE: Required<import('../src/types.ts').QualityGateConfig> = {
   enabled: true,

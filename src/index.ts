@@ -13,12 +13,12 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-session/types'
-import { AgenticCompactionEngine } from './engine.ts'
-import { registerContextTools } from './tools.ts'
-import { registerPhilosophyPrompt } from './prompt.ts'
+import { AgenticCompactionEngine } from './engine/engine.ts'
+import { registerContextTools } from './tools/tools.ts'
+import { registerPhilosophyPrompt } from './engine/prompt.ts'
 import type { AgenticCompactionConfig } from './types.ts'
 
-export { AgenticCompactionEngine, CompressRejectedError } from './engine.ts'
+export { AgenticCompactionEngine, CompressRejectedError } from './engine/engine.ts'
 export { resolveConfig, TargetPolicyConfigError } from './config.ts'
 export {
   commitSurfaceCompaction,
@@ -28,7 +28,7 @@ export {
   inspectCompactionEntryState,
   SummaryNotSmallerError,
   SurfaceChangedError,
-} from './region.ts'
+} from './engine/region.ts'
 export {
   applyCompressionBaseline,
   applyNudgeBaseline,
@@ -36,16 +36,16 @@ export {
   freshNudgeState,
   recommendRanges,
   buildNudgeText,
-} from './nudge.ts'
-export { evaluateQuality, wordTokens, rouge1F1, topKeywordRecall } from './quality-gate.ts'
+} from './policy/nudge.ts'
+export { evaluateQuality, wordTokens, rouge1F1, topKeywordRecall } from './engine/quality-gate.ts'
 export {
   resolveRestoreTargets,
   expandRestoreSeqs,
   buildRestoredContent,
   restoreTargets,
-} from './restore.ts'
-export { serializeMessage, serializeMessages, textPreview } from './text.ts'
-export { tierSnapshot, tierTokenUsage, nodeKindOf } from './tier.ts'
+} from './engine/restore.ts'
+export { serializeMessage, serializeMessages, textPreview } from './utils/text.ts'
+export { tierSnapshot, tierTokenUsage, nodeKindOf } from './engine/tier.ts'
 export type {
   AgenticCompactionConfig,
   ModelAgenticPolicyConfig,

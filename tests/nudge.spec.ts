@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import {
   commitSurfaceCompaction,
-} from '../src/region.ts'
-import { validateSurfaceRange } from '../src/protected.ts'
+} from '../src/engine/region.ts'
+import { validateSurfaceRange } from '../src/policy/protected.ts'
 import {
   applyCompressionBaseline,
   applyNudgeBaseline,
@@ -12,9 +12,9 @@ import {
   freshNudgeState,
   nodesSinceLastUser,
   recommendRanges,
-} from '../src/nudge.ts'
+} from '../src/policy/nudge.ts'
 import { resolveConfig } from '../src/config.ts'
-import type { NudgeInput } from '../src/nudge.ts'
+import type { NudgeInput } from '../src/policy/nudge.ts'
 import { createContext, conversationSession, MODEL } from './helpers.ts'
 
 function nudgeInput(

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { createContext } from './helpers.ts'
-import { COMPACTION_PHILOSOPHY, PHILOSOPHY_SECTION_NAME, registerPhilosophyPrompt } from '../src/prompt.ts'
+import { COMPACTION_PHILOSOPHY, PHILOSOPHY_SECTION_NAME, registerPhilosophyPrompt } from '../src/engine/prompt.ts'
 
 describe('registerPhilosophyPrompt', () => {
   it('registers a section following the ACP-proven structure', async () => {

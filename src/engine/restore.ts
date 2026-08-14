@@ -19,10 +19,10 @@ import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import type { CompactionId } from '@deepseek-ai/dsh-compaction'
 import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
 import type { Session } from '@deepseek-ai/dsh-session'
-import type { DecompressTarget, ResolvedConfig } from './types.ts'
-import { checkpointViews, eventForSeq } from './protected.ts'
+import type { DecompressTarget, ResolvedConfig } from '../types.ts'
+import { checkpointViews, eventForSeq } from '../policy/protected.ts'
 import { tierSnapshot } from './tier.ts'
-import { serializeMessages, textPreview } from './text.ts'
+import { serializeMessages, textPreview } from '../utils/text.ts'
 
 /** The plugin name used in nudge message sources. */
 export const PLUGIN_NAME = 'dsh-asc'

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session } from '@deepseek-ai/dsh-session'
-import { AgenticCompactionEngine, CompressRejectedError } from '../src/engine.ts'
-import { registerContextTools } from '../src/tools.ts'
+import { AgenticCompactionEngine, CompressRejectedError } from '../src/engine/engine.ts'
+import { registerContextTools } from '../src/tools/tools.ts'
 import { resolveConfig } from '../src/config.ts'
-import { validateSurfaceRange, rangeIneligibility, checkpointViews } from '../src/protected.ts'
+import { validateSurfaceRange, rangeIneligibility, checkpointViews } from '../src/policy/protected.ts'
 import { createContext, conversationSession, closedSession, agentOf, eventOf, MODEL } from './helpers.ts'
 
 const SUMMARY = 'consolidated checkpoint preserving file paths, decisions, commands, and the pending next step in full detail'
@@ -685,7 +685,7 @@ describe('AgenticCompactionEngine automatic behavior', () => {
     const session = conversationSession(4)
     const agent = agentOf(session)
     const nodes = [...session.surface.nodes]
-    const result = await engine.compactRegion(nodes[0]!, nodes[1]!, agent) as import('../src/region.ts').CommitResult
+    const result = await engine.compactRegion(nodes[0]!, nodes[1]!, agent) as import('../src/engine/region.ts').CommitResult
     expect(result.author).toBe('fallback')
     expect(result.shadowedSeqs).toHaveLength(2)
   })

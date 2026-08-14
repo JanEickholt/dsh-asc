@@ -9,20 +9,27 @@ session-log replacement on DSH's event-sourced surface.
 ## Where things live
 
 ```
-src/           engine + five tools + policy
+src/           plugin entry + public API surface
   index.ts     plugin entry: registers ctx.compaction + tools
-  engine.ts    AgenticCompactionEngine (extends CompactionEngine)
   config.ts    strict config validation
   types.ts     config and result vocabulary
   events.ts    SessionEventMap declaration merges
-  region.ts    the compaction transaction bracket
-  quality-gate.ts  model-summary quality gate (L1 floor + L2 recall)
-  tier.ts      checkpoint tier derivation from the log
-  protected.ts protected-node policy
-  nudge.ts     nudge state machine (pure fold + decision)
-  restore.ts   decompression by replaying the log
-  fallback.ts  LLM summarizer for overflow/manual fallback
   invariant.ts runtime invariant companion
+  engine/      the compaction engine core
+    engine.ts  AgenticCompactionEngine (extends CompactionEngine)
+    region.ts  the compaction transaction bracket
+    tier.ts    checkpoint tier derivation from the log
+    quality-gate.ts  model-summary quality gate (L1 floor + L2 recall)
+    fallback.ts  LLM summarizer for overflow/manual fallback
+    prompt.ts  context-management philosophy prompt
+    restore.ts decompression by replaying the log
+  policy/      policy and gating
+    protected.ts protected-node policy
+    nudge.ts   nudge state machine (pure fold + decision)
+  tools/       the five model tools
+    tools.ts   context_status/compress/decompress/recap/search
+  utils/       shared helpers
+    text.ts    text serialization and preview helpers
 tests/         vitest suites
 docs/          analysis, design, usage (English + Chinese)
 ```
@@ -65,8 +72,8 @@ docs/          analysis, design, usage (English + Chinese)
 - ESM everywhere; `"type": "module"` in every package.
 - Source imports use explicit `.ts` extensions (DSH style); `tsc` rewrites
   them on emit (`rewriteRelativeImportExtensions`).
-- Package tsconfig extends `tsconfig.base.json`, `rootDir: src`,
-  `outDir: lib/types`, strict with `noUncheckedIndexedAccess`.
+- `tsconfig.json` holds the shared strict compiler options (dev, `noEmit`);
+  `tsconfig.build.json` extends it with `rootDir: src`, `outDir: lib/types`.
 - Tests live under `tests/` at package level, not in `src/`.
 - Branded cross-boundary ids (compaction ids, session ids) come from the
   owning DSH package; never invent bare-string ids for protocol fields.

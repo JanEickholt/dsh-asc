@@ -13,7 +13,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { InvariantRegistry } from '@deepseek-ai/dsh-invariants'
 import ToolResultPruner from '@deepseek-ai/dsh-compaction-tool-result-pruner'
-import { AgenticCompactionEngine } from '../src/engine.ts'
+import { AgenticCompactionEngine } from '../src/engine/engine.ts'
 import * as pluginEntry from '../src/index.ts'
 import * as invariantCompanion from '../src/invariant.ts'
 

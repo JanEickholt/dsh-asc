@@ -86,6 +86,23 @@ dsh plugin --profile <name> add "link:$(pwd)"
 - **可逆**：解压回放日志中被 shadow 的事件，零存储成本。
 - **可审计**：谁压的、压了什么、摘要全文、token 成本都在日志里。
 
+## 仓库结构
+
+```
+src/
+  index.ts      插件入口：注册 ctx.compaction 与五个工具
+  config.ts     严格配置校验
+  types.ts      共享配置与结果类型
+  events.ts     SessionEventMap 声明合并
+  invariant.ts  运行时不变式伴生（子路径导出）
+  engine/       压缩引擎核心（engine、region、tier、quality-gate、fallback、prompt、restore）
+  policy/       受保护节点策略与 nudge 状态机
+  tools/        五个模型工具
+  utils/        共享文本工具
+tests/          vitest 测试套件
+docs/           usage、design、analysis、e2e-validation
+```
+
 ## 文档
 
 | 文档 | 内容 |

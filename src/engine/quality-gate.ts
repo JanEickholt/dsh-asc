@@ -11,7 +11,7 @@
  * @module dsh-asc/quality-gate
  */
 
-import type { QualityGateConfig, QualityReport } from './types.ts'
+import type { QualityGateConfig, QualityReport } from '../types.ts'
 
 /** One word-level token. */
 type Token = string

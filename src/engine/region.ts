@@ -31,8 +31,8 @@ import { createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, Message, TokenUsage, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { TokenMeter, TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import type { QualityReport } from './types.ts'
-import { eventForSeq, validateSurfaceRange } from './protected.ts'
+import type { QualityReport } from '../types.ts'
+import { eventForSeq, validateSurfaceRange } from '../policy/protected.ts'
 import { tierSnapshot } from './tier.ts'
 
 /** Tag wrapping the structured summary inside the landed checkpoint node. */
