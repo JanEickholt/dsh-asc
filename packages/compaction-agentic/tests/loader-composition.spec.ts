@@ -105,6 +105,11 @@ describe('real Loader composition', () => {
       'context_status',
     ])
 
+    // The compression philosophy rides the system-prompt section seam.
+    const assembled = await loaded.systemPrompt.assemble({})
+    expect(assembled.sections.some(section => section.name === 'tool:compaction-agentic'
+      && section.text.includes('CONTEXT MANAGEMENT PHILOSOPHY'))).toBe(true)
+
     // The pruner is an optional sibling and the engine sees it.
     expect(loaded.get('toolResultPruner')).toBeInstanceOf(ToolResultPruner)
   })

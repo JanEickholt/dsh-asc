@@ -15,6 +15,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-session/types'
 import { AgenticCompactionEngine } from './engine.ts'
 import { registerContextTools } from './tools.ts'
+import { registerPhilosophyPrompt } from './prompt.ts'
 import type { AgenticCompactionConfig } from './types.ts'
 
 export { AgenticCompactionEngine, CompressRejectedError } from './engine.ts'
@@ -71,19 +72,21 @@ export type {
 /** Cordis plugin name. */
 export const name = 'compaction-agentic'
 /** Hard dependencies required before the backend can register. */
-export const inject = ['llm', 'tokenMeter', 'sessions', 'tools']
+export const inject = ['llm', 'tokenMeter', 'sessions', 'tools', 'systemPrompt']
 /** Plugin configuration schema. */
 export const Config = AgenticCompactionEngine.Config
 
 /**
  * Register the agentic compaction backend: the `compaction` service, the
- * four `context_*` tools, and the automatic nudge/overflow listeners.
+ * four `context_*` tools, the compression-philosophy system section, and
+ * the automatic nudge/overflow listeners.
  * @param ctx - Cordis context.
  * @param config - validated plugin configuration.
  * @returns the engine instance (also published as `ctx.compaction`).
  */
 export function apply(ctx: Context, config: AgenticCompactionConfig = {}): AgenticCompactionEngine {
   const engine = new AgenticCompactionEngine(ctx, config)
+  registerPhilosophyPrompt(ctx)
   registerContextTools(ctx, engine)
   return engine
 }
