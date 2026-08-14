@@ -60,7 +60,7 @@ import {
   validateSurfaceRange,
 } from './protected.ts'
 import { nodeKindOf, tierSnapshot, tierTokenUsage } from './tier.ts'
-import { nudgeSource, PLUGIN_NAME, resolveRestoreTargets, restoreTargets } from './restore.ts'
+import { nudgeSource, overflowNoticeSource, PLUGIN_NAME, resolveRestoreTargets, restoreTargets } from './restore.ts'
 import { serializeMessages, textPreview } from './text.ts'
 import type {
   CompressionFailure,
@@ -760,6 +760,17 @@ export class AgenticCompactionEngine extends CompactionEngine {
       signal,
     )
     this.applyPostCompressionBaseline(session, committed.tier)
+    // Tell the model what happened: an automatic compaction replaced history
+    // it may not have chosen to compress. The notice is a plugin-sourced user
+    // message, so it is durable, model-visible, and replayable.
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text:
+        `[context-management] System compacted seqs ${committed.shadowedRange.start}..`
+        + `${committed.shadowedRange.end} (~${committed.shadowedTokenCount} tokens) `
+        + 'after a context-overflow or manual compaction. Use context_decompress '
+        + 'to restore the original content if needed.' }],
+      source: overflowNoticeSource(),
+    }), { surfaceOp: 'append' })
     return committed
   }
 
@@ -833,6 +844,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
       kind,
       tokens: node?.tokens ?? 0,
       tier: tiers.tierBySeq.get(seq) ?? 0,
+      protected: isProtectedNode(session, seq, this.config),
       preview,
     }
   }

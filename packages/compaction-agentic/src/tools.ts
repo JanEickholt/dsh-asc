@@ -141,6 +141,13 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
             lines.push(`entry ${failure.index} failed: ${failure.reason}`)
           }
           if (lines.length === 0) lines.push('nothing compressed')
+          if (value.compressed.length > 0 && value.failures.length > 0) {
+            lines.push(
+              `${value.compressed.length} entr${value.compressed.length === 1 ? 'y' : 'ies'} committed; `
+              + `${value.failures.length} failed (see reasons above). Run context_status to re-verify `
+              + 'the surface before retrying failed ranges.',
+            )
+          }
           return [{ type: 'text', text: lines.join('\n') }]
         },
       },
@@ -334,6 +341,7 @@ function summarizeStatus(status: Awaited<ReturnType<AgenticCompactionEngine['sta
       kind: node.kind,
       tokens: node.tokens,
       tier: node.tier,
+      protected: node.protected,
       preview: node.preview,
     })),
     ...status.lastCompression === undefined ? {} : { lastCompression: status.lastCompression },

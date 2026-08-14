@@ -299,6 +299,8 @@ export interface SurfaceNodePreview {
   readonly kind: 'user' | 'assistant' | 'tool' | 'checkpoint' | 'nudge' | 'restored'
   readonly tokens: number
   readonly tier: number
+  /** Whether the node is excluded from compression ranges by the protection policy. */
+  readonly protected: boolean
   readonly preview: string
 }
 

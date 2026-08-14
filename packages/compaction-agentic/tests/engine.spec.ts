@@ -466,6 +466,12 @@ describe('AgenticCompactionEngine.status', () => {
     expect(status.recentNodes[0]!.seq).toBeDefined()
     expect(status.protectedSeqs).toContain(session.surface.nodes[0])
     expect(status.lastCompression?.author).toBe('model')
+    // Every recent node carries its protection flag, so the model can pick
+    // ranges without tripping the policy.
+    for (const node of status.recentNodes) {
+      expect(typeof node.protected).toBe('boolean')
+      expect(node.protected).toBe(status.protectedSeqs.includes(node.seq))
+    }
   })
 })
 
@@ -514,6 +520,16 @@ describe('AgenticCompactionEngine automatic behavior', () => {
     expect(summary.data.llmStreamCall).toBe(true)
     expect(summary.data.shadowedSeqs.length).toBeGreaterThan(0)
     expect(result!.shadowedSeqs.length).toBeGreaterThan(0)
+    // The model is told the automatic compaction happened: a durable notice
+    // names the replaced range and how to restore it.
+    const notice = session.events.find(event => event.type === 'user/message'
+      && (event.data.source as { kind: string }).kind === 'plugin'
+      && (event.data.source as { purpose?: string }).purpose === 'overflow-notice')
+    expect(notice).toBeDefined()
+    const text = (notice as unknown as { data: { content: Array<{ text: string }> } }).data.content
+      .map(block => block.text).join(' ')
+    expect(text).toContain('System compacted seqs')
+    expect(text).toContain('context_decompress')
   })
 
   it('skips overflow compaction when the fallback is disabled', async () => {

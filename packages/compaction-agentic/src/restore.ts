@@ -40,6 +40,25 @@ export function nudgeSource(): NudgeSource {
   return NUDGE_SOURCE
 }
 
+const OVERFLOW_NOTICE_SOURCE = Object.freeze({
+  kind: 'plugin',
+  plugin: PLUGIN_NAME,
+  purpose: 'overflow-notice',
+} as const)
+
+/** Message provenance carried by an automatic-compaction notice. */
+export type OverflowNoticeSource = typeof OVERFLOW_NOTICE_SOURCE
+
+/**
+ * Create provenance for the visible notice that follows an automatic
+ * (fallback) compaction, so the model knows history was replaced without
+ * its explicit choice.
+ * @returns immutable notice source.
+ */
+export function overflowNoticeSource(): OverflowNoticeSource {
+  return OVERFLOW_NOTICE_SOURCE
+}
+
 /** The preview length included in tool results. */
 export const RESTORE_PREVIEW_CHARS = 500
 
