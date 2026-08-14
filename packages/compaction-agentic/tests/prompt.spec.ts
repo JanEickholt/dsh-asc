@@ -24,6 +24,12 @@ describe('registerPhilosophyPrompt', () => {
     expect(section!.text).toContain('THE TIER SYSTEM')
     expect(section!.text).toContain('THE OPERATING CADENCE')
     expect(section!.text).toContain('batch 2–3 ranges in a single context_compress call')
+    // Planned review: the model must think about compression at milestones,
+    // not only when nudged.
+    expect(section!.text).toContain('WHEN TO REVIEW')
+    expect(section!.text).toContain('complete a large phase or a major task')
+    expect(section!.text).toContain('switches direction or starts a new task')
+    expect(section!.text).toContain('large tool output arrives')
     // Philosophy comes first, doctrine second: the why precedes the how.
     expect(section!.text.indexOf('CONTEXT MANAGEMENT PHILOSOPHY'))
       .toBeLessThan(section!.text.indexOf('CONTEXT MANAGEMENT DOCTRINE'))
