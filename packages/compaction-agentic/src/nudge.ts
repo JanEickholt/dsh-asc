@@ -296,8 +296,14 @@ function commitReadyRange(
   const startPosition = nodes.indexOf(expanded.start)
   const endPosition = nodes.indexOf(expanded.end)
   if (startPosition === -1 || endPosition === -1) return null
+  // Price exactly the extended span: from the expanded start node through
+  // the expanded end node, NOT from the surface head — accumulating from
+  // node 0 would report every earlier node's tokens as part of this range.
   let tokens = 0
+  let counting = false
   for (const node of measurement.nodes) {
+    if (node.seq === expanded.start) counting = true
+    if (!counting) continue
     tokens += node.tokens
     if (node.seq === expanded.end) break
   }
@@ -396,8 +402,12 @@ function recommendHeadRange(
     endIdx -= 1
   }
   if (endIdx < startIdx) return null
+  // Price exactly the recommended span, not the surface prefix before it.
   let tokens = 0
+  let counting = false
   for (const node of measurement.nodes) {
+    if (node.seq === nodes[startIdx]!) counting = true
+    if (!counting) continue
     tokens += node.tokens
     if (node.seq === nodes[endIdx]!) break
   }

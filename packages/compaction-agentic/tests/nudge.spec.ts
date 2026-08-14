@@ -267,6 +267,32 @@ describe('recommendRanges', () => {
       expect(() => validateSurfaceRange(session, range.startSeq, range.endSeq)).not.toThrow()
     }
   })
+
+  it('prices each recommendation as exactly its own span, not the surface prefix', () => {
+    const ctx = createContext()
+    const session = conversationSession(5)
+    const config = resolveConfig({ protection: { retainRecentMessages: 0, protectFirstUserMessage: true } })
+    const measurement = ctx.tokenMeter.measure(session)
+    const ranges = recommendRanges(session, measurement, config)
+    expect(ranges.length).toBeGreaterThan(0)
+    for (const range of ranges) {
+      // The sum of the measurement nodes strictly inside the span.
+      let spanTokens = 0
+      let counting = false
+      for (const node of measurement.nodes) {
+        if (node.seq === range.startSeq) counting = true
+        if (!counting) continue
+        spanTokens += node.tokens
+        if (node.seq === range.endSeq) break
+      }
+      expect(range.tokens).toBe(spanTokens)
+      // A span not starting at the surface head must not carry the whole
+      // prefix's price (the regression: accumulating from node 0 to end).
+      if (range.startPosition > 0) {
+        expect(range.tokens).toBeLessThan(measurement.surfaceTokens)
+      }
+    }
+  })
 })
 
 /**
