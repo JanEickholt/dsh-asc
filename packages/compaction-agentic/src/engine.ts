@@ -179,11 +179,35 @@ export class AgenticCompactionEngine extends CompactionEngine {
   private readonly overflowAgents = new WeakMap<Session, Agent>()
   private readonly nudgeStates = new WeakMap<Session, NudgeState>()
   private readonly qualityPending = new WeakMap<Session, { rangesKey: string; message: string }>()
+  /** Disposers of the automatic listeners, released on engine dispose. */
+  private readonly autoDisposers: Array<() => void> = []
+  private autoDisposed = false
 
   constructor(ctx: Context, config: AgenticCompactionConfig = {}) {
     super(ctx)
     this.config = resolveConfig(config)
     if (this.config.auto) this._registerAutomatic()
+  }
+
+  /**
+   * Release every automatic listener. The engine instance may be re-armed
+   * by calling `registerAutomatic()` again; unloading the plugin must leave
+   * no listener behind.
+   */
+  dispose(): void {
+    if (this.autoDisposed) return
+    this.autoDisposed = true
+    for (const dispose of this.autoDisposers.splice(0)) dispose()
+  }
+
+  /**
+   * (Re-)register the automatic listeners after a dispose, e.g. when the
+   * plugin is mounted again on a live context.
+   */
+  registerAutomatic(): void {
+    if (!this.autoDisposed) return
+    this.autoDisposed = false
+    this._registerAutomatic()
   }
 
   /**
@@ -193,8 +217,15 @@ export class AgenticCompactionEngine extends CompactionEngine {
    */
   private _registerAutomatic(): void {
     const { ctx } = this
+    const register = (dispose: () => void): void => {
+      if (this.autoDisposed) {
+        dispose()
+        return
+      }
+      this.autoDisposers.push(dispose)
+    }
 
-    ctx.on('agent/pre-step', async (
+    register(ctx.on('agent/pre-step', async (
       { agent, signal },
       next,
     ): Promise<PreStepDecision> => {
@@ -207,21 +238,21 @@ export class AgenticCompactionEngine extends CompactionEngine {
         }
       }
       return next()
-    })
+    }))
 
-    ctx.on('agent/status', ({ agent, status }) => {
+    register(ctx.on('agent/status', ({ agent, status }) => {
       if (status === 'idle') this.overflowRetries.delete(agent)
-    })
+    }))
 
     // A successful response starts a fresh overflow-recovery sequence even
     // when tool calls continue the same turn into another request.
-    ctx.on('session/event', (session, event) => {
+    register(ctx.on('session/event', (session, event) => {
       if (event.type !== 'assistant/message') return
       const agent = this.overflowAgents.get(session)
       if (agent !== undefined) this.overflowRetries.delete(agent)
-    })
+    }))
 
-    ctx.on('agent/request-error', async (
+    register(ctx.on('agent/request-error', async (
       { agent, failure, signal },
       next,
     ): Promise<RequestErrorAction> => {
@@ -265,7 +296,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
       }
       this.overflowRetries.set(agent, retries + 1)
       return { kind: 'retry' }
-    })
+    }))
   }
 
   /**
@@ -564,6 +595,62 @@ export class AgenticCompactionEngine extends CompactionEngine {
     return { restored: restored.restored, skipped: [...unknown, ...restored.skipped] }
   }
 
+  /**
+   * Recap: re-fetch checkpoint summaries without decompressing the original
+   * content. The summaries are read from the durable compaction/summary
+   * events, so they survive even when the compress call that wrote them has
+   * scrolled out of context or been consumed by a later compression.
+   * @param agent - agent whose session is read.
+   * @param compactionIds - optional ids to recap; all checkpoints when omitted.
+   * @returns each checkpoint's summary text plus coverage metadata.
+   */
+  async recapByModel(
+    agent: Agent,
+    compactionIds: readonly string[] | undefined,
+  ): Promise<Array<{
+    compactionId: CompactionId
+    tier: number
+    seq: number
+    shadowedSeqs: readonly number[]
+    shadowedTokenCount: number
+    summary: string
+  }>> {
+    const session = agent.session
+    const summaryByCompactionId = new Map<string, SessionEvent<'compaction/summary'>>()
+    for (const event of session.events) {
+      if (event.type === 'compaction/summary') {
+        summaryByCompactionId.set(event.data.compactionId, event)
+      }
+    }
+    const wanted = compactionIds === undefined || compactionIds.length === 0
+      ? undefined
+      : new Set(compactionIds)
+    const recapped: Array<{
+      compactionId: CompactionId
+      tier: number
+      seq: number
+      shadowedSeqs: readonly number[]
+      shadowedTokenCount: number
+      summary: string
+    }> = []
+    for (const view of checkpointViews(session)) {
+      if (wanted !== undefined && !wanted.has(view.compactionId)) continue
+      const summaryEvent = summaryByCompactionId.get(view.compactionId)
+      const text = summaryEvent?.data.summary
+        .map(block => block.type === 'text' ? block.text : `[${block.type}]`)
+        .join('\n') ?? ''
+      recapped.push({
+        compactionId: view.compactionId,
+        tier: view.tier,
+        seq: view.seq,
+        shadowedSeqs: view.shadowedSeqs,
+        shadowedTokenCount: summaryEvent?.data.shadowedTokenCount ?? 0,
+        summary: text,
+      })
+    }
+    return recapped
+  }
+
   /** Full context status for `context_status`. */
   async status(agent: Agent): Promise<ContextStatus> {
     const session = agent.session
@@ -576,6 +663,16 @@ export class AgenticCompactionEngine extends CompactionEngine {
     for (const [tier, tokens] of usage) {
       if (tier > 0) tierTokens[tier] = tokens
     }
+
+    // Where the current request's tokens are spent: system prompt + tool
+    // schemas (the non-conversation part of the baseline) vs conversation
+    // (the live surface). The model uses this to see which category
+    // dominates and compress that first — tool outputs are usually largest.
+    const breakdown = measurement.baseline.kind === 'estimated' ? {
+      systemTokens: Math.max(0, measurement.baseline.tokens - measurement.surfaceTokens),
+      toolsTokens: 0,
+      messageTokens: measurement.surfaceTokens,
+    } : undefined
 
     const summaryByCompactionId = new Map<string, SessionEvent<'compaction/summary'>>()
     const summarySeqs: Array<{ compactionId: string; seq: number; author: 'model' | 'fallback' }> = []
@@ -629,6 +726,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
       ...contextWindow === undefined ? {} : { contextWindow },
       ...contextWindow === undefined ? {} : { usagePercent: Math.round((measurement.totalTokens * 100) / contextWindow) },
       surfaceNodes: session.surface.nodes.length,
+      ...breakdown === undefined ? {} : { breakdown },
       checkpoints,
       tierTokens,
       protectedSeqs,

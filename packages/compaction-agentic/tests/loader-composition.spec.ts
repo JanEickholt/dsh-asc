@@ -101,6 +101,7 @@ describe('real Loader composition', () => {
     expect(toolNames).toEqual([
       'context_compress',
       'context_decompress',
+      'context_recap',
       'context_search',
       'context_status',
     ])
@@ -145,5 +146,34 @@ describe('real Loader composition', () => {
       .map(entry => entry.options.name)
     expect(unloaded).toEqual([])
     expect(loaded.get('invariants')).toBeDefined()
+  })
+
+  it('unloads the plugin at runtime without leaving tools or sections behind', async () => {
+    const loaded = await loadYaml([
+      "- name: '@deepseek-ai/dsh-llm'",
+      "- name: '@deepseek-ai/dsh-session'",
+      "- name: '@deepseek-ai/dsh-token-meter'",
+      "- name: '@deepseek-ai/dsh-system-prompt'",
+      "- name: '@deepseek-ai/dsh-tools'",
+      "- name: '@deepseek-ai/dsh-invariants'",
+      "- name: '@dsh-asc/compaction-agentic'",
+      '  config:',
+      '    auto: false',
+    ])
+    // Five tools + the doctrine section are live.
+    expect(loaded.tools.schemas().map(schema => schema.name)).toContain('context_recap')
+    const before = await loaded.systemPrompt.assemble({})
+    expect(before.sections.some(section => section.name === 'tool:compaction-agentic')).toBe(true)
+
+    // Find and dispose the plugin's fiber: registration is an effect.
+    const fiber = [...loaded.loader.entries()]
+      .find(entry => entry.options.name === '@dsh-asc/compaction-agentic')?.fiber
+    expect(fiber).toBeDefined()
+    await fiber!.dispose()
+
+    const after = await loaded.systemPrompt.assemble({})
+    expect(after.sections.some(section => section.name === 'tool:compaction-agentic')).toBe(false)
+    expect(loaded.tools.schemas().map(schema => schema.name))
+      .not.toContain('context_recap')
   })
 })

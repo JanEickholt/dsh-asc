@@ -328,6 +328,12 @@ export interface ContextStatus {
   readonly contextWindow?: number
   readonly usagePercent?: number
   readonly surfaceNodes: number
+  /** Where the current request's tokens are spent: system prompt, tool schemas, and conversation. */
+  readonly breakdown?: {
+    readonly systemTokens: number
+    readonly toolsTokens: number
+    readonly messageTokens: number
+  }
   readonly checkpoints: readonly CheckpointView[]
   readonly tierTokens: TierTokenUsage
   readonly protectedSeqs: readonly number[]

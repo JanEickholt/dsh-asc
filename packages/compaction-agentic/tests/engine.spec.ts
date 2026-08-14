@@ -478,6 +478,55 @@ describe('AgenticCompactionEngine.decompressByModel', () => {
   })
 })
 
+describe('AgenticCompactionEngine.recapByModel', () => {
+  it('returns checkpoint summaries without decompressing the original', async () => {
+    const { engine } = engineWith({ qualityGate: { enabled: false } })
+    const session = conversationSession(4)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    const compressed = await engine.compressByModel(agent, [{
+      startSeq: nodes[0]!,
+      endSeq: nodes[1]!,
+      summary: TURN_SUMMARY,
+    }])
+    const id = compressed.compressed[0]!.compactionId
+    const recapped = await engine.recapByModel(agent, [id])
+    expect(recapped).toHaveLength(1)
+    expect(recapped[0]!.compactionId).toBe(id)
+    expect(recapped[0]!.tier).toBe(1)
+    expect(recapped[0]!.summary).toContain(TURN_SUMMARY)
+    expect(recapped[0]!.shadowedSeqs.length).toBeGreaterThan(0)
+    // Recap is read-only: no surface mutation, no restore.
+    expect(session.surface.nodes).toContain(compressed.compressed[0]!.startSeq === undefined
+      ? nodes[0]!
+      : session.surface.nodes[0]!)
+  })
+
+  it('recaps all checkpoints when no ids are given', async () => {
+    const { engine } = engineWith({ qualityGate: { enabled: false } })
+    const session = conversationSession(8)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    const first = await engine.compressByModel(agent, [{
+      startSeq: nodes[0]!,
+      endSeq: nodes[1]!,
+      summary: TURN_SUMMARY,
+    }])
+    expect(first.compressed).toHaveLength(1)
+    const after = [...session.surface.nodes]
+    // Compress a later pair of plain nodes (not the new checkpoint) into a
+    // second tier-1 checkpoint.
+    const second = await engine.compressByModel(agent, [{
+      startSeq: after[after.length - 3]!,
+      endSeq: after[after.length - 2]!,
+      summary: `${TURN_SUMMARY} second`,
+    }])
+    expect(second.compressed).toHaveLength(1)
+    const recapped = await engine.recapByModel(agent, undefined)
+    expect(recapped.length).toBeGreaterThanOrEqual(2)
+  })
+})
+
 describe('AgenticCompactionEngine.status', () => {
   it('reports usage, checkpoints, tiers, and recommendations', async () => {
     const { engine } = engineWith({ protection: { retainRecentMessages: 0, protectFirstUserMessage: true } })
@@ -506,6 +555,12 @@ describe('AgenticCompactionEngine.status', () => {
       expect(typeof node.protected).toBe('boolean')
       expect(node.protected).toBe(status.protectedSeqs.includes(node.seq))
     }
+    // The breakdown tells the model where the tokens are spent: system +
+    // tools (non-conversation) and the live surface.
+    expect(status.breakdown).toBeDefined()
+    expect(status.breakdown!.messageTokens).toBe(status.surfaceTokens)
+    expect(status.breakdown!.systemTokens).toBeGreaterThanOrEqual(0)
+    expect(status.breakdown!.systemTokens).toBeLessThanOrEqual(status.baselineTokens)
   })
 })
 

@@ -78,15 +78,23 @@ export const Config = AgenticCompactionEngine.Config
 
 /**
  * Register the agentic compaction backend: the `compaction` service, the
- * four `context_*` tools, the compression-philosophy system section, and
+ * five `context_*` tools, the compression-doctrine system section, and
  * the automatic nudge/overflow listeners.
+ *
+ * Registration is an effect: the returned function unloads every
+ * contribution (engine listeners, tools, system section) so the plugin
+ * can be mounted and unmounted at runtime via `ctx.plugin()`.
  * @param ctx - Cordis context.
  * @param config - validated plugin configuration.
- * @returns the engine instance (also published as `ctx.compaction`).
+ * @returns a disposer that fully unloads the plugin.
  */
-export function apply(ctx: Context, config: AgenticCompactionConfig = {}): AgenticCompactionEngine {
+export function apply(ctx: Context, config: AgenticCompactionConfig = {}): () => void {
   const engine = new AgenticCompactionEngine(ctx, config)
-  registerPhilosophyPrompt(ctx)
-  registerContextTools(ctx, engine)
-  return engine
+  const disposePhilosophy = registerPhilosophyPrompt(ctx)
+  const disposeTools = registerContextTools(ctx, engine)
+  return () => {
+    disposeTools()
+    disposePhilosophy()
+    engine.dispose()
+  }
 }

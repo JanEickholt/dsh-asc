@@ -278,6 +278,32 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
     })),
 
     ctx.tools.register(defineTool({
+      name: 'context_recap',
+      description: [
+        'Re-fetch checkpoint summaries WITHOUT decompressing the original content.',
+        'Use when a past context_compress call\'s summary has scrolled out of context or you need to recall what a checkpoint covers before deciding to decompress it.',
+        'Summaries are read from the durable session log, so they survive even when the compress call that wrote them is gone.',
+        'Args: compactionIds — optional list of checkpoint ids (from context_status). Omitted = recap all checkpoints.',
+      ].join('\n'),
+      parameters: {
+        compactionIds: {
+          type: 'array',
+          description: 'Checkpoint ids to recap, from context_status. Omitted = recap all.',
+          items: { type: 'string' },
+        },
+      },
+      output: {
+        schema: { type: 'json' },
+        render: renderText,
+      },
+      async execute(args, exec: ToolRunContext) {
+        const agent = requireAgent(exec)
+        const recapped = await engine.recapByModel(agent, args.compactionIds)
+        return recapped as unknown as JsonValue
+      },
+    })),
+
+    ctx.tools.register(defineTool({
       name: 'context_status',
       description: [
         'Report the current context state: token usage, surface nodes, compression checkpoints by tier, protected content, and recommended compression ranges.',
@@ -340,6 +366,7 @@ function summarizeStatus(status: Awaited<ReturnType<AgenticCompactionEngine['sta
     },
     checkpoints: status.checkpoints,
     tierTokens: status.tierTokens,
+    ...status.breakdown === undefined ? {} : { breakdown: status.breakdown },
     protectedSeqs: status.protectedSeqs,
     recommendations: status.recommendations,
     recentNodes: status.recentNodes.slice(-STATUS_NODES_CAP).map(node => ({
