@@ -19,10 +19,23 @@ context_status / context_search / error paths end to end:
 | 3 | round-trip works; search no longer crashes | `context_status`/`context_search` rendered the ARGUMENTS instead of the result (`render(args, value)` arity bug) |
 | 4 | **all six capabilities pass together** | — |
 
-Fixes shipped as a result: decompression now carries the transcript in the
-tool result; the backend declares no custom session-event types (all
-durable facts ride upstream known types; nudge baselines are transient and
-restart-safe); renderers take both `(args, value)`.
+Fixes shipped as a result: decompression no longer interleaves a surface
+event between a tool call and its result (Run 1); the backend declares no
+custom session-event types (all durable facts ride upstream known types;
+nudge baselines are transient and restart-safe); renderers take both
+`(args, value)`.
+
+**Superseded after the campaign** (commit `fc152bd`, in-place restore
+semantics): `context_decompress` now commits the restored transcript back
+into the surface at the checkpoint's own position — an in-place replace
+that shadows the checkpoint node — instead of returning it in the tool
+result. The Run 4 observation "restore is a replay, not an un-shadow" no
+longer describes the shipped behavior: the compression is undone and the
+checkpoint record is consumed. The two remaining Run 4 recommendations
+have since been closed: tier-2 distillation produced a live tier-2
+checkpoint (`fbf2c4cf-4c5b-4bb7-936f-dfacffaa68d9`, 98 nodes / 47,154
+tokens to a 138-token summary), and decompress semantics are now the
+documented in-place contract in [design.md](design.md).
 
 ---# E2E Test Report 鈥?Agentic Context-Compaction Plugin
 

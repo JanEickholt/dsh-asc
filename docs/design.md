@@ -43,10 +43,13 @@ represented.**
   shadow chain (T1 shadows raw nodes, T2 shadows T1 checkpoints, …). There
   is no side file, so the entire ACP bug family — state drift between side
   stores and the message stream — is structurally impossible.
-- Decompression replays the log. `context_decompress` reconstructs the
-  shadowed transcript from the events that remain in the log and appends it
-  as a durable `user/message`. Tier-aware: one tier up by default, `full:
-  true` expands recursively to raw content.
+- Decompression undoes a compression in place. `context_decompress`
+  reconstructs the shadowed transcript from the events that remain in the
+  log and commits it back into the surface at the checkpoint's own position
+  (an in-place replace: the checkpoint node is shadowed by a `user/message`
+  carrying the original content), so the model sees the original content
+  where it used to be. Tier-aware: one tier up by default, `full: true`
+  expands recursively to raw content.
 - Nudges are logged and precisely priced. Every nudge is an appended
   `user/message`, so "model-visible ⟺ logged" holds and its cost is
   measurable; the cadence state machine combines the token meter with
@@ -72,7 +75,7 @@ already-known event types:
 | Compression transaction | `compaction/start` → `compaction/summary` → replacement `user/message` (`surfaceOp: replace`, `compactCheckpointSource`) → `compaction/end` |
 | Summary authorship | `compaction/summary.llmStreamCall` — `true` means the fallback LLM call; model-written summaries never carry it |
 | A nudge | an appended `user/message` with source `{ kind: 'plugin', plugin: 'dsh-asc', purpose: 'nudge' }` and `surfaceOp: 'append'` |
-| A decompressed transcript | the `tool/result` content of `context_decompress` (the model sees it in the next request) |
+| A decompressed transcript | an in-place replacement `user/message` with source `{ kind: 'plugin', plugin: 'dsh-asc', op: 'decompress', compactionId }`, committed over the checkpoint node (`surfaceOp: replace`) |
 | Checkpoint tier | derived from the shadow chain (`tierSnapshot`) |
 
 Nudge cadence and tier baselines are **transient in-memory state**
@@ -105,7 +108,7 @@ Compresses one or more surface ranges into model-written checkpoints.
   `compactionId`, `tier`, shadowed seqs/tokens, summary tokens, author.
 
 ### `context_decompress`
-Restores compressed content by replay.
+Restores compressed content by replaying the log.
 
 - `compactionIds?: string[]` and/or `startSeq/endSeq` (mutually exclusive
   targeting; a range resolves every checkpoint whose shadowed span
@@ -114,12 +117,18 @@ Restores compressed content by replay.
   `full: true`.
 - Budgets: `decompress.maxTokens` per call (over-budget targets are skipped
   and reported) and `decompress.maxBlocks` per call (hard error).
-- The complete transcript is returned as the tool result (and rendered as
-  its model-visible content), so it appears in the next context window
-  without ever interleaving a surface event between the assistant tool-call
-  and its `tool/result` — that pairing is a hard provider contract.
+- Each restored transcript is committed back into the surface at its
+  checkpoint's position — an in-place replace (the checkpoint node is
+  shadowed by a `user/message` carrying the original content with
+  `restoredSource(compactionId)` provenance) — so the compression is
+  undone and the original content appears where it used to be. A target
+  whose checkpoint is no longer on the surface (already restored) is
+  skipped and reported.
+- The tool result reports statistics and a preview only (no inline
+  content), keeping the model-visible footprint equal to the restored
+  transcript rather than doubling it.
 - Result: `{ restored: [{ compactionId, tier, checkpointSeq, restoredSeqs,
-  restoredTokens, restoredChars, preview, content }], skipped: [...] }`.
+  restoredTokens, restoredChars, preview }], skipped: [...] }`.
 
 ### `context_status`
 Reports usage (token-meter baseline kind/tokens, total, window, percent),
@@ -203,7 +212,7 @@ See [usage.md](usage.md#configuration) for the full table with defaults.
 - **Searchable**: FTS indexes the full log including shadowed events.
 - **Auditable**: model-visible ⟺ logged; every nudge is a durable user
   message, every compression is the upstream bracket, and every restored
-  transcript is the tool result.
+  transcript is an in-place replacement logged over the checkpoint.
 - **Crash-safe**: the transaction bracket and the end-seed boundary are the
   upstream mechanisms; a failed commit leaves a detectable unmatched start.
 - **Platform-compatible**: no custom session-event types, so persistence,

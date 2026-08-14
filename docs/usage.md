@@ -164,10 +164,12 @@ All fields are optional; every unknown key fails plugin load.
 | `maxTokens` | `60000` | Combined restored-token budget per call; over-budget targets are skipped and reported. |
 | `maxBlocks` | `8` | Maximum checkpoints restored per call; exceeding it is a hard error. |
 
-The `context_decompress` tool additionally accepts `toFile`: the restored
-transcript is written through the mounted filesystem service instead of
-being returned inline, so very large restores do not inflate the context
-window. Requires a filesystem provider; without one the call fails loudly.
+`context_decompress` restores in place: the restored transcript is
+committed back into the surface at the checkpoint's own position (the
+checkpoint node is shadowed by a `user/message` carrying the original
+content), so the compression is undone and the original content appears
+where it used to be. The tool result reports statistics and a preview
+only; large restores are governed by the `maxTokens` budget instead.
 
 ## Model experience
 
@@ -182,7 +184,7 @@ with seqs, kinds, tiers, protection flags, and previews (and every
 recommended range is pre-validated, so acting on one never hits a
 commit-time rejection); `context_compress` takes exactly those seqs and
 auto-extends tool-pair-splitting ranges; `context_decompress` takes the
-`compactionId`s that `context_status` reports (or writes to `toFile`).
+`compactionId`s that `context_status` reports.
 Recommended ranges appear both in `context_status` and in nudges. The nudge
 text is pinned and test-asserted; it always tells the model that context
 management is optional and that content is never lost (it can be searched
