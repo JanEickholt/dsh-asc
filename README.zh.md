@@ -32,15 +32,33 @@ Release 或刷新 notes，在 Actions → backfill-releases → Run workflow 手
 ### npm 发布（可选）
 
 `dsh-asc` 目前还没有发布到 npm。`.github/workflows/npm-publish.yml` 会在
-GitHub Release 发布后自动执行，前提是仓库配置了 `NPM_TOKEN` secret：
+GitHub Release 发布后自动执行。
 
-1. 在 <https://www.npmjs.com> 登录（没有账号先注册）；
-2. 进入 Account → Access Tokens → Generate New Token；
-3. 选择 **Automation** 类型，这样 CI 发布才能使用；
-4. 在本仓库 Settings → Secrets and variables → Actions 中添加
+**推荐：npm Trusted Publishing（OIDC，不需要长期 token）**
+
+1. 先发布一次（或创建 npm 包页面），让包设置存在。
+2. 在 <https://www.npmjs.com> 打开 `dsh-asc` 包 → **Settings → Access →
+   Trusted Publishers → Add Trusted Publisher**。
+3. 填写：
+   - Registry hostname: `registry.npmjs.org`
+   - Repository owner: `lmst2`
+   - Repository name: `dsh-asc`
+   - Workflow file path: `.github/workflows/npm-publish.yml`
+   - Environment: 留空。
+4. 完成。以后 Release 发布时，npm 会用 GitHub 的 OIDC 身份自动发布，
+   不需要 `NPM_TOKEN`。
+
+**备用：传统 Automation token**
+
+1. 在 <https://www.npmjs.com> 登录，进入 Account → Access Tokens →
+   Generate New Token → **Automation**。
+2. 不要勾选任何 “bypass two-factor authentication” 选项——Automation 类型
+   本来就能在 CI 发布时免 OTP。
+3. 把 token 添加到本仓库 Settings → Secrets and variables → Actions →
    `NPM_TOKEN`。
 
-没有 secret 时，publish 步骤会安全地跳过。
+工作流在没有 `NPM_TOKEN` 时走 Trusted Publishing，有 token 时走传统
+token。详见 [npm trusted publishers 文档](https://docs.npmjs.com/trusted-publishers)。
 
 ### 其他安装方式
 

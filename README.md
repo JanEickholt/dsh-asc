@@ -46,15 +46,36 @@ backfill-releases → Run workflow).
 
 `dsh-asc` is not on the npm registry yet. The workflow
 `.github/workflows/npm-publish.yml` publishes automatically when a GitHub
-Release is published, once the repository secret `NPM_TOKEN` exists:
+Release is published.
 
-1. log in at <https://www.npmjs.com> (create an account if needed);
-2. open Account → Access Tokens → Generate New Token;
-3. use the **Automation** token type so CI publishing works;
-4. add the token in this repository under Settings → Secrets and
+**Preferred: npm trusted publishing (OIDC, no long-lived token)**
+
+1. Publish the package once (or create the npm package page) so its
+   settings exist.
+2. On <https://www.npmjs.com>, open the `dsh-asc` package → **Settings →
+   Access → Trusted Publishers → Add Trusted Publisher**.
+3. Fill in:
+   - Registry hostname: `registry.npmjs.org`
+   - Repository owner: `lmst2`
+   - Repository name: `dsh-asc`
+   - Workflow file path: `.github/workflows/npm-publish.yml`
+   - Environment: leave empty.
+4. Done — future releases publish with GitHub's OIDC identity; no
+   `NPM_TOKEN` secret is needed.
+
+**Fallback: classic Automation token**
+
+1. Log in at <https://www.npmjs.com>, then Account → Access Tokens →
+   Generate New Token → **Automation**.
+2. Do NOT enable any "bypass two-factor authentication" option — the
+   Automation type already works for CI publishes without an OTP.
+3. Add the token in this repository under Settings → Secrets and
    variables → Actions → `NPM_TOKEN`.
 
-The publish step no-ops safely while the secret is absent.
+The workflow uses trusted publishing when `NPM_TOKEN` is absent and the
+classic token when it is present. Refer to
+[the npm trusted publishers documentation](https://docs.npmjs.com/trusted-publishers)
+for details.
 
 ### Other install options
 

@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish:
@@ -25,7 +26,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           cache: pnpm
 
-      - name: Check npm token
+      - name: Detect classic token
         id: token
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -33,14 +34,20 @@ jobs:
           if [ -n "${NPM_TOKEN}" ]; then
             echo "present=1" >> "${GITHUB_OUTPUT}"
           else
-            echo "npm token secret is not configured; skipping publish"
+            echo "using npm trusted publishing (OIDC)"
           fi
 
       - name: Install and build
-        if: steps.token.outputs.present == '1'
         run: pnpm install --frozen-lockfile
 
-      - name: Publish to npm
+      - name: Publish with npm trusted publishing (OIDC)
+        if: steps.token.outputs.present != '1'
+        # Until the package's Trusted Publisher is configured on npm this
+        # step reports the configuration gap without failing the release.
+        continue-on-error: true
+        run: npm publish --provenance --access public
+
+      - name: Publish with classic npm token
         if: steps.token.outputs.present == '1'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
