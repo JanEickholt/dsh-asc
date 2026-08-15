@@ -24,6 +24,10 @@ dsh plugin --profile <name> add github:lmst2/dsh-asc
 
 > **重启生效**：安装完成后，重启正在运行的 DeepSeek Harness 服务。
 
+每打一个 `v*` 标签，`.github/workflows/release.yml` 都会自动发布 GitHub
+Release。要为旧标签补发 Release，在 Actions → release → Run workflow 中
+手动填标签名运行一次即可。
+
 ### 其他安装方式
 
 **从 npm 安装**——待包发布到 npm registry 后：

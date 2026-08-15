@@ -36,6 +36,10 @@ system prompt load together with that profile.
 > **Restart required**: after installing, restart the running DeepSeek
 > Harness service.
 
+GitHub Releases are published automatically for every new `v*` tag by
+`.github/workflows/release.yml`. To backfill releases for older tags, run
+that workflow manually with the tag name (Actions → release → Run workflow).
+
 ### Other install options
 
 **From npm** — once the package is published to the npm registry:
