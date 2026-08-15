@@ -510,9 +510,12 @@ export function buildNudgeText(input: {
         : 'If older spans are no longer needed verbatim, consider compressing them with context_compress.',
     )
   } else if (decision.kind === 'tier') {
+    const rule = decision.tier === 3
+      ? 'TIER 3 CONDENSATION'
+      : 'TIER 2 DISTILLATION'
     lines.push(
       `Tier-${decision.tier! - 1} summaries have accumulated. Distill them into a Tier-${decision.tier} `
-      + 'checkpoint with context_compress so summaries stay dense.',
+      + `checkpoint with context_compress using the ${rule} rules from the context-management doctrine.`,
     )
   } else if (decision.kind === 'iteration') {
     lines.push(

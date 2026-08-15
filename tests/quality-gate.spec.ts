@@ -8,6 +8,8 @@ const GATE: Required<import('../src/types.ts').QualityGateConfig> = {
   layer1MinRetentionPct: 1.0,
   layer2MaxRougeF1: 0.05,
   layer2MaxTop20Recall: 0.20,
+  distillationMinChars: 40,
+  distillationMinRetentionPct: 0.5,
   noiseUniqueRatio: 0.02,
 }
 

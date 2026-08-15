@@ -77,6 +77,8 @@ const QUALITY_GATE_KEYS: ReadonlySet<string> = new Set([
   'layer1MinRetentionPct',
   'layer2MaxRougeF1',
   'layer2MaxTop20Recall',
+  'distillationMinChars',
+  'distillationMinRetentionPct',
   'noiseUniqueRatio',
 ])
 
@@ -167,6 +169,8 @@ export function resolveConfig(config: AgenticCompactionConfig = {}): ResolvedCon
       layer1MinRetentionPct: 1.0,
       layer2MaxRougeF1: 0.05,
       layer2MaxTop20Recall: 0.20,
+      distillationMinChars: 40,
+      distillationMinRetentionPct: 0.5,
       noiseUniqueRatio: 0.02,
     } as const,
     (group, name) => {
@@ -181,6 +185,12 @@ export function resolveConfig(config: AgenticCompactionConfig = {}): ResolvedCon
       }
       if (group.layer2MaxTop20Recall !== undefined) {
         assertRatio(`${name}.layer2MaxTop20Recall`, group.layer2MaxTop20Recall)
+      }
+      if (group.distillationMinChars !== undefined) {
+        assertNonNegativeInteger(`${name}.distillationMinChars`, group.distillationMinChars)
+      }
+      if (group.distillationMinRetentionPct !== undefined) {
+        assertRatio(`${name}.distillationMinRetentionPct`, group.distillationMinRetentionPct)
       }
       if (group.noiseUniqueRatio !== undefined) {
         assertRatio(`${name}.noiseUniqueRatio`, group.noiseUniqueRatio)

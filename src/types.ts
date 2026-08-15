@@ -67,6 +67,17 @@ export interface QualityGateConfig {
   /** L2: fail when top-20 keyword recall is below this (AND with ROUGE-1 F1). Defaults to `0.20`. */
   layer2MaxTop20Recall?: number
   /**
+   * L1 length floor for tier >= 2 distillation summaries. Distillation
+   * rules intentionally drop process detail, so the tier-1 floor does not
+   * apply. Defaults to `40`.
+   */
+  distillationMinChars?: number
+  /**
+   * L1 retention floor for tier >= 2 distillation summaries, as a percent
+   * of the shadowed checkpoint tokens. Defaults to `0.5`.
+   */
+  distillationMinRetentionPct?: number
+  /**
    * Below this unique-token ratio the shadowed content is treated as
    * repetitive noise (e.g. a stuck command re-printing one error line), and
    * the retention and ROUGE floors are waived — a length-adequate summary is

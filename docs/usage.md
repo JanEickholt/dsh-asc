@@ -147,6 +147,8 @@ All fields are optional; every unknown key fails plugin load.
 | `layer1MinRetentionPct` | `1.0` | L1: minimum summary tokens as a percent of shadowed tokens. |
 | `layer2MaxRougeF1` | `0.05` | L2: fail when ROUGE-1 F1 is below this (AND with keyword recall). |
 | `layer2MaxTop20Recall` | `0.20` | L2: fail when top-20 keyword recall is below this (AND with ROUGE-1 F1). |
+| `distillationMinChars` | `40` | L1 length floor for tier >= 2 distillation summaries (they deliberately drop lower-level detail, so the raw floor does not apply). |
+| `distillationMinRetentionPct` | `0.5` | L1 retention floor for tier >= 2 summaries, as a percent of the shadowed checkpoint tokens. The L2 keyword-coverage layer is waived for distillation: tier 2/3 rules require dropping exactly the vocabulary L2 would measure. |
 | `noiseUniqueRatio` | `0.02` | Below this unique-token ratio the shadowed content is repetitive noise: the retention and ROUGE floors are waived, and a length-adequate summary passes. |
 
 ### `fallback`
@@ -191,8 +193,14 @@ path.
 The plugin injects a pinned compression-philosophy section into the system
 prompt (`tool:dsh-asc`, order 114): the two failure modes, the
 single test ("is this content still needed by the current task step?"),
-proactive frugality, reversibility, and the five-tool workflow. The model
-therefore compresses proactively instead of waiting for nudges or overflow.
+proactive frugality, reversibility, and the five-tool workflow. The
+doctrine also encodes the tier operating model explicitly: capture raw
+spans into tier 1, distill settled tier-1 piles into tier 2 with the
+TIER 2 DISTILLATION rules, condense settled tier-2 piles into tier 3 with
+the TIER 3 CONDENSATION rules, and read before shrinking via
+`context_recap`/`context_search`/`context_decompress`. The model
+therefore compresses proactively and distills in levels instead of waiting
+for nudges or overflow.
 
 The tools are self-describing: `context_status` lists the current surface
 with seqs, 0-based surface positions, kinds, tiers, protection flags, and

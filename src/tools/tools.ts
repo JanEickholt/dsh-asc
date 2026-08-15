@@ -53,6 +53,7 @@ function renderStatus(args: unknown, value: unknown): { type: 'text'; text: stri
   const lines: string[] = []
   const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim()
 
+  if (status.sessionId !== undefined) lines.push(`Session: ${status.sessionId}`)
   if (Array.isArray(status.recentNodes) && status.recentNodes.length > 0) {
     lines.push(`Recent surface nodes (${status.recentNodes.length}):`)
     for (const node of status.recentNodes) {
@@ -113,10 +114,11 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
         'Rules:',
         '- Surface seqs are EVENT SEQUENCE NUMBERS, not positions: they do not sort by size. The current surface order is reported by context_status. Positions are 0-based surface positions (0 = the oldest current surface node); recentNodes only shows the last 40 nodes and each entry carries its own position.',
         '- Each range must be within the current surface; verify seqs with context_status (recentNodes only shows the last 40 nodes — recommendations can cover older ranges).',
+        '- By default a range that would split a tool call from its result is extended to the minimal complete tool turn (reported as expandedFrom); if the deployment disabled auto-expansion, it is rejected with the nearest balanced span.',
         '- Ranges cannot include protected content (recent tail, protected tools, protected sources) — such ranges are rejected with a reason.',
         '- The framed checkpoint must be smaller than the shadowed content; too-long summaries are rejected.',
-        '- A quality gate may reject catastrophic summaries; retry with acknowledgeRisk: true only if you judge the summary acceptable. (acknowledgeRisk may be passed as a top-level option or inside each content entry — some transports only carry the array.)',
-        '- Compressing a checkpoint of tier N creates a tier N+1 checkpoint (distillation); checkpoints at the tier cap cannot be consumed.',
+        '- A quality gate may reject catastrophic summaries. Raw tier-1 captures use the full floors; tier-2/3 distillation uses shorter distillation floors and skips the keyword-coverage layer. Retry with acknowledgeRisk: true only if you judge the summary acceptable. (acknowledgeRisk may be passed as a top-level option or inside each content entry — some transports only carry the array.)',
+        '- Compressing a checkpoint of tier N creates a tier N+1 checkpoint (distillation). Use the TIER 2 DISTILLATION rules for resulting tier 2 and the TIER 3 CONDENSATION rules for resulting tier 3 (both in the context-management doctrine). Checkpoints at the tier cap cannot be consumed.',
         '- Never compress the current user instruction or content you still need exactly.',
       ].join('\n'),
       parameters: {
@@ -414,8 +416,8 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
     disposers.push(ctx.tools.register(defineTool({
       name: 'context_status',
       description: [
-        'Report the current context state: token usage, surface nodes, compression checkpoints by tier, protected content, and recommended compression ranges.',
-        'Use this before context_compress to find valid surface seqs, and after compressing to confirm the new checkpoint.',
+        'Report the current context state: token usage, surface nodes, compression checkpoints by tier, per-tier token piles (tierTokens), protected content, and recommended compression ranges.',
+        'Use this before context_compress to find valid surface seqs and to see when a tier pile (tierTokens[1] or tierTokens[2]) is ready for distillation.',
         'The recent surface nodes list shows the last 40 nodes with seq, 0-based surface position, kind, token estimate, tier, protection flag, and a content preview so you can choose compression ranges. Positions are full surface positions (0 = oldest current surface node).',
       ].join('\n'),
       parameters: {},

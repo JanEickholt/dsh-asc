@@ -70,6 +70,7 @@ import type {
   DecompressTarget,
   ModelCompressResult,
   ModelCompressionRange,
+  QualityGateConfig,
   QualityMetrics,
   QualityReport,
   SurfaceNodePreview,
@@ -157,6 +158,8 @@ function engineConfigSchema(): z<AgenticCompactionConfig> {
       layer1MinRetentionPct: ratioSchema,
       layer2MaxRougeF1: ratioSchema,
       layer2MaxTop20Recall: ratioSchema,
+      distillationMinChars: countSchema,
+      distillationMinRetentionPct: ratioSchema,
       noiseUniqueRatio: ratioSchema,
     }),
     fallback: z.object({
@@ -1064,6 +1067,25 @@ export class AgenticCompactionEngine extends CompactionEngine {
       content: frameSummary([{ type: 'text', text: plan.range.summary }]),
       source: { kind: 'plugin', plugin: PLUGIN_NAME },
     })
+    // Distillation is a deliberate lossy transform of already-summarized
+    // content: apply the tier-1 floors only to raw capture. Tier >= 2
+    // summaries are gated on their own length/retention floors, and the
+    // keyword-coverage layer is waived because the rules for that tier
+    // require dropping lower-level process vocabulary.
+    const tiers = tierSnapshot(session)
+    const resultingTier = 1 + plan.selection.shadowedSeqs.reduce((maxTier, seq) => {
+      const tier = tiers.tierBySeq.get(seq) ?? 0
+      return Math.max(maxTier, tier)
+    }, 0)
+    const gateConfig: Required<QualityGateConfig> = resultingTier >= 2
+      ? {
+        ...this.config.qualityGate,
+        layer1MinChars: this.config.qualityGate.distillationMinChars,
+        layer1MinRetentionPct: this.config.qualityGate.distillationMinRetentionPct,
+        layer2MaxRougeF1: 0,
+        layer2MaxTop20Recall: 0,
+      }
+      : this.config.qualityGate
     return evaluateQuality(
       {
         originalText,
@@ -1073,7 +1095,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
         // checkpoint node, not the raw summary message.
         summaryTokens: this.ctx.tokenMeter.estimateMessage(summaryMessage),
       },
-      this.config.qualityGate,
+      gateConfig,
     )
   }
 

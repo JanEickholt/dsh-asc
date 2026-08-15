@@ -108,7 +108,10 @@ Compresses one or more surface ranges into model-written checkpoints.
   5. the framed checkpoint must be strictly smaller than the shadowed
      content (token-meter priced);
   6. the durable compaction lock must be free.
-- Quality gate: L1 length/retention floor + L2 ROUGE-1/keyword recall.
+- Quality gate: L1 length/retention floor + L2 ROUGE-1/keyword recall for
+  raw (tier-1) summaries. Tier >= 2 distillation uses its own shorter
+  length/retention floors and waives the keyword-coverage layer, because
+  the tier-2/3 writing rules intentionally drop the lower-level vocabulary.
   Blocking failures reject the whole plan once; the exact-range retry with
   `acknowledgeRisk` bypasses. Non-blocking mode records the outcome.
 - Result: `{ compressed: [...], failures: [...] }` with per-entry

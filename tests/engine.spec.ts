@@ -246,6 +246,39 @@ describe('AgenticCompactionEngine.compressByModel', () => {
     expect(result.failures[0]!.index).toBe(1)
     expect(result.failures[0]!.reason).toContain('selected span changed')
   })
+
+  it('applies the distillation floors, not raw floors, to tier-2 summaries', async () => {
+    const { engine } = engineWith({
+      qualityGate: {
+        enabled: true,
+        blocking: true,
+        distillationMinChars: 40,
+        distillationMinRetentionPct: 0.5,
+      },
+    })
+    const session = conversationSession(6)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    const rawSummary = 'fixture content user answer detail '.repeat(12)
+      + 'consolidated checkpoint preserving file paths, decisions, commands, and the pending next step in full detail'
+    const first = await engine.compressByModel(agent, [{
+      startSeq: nodes[0]!,
+      endSeq: nodes[2]!,
+      summary: rawSummary,
+    }])
+    expect(first.compressed).toHaveLength(1)
+    const after = [...session.surface.nodes]
+    // A short decision-level distillate is the CORRECT tier-2 shape: the
+    // gate must not reject it with tier-1 keyword-coverage thresholds.
+    const second = await engine.compressByModel(agent, [{
+      startSeq: after[0]!,
+      endSeq: after[1]!,
+      summary: 'decisions distilled: ship v1, keep Node 22 constraint, auth fixed',
+    }])
+    expect(second.failures).toEqual([])
+    expect(second.compressed).toHaveLength(1)
+    expect(second.compressed[0]!.tier).toBe(2)
+  })
 })
 
 describe('AgenticCompactionEngine auto tool-pair expansion', () => {

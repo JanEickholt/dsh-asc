@@ -264,6 +264,25 @@ describe('buildNudgeText', () => {
     })
     expect(text).toContain('Context is high')
   })
+
+  it('tier nudges name the exact distillation rule to follow', () => {
+    const decision = {
+      kind: 'tier' as const,
+      tier: 3,
+      reason: 'tier-2 pile grew',
+      growth: 1000,
+      recommendations: [],
+    }
+    const text = buildNudgeText({
+      decision,
+      totalTokens: 1000,
+      surfaceTokens: 500,
+      contextWindow: 2000,
+      config: resolveConfig({}),
+    })
+    expect(text).toContain('TIER 3 CONDENSATION')
+    expect(text).toContain('context_compress')
+  })
 })
 
 describe('recommendRanges', () => {

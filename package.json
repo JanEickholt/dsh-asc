@@ -1,7 +1,7 @@
 {
   "name": "dsh-asc",
   "description": "Agentic Surface Compaction (ASC) for DeepSeek Harness: the model decides when and what to compact, committed as durable session-log replacements with full replay, search, and degradation",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publishConfig": {
     "access": "public"
   },

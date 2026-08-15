@@ -39,8 +39,11 @@ describe('registerPhilosophyPrompt', () => {
     expect(section!.text).toContain('load-bearing')
     expect(section!.text).toContain('DROP')
     expect(section!.text).toContain('PRIORITY')
-    // Multi-tier: tier 2 distill + tier 3 condense rules.
+    // Multi-tier: the levels and their restore path are explicit.
     expect(section!.text).toContain('MULTI-TIER COMPRESSION')
+    expect(section!.text).toContain('RAW SURFACE (tier 0)')
+    expect(section!.text).toContain('DISTILL (T2)')
+    expect(section!.text).toContain('CONDENSE (T3)')
     expect(section!.text).toContain('TIER 2 DISTILLATION')
     expect(section!.text).toContain('TIER 3 CONDENSATION')
     expect(section!.text).toContain('lookup index, not a knowledge base')
@@ -48,7 +51,7 @@ describe('registerPhilosophyPrompt', () => {
     expect(section!.text).toContain('WHEN TO REVIEW')
     expect(section!.text).toContain('complete a large phase or a major task')
     expect(section!.text).toContain('THE OPERATING CADENCE')
-    expect(section!.text).toContain('batch 2–3 ranges in a single context_compress call')
+    expect(section!.text).toContain('batch 2–3 raw ranges in a single context_compress call')
     // Guidance, not a command.
     expect(section!.text).toContain('the nudge is guidance, not a command')
     dispose()
