@@ -89,6 +89,11 @@ describe('resolveRestoreTargets', () => {
     const session = conversationSession(4)
     expect(() => resolveRestoreTargets(session, undefined, undefined)).toThrow(/requires/)
   })
+
+  it('treats an explicitly empty compaction id list as a no-op', () => {
+    const session = conversationSession(4)
+    expect(resolveRestoreTargets(session, [], undefined)).toEqual({ targets: [], unknown: [] })
+  })
 })
 
 describe('expandRestoreSeqs', () => {
@@ -147,6 +152,45 @@ describe('buildRestoredContent and restoreTargets', () => {
     const text = (restoredEvent as { data: { content: Array<{ text: string }> } }).data.content
       .map(block => block.text).join('')
     expect(text).toContain('user 1')
+  })
+
+  it('restores a tier-2 checkpoint one tier up without touching raw leaves', async () => {
+    const ctx = createContext()
+    const session = conversationSession(6)
+    const first = await commitT1(session, ctx.tokenMeter, 2)
+    const nodes = session.surface.nodes
+    const second = await commitSurfaceCompaction(
+      { meter: ctx.tokenMeter },
+      session,
+      nodes[0]!,
+      nodes[1]!,
+      {
+        kind: 'model',
+        summary: `${SUMMARY} distilled into bare facts`,
+        provider: MODEL,
+        model: MODEL,
+      },
+      { owner: 'current-turn', stability: 'whole-surface' },
+    )
+    expect(second.tier).toBe(2)
+    const config = resolveConfig({})
+    const { targets } = resolveRestoreTargets(session, [second.compactionId], undefined)
+    const checkpointSeq = targets[0]!.checkpointSeq
+    const { restored, skipped } = restoreTargets(session, targets, false, ctx.tokenMeter, config)
+    expect(skipped).toEqual([])
+    expect(restored).toHaveLength(1)
+    expect(restored[0]!.restoredSeqs).toEqual([...second.shadowedSeqs])
+    expect(session.surface.nodes).not.toContain(checkpointSeq)
+    const restoredEvent = session.surface.nodes.map(seq => session.events[seq]).find(event =>
+      event?.type === 'user/message'
+      && (event.data.source as { op?: string }).op === 'decompress')
+    expect(restoredEvent).toBeDefined()
+    const text = (restoredEvent as { data: { content: Array<{ text: string }> } }).data.content
+      .map(block => block.text).join('')
+    // One tier up reveals the tier-1 summary, not raw conversation text.
+    expect(text).toContain(SUMMARY)
+    expect(text).not.toContain('fixture content')
+    void first
   })
 
   it('skips targets over the restore budget', async () => {

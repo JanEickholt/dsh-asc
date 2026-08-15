@@ -1,8 +1,8 @@
 # Usage
 
 Install the package into the environment that runs DeepSeek Harness, then
-mount it in the composition instead of (or alongside — see below) the basic
-compaction backend.
+mount it in the composition (replacing the basic compaction backend; see
+below).
 
 ## Installation
 
@@ -106,7 +106,7 @@ All fields are optional; every unknown key fails plugin load.
 | Key | Default | Meaning |
 |---|---|---|
 | `auto` | `true` | Register automatic nudge injection and overflow recovery. |
-| `thresholdRatio` | `0.8` | High-pressure fraction of the routed model's context window; used to validate and scale the fallback retention budget. |
+| `thresholdRatio` | `0.8` | High-pressure reference fraction of the routed model's context window; the resolved fallback retention budget must stay strictly below it. |
 | `retainRatio` | `0.16` | Recent-tail retention budget as a fraction of the routed model's context window (deterministic fallback selection). |
 | `retainTokens` | — | Absolute recent-tail retention budget; mutually exclusive with `retainRatio`. |
 | `modelPolicies` | `[]` | Per `{provider, model}` overrides of the three fields above; duplicate targets fail load. |
@@ -165,8 +165,8 @@ All fields are optional; every unknown key fails plugin load.
 | `protectUserMessages` | `false` | Protect every human user message from compression. |
 | `protectFirstUserMessage` | `true` | Always protect the first human prompt. |
 | `retainRecentMessages` | `20` | Protect the last N surface nodes from inclusion in a range. |
-| `protectedTools` | `[]` | Tool names whose calls and results are excluded from ranges. `context_compress`/`context_decompress` call records are deliberately NOT force-protected: their audit trail lives in log-only `compaction/*` events. |
-| `protectedSources` | `[]` | Plugin names whose injected `user/message` nodes are excluded. |
+| `protectedTools` | `[]` | Tool names whose calls and results are excluded from ranges. `context_compress`/`context_decompress` call records are deliberately NOT force-protected: compression audit lives in log-only `compaction/*` events, and decompression audit lives in the restored `user/message` plus the shadowed originals. |
+| `protectedSources` | `[]` | Plugin names whose injected `user/message` nodes are excluded (including this plugin's own nudges, notices, and restored transcripts when `dsh-asc` is listed). |
 
 ### `decompress`
 
@@ -207,7 +207,10 @@ Recommended ranges appear both in `context_status` and in nudges. The nudge
 text is pinned and test-asserted; it always tells the model that context
 management is optional and that content is never lost (it can be searched
 with `context_search` and restored with
-`context_decompress`).
+`context_decompress`). `context_status` uses a one-line-per-node renderer
+so recent nodes and recommendations survive the 8000-character output cap;
+`context_recap` and `context_search` use compact JSON under the same cap,
+so very large recaps/searches should use narrower ids or queries.
 
 ## Operation notes
 

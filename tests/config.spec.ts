@@ -72,6 +72,8 @@ describe('resolveConfig', () => {
   it('requires summarization fields as a pair', () => {
     expect(() => resolveConfig({ fallback: { summarizationProvider: 'p' } })).toThrow('must be set together')
     expect(() => resolveConfig({ fallback: { summarizationModel: 'm' } })).toThrow('must be set together')
+    expect(() => resolveConfig({ fallback: { summarizationProvider: '  ', summarizationModel: '  ' } }))
+      .toThrow('non-blank')
   })
 
   it('accepts an empty summarization pair as inheritance', () => {

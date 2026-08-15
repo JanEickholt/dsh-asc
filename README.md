@@ -81,11 +81,10 @@ After installing and restarting, no configuration is required — the plugin:
 - injects the **context-management discipline** into the system prompt
   (judgment rules, tool usage, tiered compaction cadence), so the model
   actively manages context from the very first turn;
-- injects **nudge prompts** on demand when context usage runs high (gated by
-  real growth and cadence — no per-turn nagging);
-- provides **deterministic degradation** (tool-result pruning + LLM
-  summarization) on overflow or manual compaction, without requiring model
-  cooperation.
+- injects **nudge prompts** on demand when context usage runs high (cadence-gated; iteration nudges additionally require real token growth — no per-turn nagging);
+- provides **deterministic degradation** (LLM summarization, plus tool-result
+  pruning when the optional upstream pruner is mounted) on overflow or
+  manual compaction, without requiring model cooperation.
 
 The plugin provides five model tools:
 

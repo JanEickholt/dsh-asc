@@ -12,10 +12,13 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import { defineTool, type ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import type { JsonValue, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEventSearchRequest, SessionSearchRequest } from '@deepseek-ai/dsh-session-query'
 import type { AgenticCompactionEngine } from '../engine/engine.ts'
+import { tierSnapshot } from '../engine/tier.ts'
 import { textPreview } from '../utils/text.ts'
 
 const TOOL_OUTPUT_CHARS = 8000
@@ -23,14 +26,70 @@ const TOOL_OUTPUT_CHARS = 8000
 /** The maximum nodes shown in the status tool's recent-surface preview. */
 const STATUS_NODES_CAP = 40
 
-/**
- * Render a tool result to plain text. `defineTool` calls `render(args,
- * value)` — the canonical value is the SECOND argument; a one-argument
- * renderer would serialize the arguments instead.
- */
-function renderText(args: unknown, value: unknown): { type: 'text'; text: string }[] {
+/** Compact JSON renderer: no indentation, so the 8000-char cap fits more rows. */
+function renderCompactJson(args: unknown, value: unknown): { type: 'text'; text: string }[] {
   void args
-  return [{ type: 'text', text: textPreview(JSON.stringify(value, null, 2), TOOL_OUTPUT_CHARS) }]
+  return [{ type: 'text', text: textPreview(JSON.stringify(value) ?? 'null', TOOL_OUTPUT_CHARS) }]
+}
+
+/**
+ * One-line-per-node status renderer. `recentNodes` and recommendations come
+ * first because they are the fields the model uses to choose compress
+ * ranges; pretty JSON would put them at the tail and truncate them.
+ */
+function renderStatus(args: unknown, value: unknown): { type: 'text'; text: string }[] {
+  void args
+  const status = value as {
+    sessionId?: string
+    usage?: Record<string, unknown>
+    breakdown?: Record<string, unknown>
+    checkpoints?: Array<Record<string, unknown>>
+    tierTokens?: Record<string, number>
+    protectedSeqs?: number[]
+    recommendations?: Array<Record<string, unknown>>
+    recentNodes?: Array<Record<string, unknown>>
+    lastCompression?: Record<string, unknown>
+  }
+  const lines: string[] = []
+  const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim()
+
+  if (Array.isArray(status.recentNodes) && status.recentNodes.length > 0) {
+    lines.push(`Recent surface nodes (${status.recentNodes.length}):`)
+    for (const node of status.recentNodes) {
+      lines.push(oneLine(
+        `- seq ${String(node.seq)} pos ${String(node.position)} ${String(node.kind)} `
+        + `${String(node.tokens)}t tier ${String(node.tier)}${node.protected === true ? ' [protected]' : ''} `
+        + `| ${String(node.preview ?? '')}`,
+      ))
+    }
+  }
+  if (Array.isArray(status.recommendations) && status.recommendations.length > 0) {
+    lines.push('Recommended ranges:')
+    for (const range of status.recommendations) {
+      lines.push(oneLine(
+        `- seqs ${String(range.startSeq)}..${String(range.endSeq)} `
+        + `(positions ${String(range.startPosition)}..${String(range.endPosition)}, `
+        + `~${String(range.tokens)} tokens): ${String(range.reason)}`,
+      ))
+    }
+  }
+  lines.push(`Usage: ${JSON.stringify(status.usage ?? {})}`)
+  if (status.breakdown !== undefined) lines.push(`Breakdown: ${JSON.stringify(status.breakdown)}`)
+  if (Array.isArray(status.checkpoints) && status.checkpoints.length > 0) {
+    lines.push('Checkpoints:')
+    for (const checkpoint of status.checkpoints) {
+      const shadowed = Array.isArray(checkpoint.shadowedSeqs) ? String(checkpoint.shadowedSeqs) : '[]'
+      lines.push(oneLine(
+        `- ${String(checkpoint.compactionId)} tier ${String(checkpoint.tier)} `
+        + `seq ${String(checkpoint.seq)} author ${String(checkpoint.author)} `
+        + `shadowed ${String(checkpoint.shadowedTokenCount)}t ${shadowed} chars ${String(checkpoint.summaryChars)}`,
+      ))
+    }
+  }
+  if (status.tierTokens !== undefined) lines.push(`Tier tokens: ${JSON.stringify(status.tierTokens)}`)
+  if (Array.isArray(status.protectedSeqs)) lines.push(`Protected seqs: ${status.protectedSeqs.join(',')}`)
+  if (status.lastCompression !== undefined) lines.push(`Last compression: ${JSON.stringify(status.lastCompression)}`)
+  return [{ type: 'text', text: textPreview(lines.join('\n'), TOOL_OUTPUT_CHARS) }]
 }
 
 /** The agent-bound execution guard: context tools only run for an agent. */
@@ -43,16 +102,17 @@ function requireAgent(exec: ToolRunContext): NonNullable<ToolRunContext['agent']
 
 /** Register the five context tools on a context. */
 export function registerContextTools(ctx: Context, engine: AgenticCompactionEngine): () => void {
-  const disposers = [
-    ctx.tools.register(defineTool({
+  const disposers: Array<() => void> = []
+  try {
+    disposers.push(ctx.tools.register(defineTool({
       name: 'context_compress',
       description: [
         'Compress ranges of the conversation surface by replacing them with model-written checkpoints.',
-        'This is the core context-management tool: pick ranges of surface seqs (see context_status for the current surface and recommendations) whose content is no longer needed verbatim, and write a dense summary for each. The original content stays in the session log and can be restored later with context_decompress.',
+        'This is the core context-management tool: pick ranges of surface seqs (see context_status for the current surface and recommendations) whose content is no longer needed verbatim, and write a dense summary for each. The original content stays in the session log and can be restored later with context_decompress. Up to 64 ranges per call.',
         '',
         'Rules:',
         '- Surface seqs are EVENT SEQUENCE NUMBERS, not positions: they do not sort by size. The current surface order is reported by context_status. Positions are 0-based surface positions (0 = the oldest current surface node); recentNodes only shows the last 40 nodes and each entry carries its own position.',
-        '- Each range must be within the current surface; both seqs must be listed by context_status.',
+        '- Each range must be within the current surface; verify seqs with context_status (recentNodes only shows the last 40 nodes — recommendations can cover older ranges).',
         '- Ranges cannot include protected content (recent tail, protected tools, protected sources) — such ranges are rejected with a reason.',
         '- The framed checkpoint must be smaller than the shadowed content; too-long summaries are rejected.',
         '- A quality gate may reject catastrophic summaries; retry with acknowledgeRisk: true only if you judge the summary acceptable. (acknowledgeRisk may be passed as a top-level option or inside each content entry — some transports only carry the array.)',
@@ -63,7 +123,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
         content: {
           type: 'array',
           required: true,
-          description: 'Ranges to compress; each entry carries a topic, an inclusive startSeq/endSeq surface span, and the summary that replaces it.',
+          description: 'Ranges to compress; each entry carries an optional topic, an inclusive startSeq/endSeq surface span, and the summary that replaces it.',
           items: {
             type: 'object',
             additionalProperties: true,
@@ -101,6 +161,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
                   shadowedTokenCount: { type: 'number', required: true },
                   summaryTokenCount: { type: 'number', required: true },
                   author: { type: 'string', required: true },
+                  topic: { type: 'string', description: 'The topic label supplied on this range entry.' },
                   expandedFrom: {
                     type: 'object',
                     additionalProperties: true,
@@ -114,6 +175,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
                     additionalProperties: true,
                     description: 'Quality-gate report; present when the gate evaluated this summary.',
                     properties: {
+                      gate: { type: 'string', required: true },
                       passed: { type: 'boolean', required: true },
                       blocking: { type: 'boolean' },
                       layer: { type: 'string' },
@@ -144,6 +206,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
               ? ''
               : ` (extended from seqs ${entry.expandedFrom.startSeq}..${entry.expandedFrom.endSeq} `
                 + 'to keep tool calls paired with their results)'
+            const topic = entry.topic === undefined ? '' : ` [${entry.topic}]`
             const quality = entry.quality === undefined
               ? ''
               : entry.quality.passed
@@ -152,7 +215,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
             lines.push(
               `compressed seqs ${entry.startSeq}..${entry.endSeq} (${entry.shadowedSeqs.length} nodes, `
               + `~${entry.shadowedTokenCount} tokens) into checkpoint ${entry.compactionId} `
-              + `(tier ${entry.tier}, ~${entry.summaryTokenCount} summary tokens)${expanded}${quality}`,
+              + `(tier ${entry.tier}, ~${entry.summaryTokenCount} summary tokens)${topic}${expanded}${quality}`,
             )
           }
           for (const failure of value.failures) {
@@ -184,6 +247,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
             shadowedTokenCount: entry.shadowedTokenCount,
             summaryTokenCount: entry.summaryTokenCount,
             author: entry.author,
+            ...entry.topic === undefined ? {} : { topic: entry.topic },
             ...entry.expandedFrom === undefined
               ? {}
               : { expandedFrom: { ...entry.expandedFrom } },
@@ -202,9 +266,9 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
           failures: result.failures.map(failure => ({ ...failure })),
         }
       },
-    })),
+    })));
 
-    ctx.tools.register(defineTool({
+    disposers.push(ctx.tools.register(defineTool({
       name: 'context_decompress',
       description: [
         'Restore previously compressed content.',
@@ -217,7 +281,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
         '- startSeq/endSeq: every checkpoint whose current surface position (the position of its collapsed shadowed span) lies inside the given range is restored.',
         '',
         'Tier-aware restore: by default a checkpoint is restored one tier up (a tier-2 checkpoint reveals its tier-1 summaries). Pass full: true to expand recursively all the way to the original raw content — expensive, use only when necessary.',
-        'Restoring inflates context: the combined restored transcript must stay within the configured budget; over-budget targets are skipped and reported.',
+        'Restoring inflates context: the combined restored transcript must stay within the configured token budget; over-budget targets are skipped and reported. The configured maxBlocks bound is a hard per-call limit.',
       ].join('\n'),
       parameters: {
         compactionIds: {
@@ -230,7 +294,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
           description: 'Array-only transport alias for compactionIds: pass the bare id array and it is treated as the checkpoint list.',
           items: { type: 'string' },
         },
-        startSeq: { type: 'number', description: 'Range start (surface seq); restores every overlapping checkpoint.' },
+        startSeq: { type: 'number', description: 'Range start (surface seq); restores checkpoints whose current surface position lies inside the range.' },
         endSeq: { type: 'number', description: 'Range end (surface seq).' },
         full: {
           type: 'boolean',
@@ -319,35 +383,35 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
           skipped: [...result.skipped],
         }
       },
-    })),
+    })));
 
-    ctx.tools.register(defineTool({
+    disposers.push(ctx.tools.register(defineTool({
       name: 'context_recap',
       description: [
         'Re-fetch checkpoint summaries WITHOUT decompressing the original content.',
         'Use when a past context_compress call\'s summary has scrolled out of context or you need to recall what a checkpoint covers before deciding to decompress it.',
-        'Summaries are read from the durable session log, so they survive even when the compress call that wrote them is gone.',
-        'Args: compactionIds — optional list of checkpoint ids (from context_status). Omitted = recap all checkpoints.',
+        'Summaries are read from the durable session log, so they survive even when the compress call that wrote them is gone; explicit ids also resolve checkpoints that a later compression consumed.',
+        'Args: compactionIds — optional list of checkpoint ids (from context_status). Omitted = recap every checkpoint on the current surface; unknown ids are omitted.',
       ].join('\n'),
       parameters: {
         compactionIds: {
           type: 'array',
-          description: 'Checkpoint ids to recap, from context_status. Omitted = recap all.',
+          description: 'Checkpoint ids to recap, from context_status. Omitted = recap every checkpoint on the current surface.',
           items: { type: 'string' },
         },
       },
       output: {
         schema: { type: 'json' },
-        render: renderText,
+        render: renderCompactJson,
       },
       async execute(args, exec: ToolRunContext) {
         const agent = requireAgent(exec)
         const recapped = await engine.recapByModel(agent, args.compactionIds)
         return recapped as unknown as JsonValue
       },
-    })),
+    })));
 
-    ctx.tools.register(defineTool({
+    disposers.push(ctx.tools.register(defineTool({
       name: 'context_status',
       description: [
         'Report the current context state: token usage, surface nodes, compression checkpoints by tier, protected content, and recommended compression ranges.',
@@ -357,19 +421,19 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
       parameters: {},
       output: {
         schema: { type: 'json' },
-        render: renderText,
+        render: renderStatus,
       },
       async execute(_args, exec: ToolRunContext) {
         const status = await engine.status(requireAgent(exec))
         return summarizeStatus(status) as unknown as JsonValue
       },
-    })),
+    })));
 
-    ctx.tools.register(defineTool({
+    disposers.push(ctx.tools.register(defineTool({
       name: 'context_search',
       description: [
         'Full-text search over the session log, including content that was compressed (shadowed) into checkpoints.',
-        'Compression never deletes content: the original text remains in the log and is fully searchable. A hit reports whether it is still visible on the surface, shadowed by a checkpoint (with the checkpoint id), or log-only.',
+        'Compression never deletes content: the original text remains in the log and is fully searchable. A hit reports whether it is still current on the surface, shadowed by a checkpoint, or log-only. Session-scope shadowed hits also carry the owning checkpointId so you can decompress or recap it.',
         'Scope: "session" searches the current session; "workspace" searches all sessions.',
       ].join('\n'),
       parameters: {
@@ -383,14 +447,17 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
       },
       output: {
         schema: { type: 'json' },
-        render: renderText,
+        render: renderCompactJson,
       },
       async execute(args, exec: ToolRunContext) {
         const agent = requireAgent(exec)
         return searchContext(ctx, agent.session.id, exec, args) as unknown as JsonValue
       },
-    })),
-  ]
+    })));
+  } catch (error: unknown) {
+    for (const dispose of disposers) dispose()
+    throw error
+  }
   return () => {
     for (const dispose of disposers) dispose()
   }
@@ -446,19 +513,44 @@ async function searchContext(
     ? Math.trunc(args.limit)
     : 20
   const limit = Math.max(1, Math.min(100, requestedLimit))
+  if (args.scope !== undefined && args.scope !== 'session' && args.scope !== 'workspace') {
+    throw new Error(`context_search scope must be "session" or "workspace", got ${JSON.stringify(args.scope)}`)
+  }
   const scope = args.scope === 'workspace' ? 'workspace' : 'session'
   if (scope === 'session') {
     const request: SessionEventSearchRequest = { sessionId, query, limit }
     const page = await sessionQuery.searchEvents(request, { signal: exec.signal })
+    const session = ctx.sessions.get(sessionId)
+    let ownerBySeq: ReadonlyMap<number, string> | undefined
+    if (session !== undefined) {
+      const owners = new Map<number, string>()
+      for (const [checkpointSeq, shadowed] of tierSnapshot(session).shadowedBySeq) {
+        const event = session.events[checkpointSeq]
+        const source = event?.type === 'user/message'
+          ? event.data.source as MessageSource & { compactionId?: string }
+          : undefined
+        if (source === undefined
+          || source.compactionId === undefined
+          || !isCompactCheckpointSource(source)) continue
+        for (const seq of shadowed) owners.set(seq, source.compactionId)
+      }
+      ownerBySeq = owners
+    }
     return {
       scope: 'session',
       query,
-      hits: page.items.map(item => ({
-        seq: item.seq,
-        type: item.type,
-        surface: item.surface,
-        snippet: item.snippet,
-      })),
+      hits: page.items.map((item) => {
+        const checkpointId = ownerBySeq?.get(item.seq)
+        return {
+          seq: item.seq,
+          type: item.type,
+          surface: item.surface,
+          snippet: item.snippet,
+          ...item.surface === 'shadowed' && checkpointId !== undefined
+            ? { checkpointId }
+            : {},
+        }
+      }),
     }
   }
   const request: SessionSearchRequest = { query, limit }

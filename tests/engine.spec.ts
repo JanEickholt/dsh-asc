@@ -85,6 +85,22 @@ describe('AgenticCompactionEngine.compressByModel', () => {
     expect(result.failures[1]!.reason).toContain('non-empty')
   })
 
+  it('returns the per-range topic label with a committed checkpoint', async () => {
+    const { engine } = engineWith()
+    const session = conversationSession(4)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    const selection = validateSurfaceRange(session, nodes[0]!, nodes[1]!)
+    const result = await engine.compressByModel(agent, [{
+      topic: 'auth decisions',
+      startSeq: selection.start,
+      endSeq: selection.end,
+      summary: SUMMARY,
+    }])
+    expect(result.failures).toEqual([])
+    expect(result.compressed[0]!.topic).toBe('auth decisions')
+  })
+
   it('rejects ranges that include protected or recent-tail content', async () => {
     const { engine } = engineWith({ protection: { retainRecentMessages: 2 } })
     const session = conversationSession(4)
@@ -120,6 +136,9 @@ describe('AgenticCompactionEngine.compressByModel', () => {
     // ...and the exact-range retry with acknowledgeRisk bypasses it.
     const retried = await engine.compressByModel(agent, ranges, { acknowledgeRisk: true })
     expect(retried.compressed).toHaveLength(1)
+    // The acknowledged commit still records the rejected gate outcome.
+    expect(retried.compressed[0]!.quality?.passed).toBe(false)
+    expect(retried.compressed[0]!.quality?.blocking).toBe(true)
   })
 
   it('accepts acknowledgeRisk declared inside a content entry (array-only transports)', async () => {
@@ -211,6 +230,21 @@ describe('AgenticCompactionEngine.compressByModel', () => {
     }])
     expect(second.compressed[0]!.tier).toBe(2)
     expect(second.compressed[0]!.shadowedSeqs).toContain(firstCheckpointSeq)
+  })
+
+  it('fails a nested batch range whose span was changed by an earlier commit', async () => {
+    const { engine } = engineWith()
+    const session = conversationSession(6)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    const result = await engine.compressByModel(agent, [
+      { startSeq: nodes[1]!, endSeq: nodes[2]!, summary: TURN_SUMMARY },
+      { startSeq: nodes[0]!, endSeq: nodes[3]!, summary: `${TURN_SUMMARY} wider span` },
+    ])
+    expect(result.compressed).toHaveLength(1)
+    expect(result.failures).toHaveLength(1)
+    expect(result.failures[0]!.index).toBe(1)
+    expect(result.failures[0]!.reason).toContain('selected span changed')
   })
 })
 
@@ -376,6 +410,12 @@ describe('AgenticCompactionEngine.decompressByModel', () => {
         && (event.data.source as { op?: string }).op === 'decompress'
     })
     expect(restoredSeq).toBeDefined()
+    // Recap must still resolve the original checkpoint from the full log,
+    // not from the restored transcript that reuses its compactionId.
+    const recapped = await engine.recapByModel(agent, [id])
+    expect(recapped).toHaveLength(1)
+    expect(recapped[0]!.seq).toBe(view.seq)
+    expect(recapped[0]!.summary).toContain(TURN_SUMMARY)
   })
 
   it('restores every overlapping checkpoint for a range', async () => {
@@ -481,7 +521,7 @@ describe('AgenticCompactionEngine.decompressByModel', () => {
     const { ctx, engine } = engineWith()
     const writes: Array<{ path: string; content: string }> = []
     ctx.provide('fs', {
-      resolve: async (path: string) => ({ path }),
+      resolve: async (path: string) => ({ path, displayPath: `/resolved/${path.split('/').at(-1)!}` }),
       writeText: async (target: { path: string }, content: string) => {
         writes.push({ path: target.path, content })
         return { version: 1 }
@@ -503,7 +543,8 @@ describe('AgenticCompactionEngine.decompressByModel', () => {
     expect(result.skipped).toEqual([])
     expect(result.restored).toHaveLength(1)
     expect(result.restored[0]!.content).toBe('')
-    expect(result.restored[0]!.preview).toContain('/tmp/restore.txt')
+    expect(result.restored[0]!.preview).toContain('/resolved/restore.txt')
+    expect(result.restored[0]!.path).toBe('/resolved/restore.txt')
     expect(writes).toHaveLength(1)
     expect(writes[0]!.path).toBe('/tmp/restore.txt')
     expect(writes[0]!.content.length).toBeGreaterThan(0)
@@ -628,6 +669,30 @@ describe('AgenticCompactionEngine.recapByModel', () => {
     const recapped = await engine.recapByModel(agent, undefined)
     expect(recapped.length).toBeGreaterThanOrEqual(2)
   })
+
+  it('recaps a checkpoint that a later tier consumed', async () => {
+    const { engine } = engineWith({ qualityGate: { enabled: false } })
+    const session = conversationSession(6)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    const first = await engine.compressByModel(agent, [{
+      startSeq: nodes[0]!,
+      endSeq: nodes[1]!,
+      summary: TURN_SUMMARY,
+    }])
+    const firstId = first.compressed[0]!.compactionId
+    const after = [...session.surface.nodes]
+    await engine.compressByModel(agent, [{
+      startSeq: after[0]!,
+      endSeq: after[1]!,
+      summary: `${SUMMARY} distilled into bare facts`,
+    }])
+    const recapped = await engine.recapByModel(agent, [firstId])
+    expect(recapped).toHaveLength(1)
+    expect(recapped[0]!.compactionId).toBe(firstId)
+    expect(recapped[0]!.tier).toBe(1)
+    expect(recapped[0]!.summary).toContain(TURN_SUMMARY)
+  })
 })
 
 describe('AgenticCompactionEngine.status', () => {
@@ -666,6 +731,41 @@ describe('AgenticCompactionEngine.status', () => {
     expect(status.breakdown!.messageTokens).toBe(status.surfaceTokens)
     expect(status.breakdown!.systemTokens).toBeGreaterThanOrEqual(0)
     expect(status.breakdown!.systemTokens).toBeLessThanOrEqual(status.baselineTokens)
+  })
+
+  it('shows nested tool-output text in status previews', async () => {
+    const { engine } = engineWith()
+    const session = toolTurnSession(1)
+    const agent = agentOf(session)
+    const status = await engine.status(agent)
+    const toolNode = status.recentNodes.find(node => node.kind === 'tool')
+    expect(toolNode).toBeDefined()
+    expect(toolNode!.preview).toContain('result call-0')
+  })
+
+  it('marks recent-tail and tier-cap nodes as protected in status', async () => {
+    const { engine } = engineWith({
+      protection: { retainRecentMessages: 2, protectFirstUserMessage: false },
+      tiers: { maxTier: 1 },
+    })
+    const session = conversationSession(6)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    await engine.compressByModel(agent, [{
+      startSeq: nodes[0]!,
+      endSeq: nodes[2]!,
+      summary: TURN_SUMMARY,
+    }])
+    const status = await engine.status(agent)
+    const surface = session.surface.nodes
+    for (const tailSeq of surface.slice(-2)) {
+      expect(status.protectedSeqs).toContain(tailSeq)
+    }
+    const checkpointSeq = checkpointViews(session)[0]!.seq
+    expect(status.protectedSeqs).toContain(checkpointSeq)
+    for (const node of status.recentNodes) {
+      expect(node.protected).toBe(status.protectedSeqs.includes(node.seq))
+    }
   })
 })
 
@@ -812,17 +912,42 @@ describe('AgenticCompactionEngine automatic behavior', () => {
       .toThrow(/requires an idle agent/)
   })
 
-  it('classifies an asynchronously rejected maintenance claim as busy too', async () => {
+  it('classifies an async maintenance task failure as a summary failure', async () => {
     const { engine } = engineWith()
     const session = conversationSession(4)
     const agent = {
       ...agentOf(session),
       runMaintenance: async () => {
-        throw new Error('busy')
+        throw new Error('summarizer exploded')
       },
     } as never
     await expect(engine.compactNow(agent as never, new AbortController().signal))
-      .rejects.toThrow(/requires an idle agent/)
+      .rejects.toMatchObject({ code: 'summary' })
+  })
+
+  it('keeps a routed retention-policy misconfiguration loud in compactNow', async () => {
+    const { engine } = engineWith({ retainTokens: 90_000 })
+    const session = closedSession(4)
+    const agent = {
+      ...agentOf(session),
+      runMaintenance: async (task: (signal: AbortSignal) => Promise<unknown>) => task(new AbortController().signal),
+    } as never
+    // 90_000 retained tokens exceed the 80_000-token threshold of the
+    // 100k-window test model; this must surface as a policy error, not busy.
+    await expect(engine.compactNow(agent as never, new AbortController().signal))
+      .rejects.toMatchObject({ name: 'TargetPolicyConfigError' })
+  })
+
+  it('preserves the caller abort reason through compactNow', () => {
+    const { engine } = engineWith()
+    const session = conversationSession(4)
+    const controller = new AbortController()
+    controller.abort('stop now')
+    const agent = {
+      ...agentOf(session),
+      runMaintenance: async (task: (signal: AbortSignal) => Promise<unknown>) => task(new AbortController().signal),
+    } as never
+    expect(() => engine.compactNow(agent as never, controller.signal)).toThrow('stop now')
   })
 
   it('range eligibility honors the tier cap', async () => {

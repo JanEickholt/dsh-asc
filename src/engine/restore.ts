@@ -2,7 +2,7 @@
  * Decompression by replaying the log.
  *
  * A checkpoint's shadowed events remain in the session log forever, so
- * restoring compressed content costs zero stored state: resolve the target
+ * restoring compressed content needs no side state: resolve the target
  * checkpoint, expand its shadow chain (one tier by default, `full` to the
  * raw bottom), replay the leaf events into derived messages, serialize them,
  * and commit the transcript BACK into the surface at the checkpoint's own
@@ -50,9 +50,9 @@ const OVERFLOW_NOTICE_SOURCE = Object.freeze({
 export type OverflowNoticeSource = typeof OVERFLOW_NOTICE_SOURCE
 
 /**
- * Create provenance for the visible notice that follows an automatic
- * (fallback) compaction, so the model knows history was replaced without
- * its explicit choice.
+ * Create provenance for the visible notice that follows a fallback
+ * compaction (overflow recovery or manual compaction), so the model knows
+ * history was replaced without its explicit choice.
  * @returns immutable notice source.
  */
 export function overflowNoticeSource(): OverflowNoticeSource {
@@ -104,12 +104,16 @@ export function resolveRestoreTargets(
   compactionIds: readonly string[] | undefined,
   range: { startSeq: number; endSeq: number } | undefined,
 ): { targets: RestoreTarget[]; unknown: readonly string[] } {
-  const hasIds = compactionIds !== undefined && compactionIds.length > 0
+  const idsProvided = compactionIds !== undefined
+  const hasIds = idsProvided && compactionIds.length > 0
   if (hasIds && range !== undefined) {
     throw new Error(
       'compactionIds and startSeq/endSeq are mutually exclusive; '
       + 'use one targeting mode per context_decompress call',
     )
+  }
+  if (idsProvided && !hasIds && range === undefined) {
+    return { targets: [], unknown: [] }
   }
   const views = checkpointViews(session)
   if (hasIds) {

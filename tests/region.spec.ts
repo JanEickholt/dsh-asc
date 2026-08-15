@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
-import { ManualCompactionError, isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
+import { compactCheckpointSource, CompactionId, ManualCompactionError, isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import {
   commitSurfaceCompaction,
+  inspectCompactionEntryState,
   selectCompactableRange,
   SummaryNotSmallerError,
 } from '../src/engine/region.ts'
@@ -180,6 +181,14 @@ describe('commitSurfaceCompaction', () => {
     )).rejects.toThrow(/already has an open turn/)
   })
 
+  it('treats a turn opened before the latest end-seed as closed', () => {
+    const session = conversationSession(4)
+    session.append('session/end-seed', {})
+    const state = inspectCompactionEntryState(session.events)
+    expect(state.openTurn).toBeNull()
+    expect(state.latestEndSeedSeq).toBe(session.events.at(-1)!.seq)
+  })
+
   it('rejects in-turn compaction without an open turn', async () => {
     const ctx = createContext()
     const session = closedSession(3)
@@ -281,6 +290,34 @@ describe('toolNameIndex cache', () => {
     const config = resolveConfig({ protection: { protectedTools: ['protected_tool'], retainRecentMessages: 0 } })
     expect(isProtectedNode(session, callSeq, config)).toBe(true)
     expect(isProtectedNode(session, resultSeq, config)).toBe(true)
+  })
+
+  it('honors protectedSources for plugin-injected nodes, including our own', () => {
+    const session = conversationSession(2)
+    const nudge = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: '[context-management] nudge' }],
+      source: { kind: 'plugin', plugin: 'dsh-asc', purpose: 'nudge' },
+    }), { surfaceOp: 'append' }).seq
+    const restored = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'replayed transcript' }],
+      source: { kind: 'plugin', plugin: 'dsh-asc', op: 'decompress', compactionId: 'cp-1' },
+    }), { surfaceOp: 'append' }).seq
+    const checkpoint = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: '<compacted-summary>summary</compacted-summary>' }],
+      source: compactCheckpointSource(CompactionId('cp-2')),
+    }), { surfaceOp: 'append' }).seq
+
+    const none = resolveConfig({})
+    expect(isProtectedNode(session, nudge, none)).toBe(false)
+    expect(isProtectedNode(session, restored, none)).toBe(false)
+    expect(isProtectedNode(session, checkpoint, none)).toBe(false)
+
+    const own = resolveConfig({ protection: { protectedSources: ['dsh-asc'] } })
+    expect(isProtectedNode(session, nudge, own)).toBe(true)
+    expect(isProtectedNode(session, restored, own)).toBe(true)
+
+    const compact = resolveConfig({ protection: { protectedSources: ['compact'] } })
+    expect(isProtectedNode(session, checkpoint, compact)).toBe(true)
   })
 })
 

@@ -7,12 +7,13 @@
  * plugin sources.
  *
  * The `context_compress`/`context_decompress` tool calls themselves are NOT
- * force-protected: the summaries and audit trail live in log-only
- * `compaction/*` events that never enter the surface, so consuming the
- * surface call records loses nothing — the audit stays in the session file,
- * exactly like any other compression target. (This differs from ACP, where
- * the summary lives inside the compress call itself and the call must be
- * preserved; here the durable record is the event, not the call.)
+ * force-protected: compression audit lives in log-only `compaction/*`
+ * events, and decompression audit lives in the restored replacement
+ * `user/message` plus the shadowed originals, so consuming the surface call
+ * records loses nothing — the audit stays in the session file, exactly like
+ * any other compression target. (This differs from ACP, where the summary
+ * lives inside the compress call itself and the call must be preserved;
+ * here the durable record is the event, not the call.)
  *
  * @module dsh-asc/protected
  */
@@ -27,7 +28,7 @@ import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ResolvedConfig } from '../types.ts'
-import { nodeKindOf, tierSnapshot } from '../engine/tier.ts'
+import { tierSnapshot } from '../engine/tier.ts'
 
 /** Tool-call blocks inside one assistant message. */
 export interface ToolCallFacts {
@@ -105,10 +106,6 @@ export function isProtectedNode(
 ): boolean {
   const event = session.events[seq]
   if (event === undefined) return true
-  const kind = nodeKindOf(session, seq)
-  if (kind === 'nudge') return false
-  if (kind === 'restored') return false
-  if (kind === 'checkpoint') return false
   switch (event.type) {
     case 'user/message': {
       const source = event.data.source as { kind: string; plugin?: string }
@@ -120,6 +117,9 @@ export function isProtectedNode(
         return false
       }
       if (source.kind === 'plugin') {
+        // `protectedSources` is honored for every plugin-injected message,
+        // including this plugin's own nudges, notices, and restored
+        // transcripts; none of them is force-protected by default.
         return config.protection.protectedSources.includes(source.plugin ?? '')
       }
       return false
@@ -140,16 +140,27 @@ export function isProtectedNode(
   }
 }
 
+const firstUserMessageCache = new WeakMap<Session, { generation: number; nodes: number; seq: number | undefined }>()
+
 /** Seq of the first human user message on the surface, if any. */
 export function firstUserMessageSeq(session: Session): number | undefined {
-  for (const seq of session.surface.nodes) {
-    const event = session.events[seq]
+  const generation = session.surface.replaceGeneration
+  const nodes = session.surface.nodes.length
+  const cached = firstUserMessageCache.get(session)
+  if (cached !== undefined && cached.generation === generation && cached.nodes === nodes) {
+    return cached.seq
+  }
+  let seq: number | undefined
+  for (const candidate of session.surface.nodes) {
+    const event = session.events[candidate]
     if (event?.type === 'user/message'
       && (event.data.source as { kind: string }).kind === 'user') {
-      return seq
+      seq = candidate
+      break
     }
   }
-  return undefined
+  firstUserMessageCache.set(session, { generation, nodes, seq })
+  return seq
 }
 
 /** One validated surface range. */
@@ -187,8 +198,8 @@ export function validateSurfaceRange(session: Session, start: number, end: numbe
  * A tool-call/result pair can never be split by a compression, and a
  * complete tool turn (the assistant message carrying the calls plus every
  * paired result) is the smallest unit that keeps both edges balanced. The
- * start edge walks forward from the requested span's leading cut to the
- * nearest balanced cut; the end edge walks backward from its trailing cut.
+ * start edge walks backward from the requested span's leading cut to the
+ * nearest balanced cut; the end edge walks forward from its trailing cut.
  * Nothing outside the minimal enclosing turns is added.
  *
  * @param session - session owning the surface.

@@ -16,9 +16,10 @@
  *   `{ kind: 'plugin', plugin: 'dsh-asc', purpose: 'nudge' }`;
  * - decompression restores in place: the checkpoint node is replaced by a
  *   `user/message` whose source is `{ kind: 'plugin', plugin: 'dsh-asc',
- *   op: 'decompress' }` carrying the replayed transcript.
- * - automatic (fallback) compactions announce themselves with a
- *   `user/message` whose source purpose is `overflow-notice`.
+ *   op: 'decompress', compactionId }` carrying the replayed transcript.
+ * - fallback compactions (overflow recovery or manual compaction)
+ *   announce themselves with a `user/message` whose source purpose is
+ *   `overflow-notice`.
  *
  * Nudge cadence and tier baselines are transient in-memory state (a fresh
  * process re-establishes the baseline before nudging again), documented in

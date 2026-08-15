@@ -30,8 +30,8 @@ import { createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, Message, TokenUsage, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { TokenMeter, TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import type { QualityReport } from '../types.ts'
-import { eventForSeq, validateSurfaceRange } from '../policy/protected.ts'
+import type { QualityReport, ResolvedConfig } from '../types.ts'
+import { eventForSeq, rangeIneligibility, validateSurfaceRange } from '../policy/protected.ts'
 import { tierSnapshot } from './tier.ts'
 
 /** Tag wrapping the structured summary inside the landed checkpoint node. */
@@ -85,6 +85,16 @@ export interface CommitOptions {
   readonly flush?: () => Promise<void>
   /** Manual command that initiated this transaction, when present. */
   readonly sourceCommandId?: CommandId
+  /**
+   * Protection/tier policy enforced inside the transaction. Engine paths
+   * always pass it; low-level callers may omit it for a raw transaction.
+   */
+  readonly policy?: ResolvedConfig
+  /**
+   * The shadowed seqs the summary was written for. When present, the live
+   * span must still resolve to exactly these seqs at commit time.
+   */
+  readonly expectedShadowedSeqs?: readonly number[]
 }
 
 /** Result of one committed compression, including derived tier and authorship. */
@@ -218,6 +228,16 @@ export async function commitSurfaceCompaction(
 ): Promise<CommitResult> {
   if (options.owner === null) signal?.throwIfAborted()
   const selection = validateSurfaceRange(session, start, end)
+  if (options.expectedShadowedSeqs !== undefined
+    && !isDeepStrictEqual([...selection.shadowedSeqs], [...options.expectedShadowedSeqs])) {
+    throw new SurfaceChangedError('compaction: the selected span changed since the summary was prepared')
+  }
+  if (options.policy !== undefined) {
+    const ineligibility = rangeIneligibility(session, selection, options.policy)
+    if (ineligibility !== undefined) {
+      throw new Error(eligibilityMessage(ineligibility))
+    }
+  }
   const entryState = inspectCompactionEntryState(session.events)
   assertCompactionInactive(entryState.unmatchedCompactionStart, entryState.latestEndSeedSeq)
 
@@ -477,9 +497,26 @@ export function frameSummary(summary: readonly ContentBlock[]): ContentBlock[] {
   ]
 }
 
+/** Human-readable ineligibility reason for commit-time enforcement. */
+function eligibilityMessage(
+  ineligibility: { reason: string; seq?: number; position?: number; tier?: number },
+): string {
+  switch (ineligibility.reason) {
+    case 'protected':
+      return `compaction range includes protected node seq ${ineligibility.seq}`
+    case 'recent-tail':
+      return `compaction range reaches into the retained recent tail (position ${ineligibility.position})`
+    case 'max-tier':
+      return `compaction range includes a tier-${ineligibility.tier} checkpoint at the tier cap`
+    default:
+      return `compaction range is not eligible (${ineligibility.reason})`
+  }
+}
+
 /** Inspect open-turn, unmatched-compaction, and latest seed-boundary state independently. */
 export function inspectCompactionEntryState(events: readonly SessionEvent[]): CompactionEntryState {
   let openTurn: number | null = null
+  let openTurnSeq: number | undefined
   let openTurnStateKnown = false
   let unmatchedCompactionStart: SessionEvent<'compaction/start'> | undefined
   let compactionEntryStateKnown = false
@@ -501,12 +538,20 @@ export function inspectCompactionEntryState(events: readonly SessionEvent[]): Co
     if (!openTurnStateKnown) {
       if (event.type === 'turn/start') {
         openTurn = event.data.turn
+        openTurnSeq = event.seq
         openTurnStateKnown = true
       } else if (event.type === 'turn/end') {
         openTurnStateKnown = true
       }
     }
     if (openTurnStateKnown && compactionEntryStateKnown && latestEndSeedSeq !== undefined) break
+  }
+  // A turn opened before the latest end-seed belongs to the prior session
+  // lifecycle: it must not block standalone compaction in the new lifecycle.
+  if (openTurnSeq !== undefined
+    && latestEndSeedSeq !== undefined
+    && openTurnSeq < latestEndSeedSeq) {
+    openTurn = null
   }
   return { openTurn, unmatchedCompactionStart, latestEndSeedSeq }
 }

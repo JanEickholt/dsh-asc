@@ -63,7 +63,7 @@ documented in-place contract in [design.md](design.md).
 | 5 | Verify checkpoint | `context_status` | **STRUCTURED**: `"checkpoints": [{"compactionId": "d7a3b741-—, "seq": 5646, "tier": 1, "shadowedSeqs": [8,184,186,188,400,402,404,532,534], "shadowedTokenCount": 7417, "summaryChars": 9460, "author": "model"}]`, `"tierTokens": {"1": 2382}`, `protectedSeqs` grew to [7, 2147, 2149, 5642, 5648], `"lastCompression"` present. Totals 20,723 →19,494. |
 | 6 | Search shadowed content | `context_search "jiachen_project.tar"` | **HITS OVER SHADOWED ORIGINALS —reaction 鈶?validated for the first time**: 11 hits incl. seq 534 and seq 186 both tagged `"surface": "shadowed"` (FTS over compressed originals works live). |
 | 7 | **Decompress (restore)** | `context_decompress ["d7a3b741-d088-4969-8a6c-432d8707e85f"]` | **PASS**: `restored checkpoint d7a3b741-d088-4969-8a6c-432d8707e85f (tier 1): 9 events, ~7417 tokens, 29781 chars` —raw events replayed verbatim: runtime snapshot, workspace listing, glob result (114,096 paths), HANDOFF.md full text, reports/repos listings, and `e2e-compaction-test.md` in full (105 lines). |
-| 8 | Verify restore | `context_search "jiachen_project.tar"` | **PASS**: 16 hits; restored content back on the surface (seq 6676 `tool/result` `current` = replay containing the workspace listing). Observable semantics: the checkpoint record **persists** in `context_status` after restore and the original seqs remain `shadowed` —restore is a replay, not an un-shadow. |
+| 8 | Verify restore | `context_search "jiachen_project.tar"` | **PASS**: 16 hits; restored content back on the surface (seq 6676 `tool/result` `current` = replay containing the workspace listing). `[superseded]` Early-run note: the checkpoint record appeared to persist in `context_status` after restore — current releases replace the checkpoint in place and no longer list it. |
 | 9 | Error path: unknown id | `context_decompress ["00000000-0000-0000-0000-000000000000"]` | `skipped: 00000000-0000-0000-0000-000000000000` —graceful no-op, no crash (matches runs 1—). |
 
 ## Run 4 —Pass / Fail summary
@@ -81,14 +81,14 @@ documented in-place contract in [design.md](design.md).
 
 1. **First fully green run —all six capabilities PASS together.** Both Run 3 blockers are resolved in this session: `context_status` returns structured data on every call, and `context_search` returns real hits (current / log-only / shadowed). Nothing regressed on the error paths.
 2. **FTS-over-shadowed originals is now proven live** (reaction 鈶?: immediately after compressing seqs 8..534, `context_search "jiachen_project.tar"` returned seqs 534 and 186 tagged `"surface": "shadowed"` —the searchable-compressed-originals property holds, not just designed. This was the top blocker across runs 1—.
-3. **Decompress semantics observable**: restore replays the log into the surface (9 events, 29,781 chars). Afterwards the checkpoint record persists in `context_status` and the original seqs stay `shadowed`; search returns both the shadowed original and the replayed copy (`current`). Reversibility = replay, not mutation of the original log events.
+3. **Decompress semantics observable** `[superseded for current releases]`: this early run saw restore as replay with the checkpoint record persisting in `context_status` and the original seqs staying `shadowed`. Current releases restore IN PLACE — the checkpoint is replaced by the replayed transcript and leaves the current surface; the original log events remain shadowed and searchable.
 4. **Checkpoint metadata is now first-class**: `shadowedSeqs` list, `shadowedTokenCount` (7,417), `summaryChars` (9,460), `author: "model"`, checkpoint event seq 5646 —the auditability story (DSH-side) is observable end-to-end.
 5. Compression ratio this run: 7,417 →2,382 (≥.1×). Across runs: ≥1.8×, ≥.0×, ≥.35×, ≥.1× —ratio varies with range coverage and summary density; all four checkpoints functional.
 
 ## Run 4 —Recommendations
 
 - **Exercise tier-2/tier-3 (LSM distillation)**: now that status/search surfaces are observable, run a second compression pass over the tier-1 checkpoint (or a fresh tier-1 pass followed by distilling the checkpoint) and verify tiered `tierTokens`/restore behavior —out of reach in runs 1—.
-- **Clarify decompress semantics**: decide whether the checkpoint record should be consumed/dropped on restore (currently it persists with originals still `shadowed`; replay is the only mechanism returning content). Document the intended contract.
+- **Clarify decompress semantics** `[superseded]`: current releases document in-place restore — the checkpoint node is replaced by the replayed transcript; the original log events stay shadowed and searchable.
 - **Re-run the full sequence once more in a fresh session** to confirm the fixed `context_status`/`context_search` surfaces are stable across sessions (runs 1—'s failures were also session-specific), and re-check the `context/nudge` unknown-event compatibility for older logs.
 
 ---

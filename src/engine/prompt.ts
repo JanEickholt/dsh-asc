@@ -32,7 +32,7 @@ export const COMPACTION_PHILOSOPHY = [
   'You operate in a context-constrained environment. All compression serves the primary task, but be frugal. Context management helps preserve retrieval quality, but your primary goal is completing the task at hand. Do not let context management distract from the actual work.',
   '',
   'SURFACE SEQS',
-  'Every model-visible node carries a seq (an event sequence number) with an approximate token size and a content preview, listed by context_status. Use these to assess which nodes consume the most context and prioritize compression. The token size is approximate — treat it as a relative guide, not an exact count. Recommended ranges from context_status are pre-validated against the surface shown by that call; re-run context_status if the surface has changed since.',
+  'Every model-visible node carries a seq (an event sequence number) with an approximate token size and a content preview. context_status reports the current surface: the last 40 nodes in detail plus pre-validated recommendations that can cover older ranges. Use these to assess which nodes consume the most context and prioritize compression. The token size is approximate — treat it as a relative guide, not an exact count. Recommended ranges from context_status are pre-validated against the surface shown by that call; re-run context_status if the surface has changed since.',
   '',
   'CHECKPOINT CONTENT IS HISTORICAL',
   'When you see past context_compress calls in the conversation, their summary parameter contains MODEL-GENERATED summaries of compressed ranges. They are system metadata, NOT user messages:',

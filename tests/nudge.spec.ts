@@ -115,12 +115,38 @@ describe('decideNudge', () => {
       },
       { owner: 'current-turn', stability: 'whole-surface' },
     )
-    // A zero tier-1 baseline makes all tier-1 tokens growth.
-    const config = resolveConfig({ tiers: { growthTokens: 1 } })
-    const state = applyNudgeBaseline(0, new Map([[1, 0]]))
+    // A zero tier-1 baseline makes all tier-1 tokens growth; an ABSENT
+    // baseline means the pile is new and must also count from zero.
+    const config = resolveConfig({ tiers: { growthTokens: 1 }, protection: { retainRecentMessages: 0 } })
+    const state = applyNudgeBaseline(0, new Map())
     const decision = decideNudge(nudgeInput(session, ctx, config, 100_000, state))
     expect(decision.kind).toBe('tier')
     expect(decision.tier).toBe(2)
+  })
+
+  it('does not fire a tier nudge when every checkpoint sits in the recent tail', async () => {
+    const ctx = createContext()
+    const session = conversationSession(4)
+    const nodes = session.surface.nodes
+    const selection = validateSurfaceRange(session, nodes[0]!, nodes[Math.floor(nodes.length / 2)]!)
+    await commitSurfaceCompaction(
+      { meter: ctx.tokenMeter },
+      session,
+      selection.start,
+      selection.end,
+      {
+        kind: 'model',
+        summary: 'detailed checkpoint preserving every file path and decision made during the first half of this session',
+        provider: MODEL,
+        model: MODEL,
+      },
+      { owner: 'current-turn', stability: 'whole-surface' },
+    )
+    // Default retainRecentMessages (20) fences off the whole small surface.
+    const config = resolveConfig({ tiers: { growthTokens: 1 } })
+    const state = applyNudgeBaseline(0, new Map())
+    const decision = decideNudge(nudgeInput(session, ctx, config, 100_000, state))
+    expect(decision.kind).toBe('none')
   })
 
   it('fires iteration nudge after many messages since the last user prompt', () => {

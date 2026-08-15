@@ -57,7 +57,7 @@ represented.**
   transient per-session baselines.
 - Search covers the full log. `context_search` runs session-query FTS over
   *all* events — including `shadowed` ones — and reports each hit's surface
-  status and owning checkpoint.
+  status.
 - Degradation is deterministic. Overflow recovery and manual compaction
   fall back to head-anchored selection plus one cache-friendly
   `ctx.llm.stream()` summarization call, exactly like `compaction-basic`.
@@ -82,14 +82,20 @@ already-known event types:
 Nudge cadence and tier baselines are **transient in-memory state**
 (`WeakMap<Session, NudgeState>`): a fresh process re-establishes the
 baseline before nudging again, so a restart can never double-fire, and the
-nudge messages themselves remain durable and replayable.
+nudge messages themselves remain durable and replayable. The pending
+blocking quality-gate rejection (`WeakMap<Session, …>`) is transient for
+the same reason: after a restart the model simply re-submits the summary
+and receives a fresh gate evaluation. An in-place `context_decompress` also
+resets the transient nudge baseline, so the model's own restore is not
+counted as unexpected growth on the next step.
 
 ## 4. The five tools
 
 ### `context_compress`
 Compresses one or more surface ranges into model-written checkpoints.
 
-- `content: [{ topic?, startSeq, endSeq, summary }]` — up to 64 entries.
+- `content: [{ topic?, startSeq, endSeq, summary, acknowledgeRisk? }]` — up
+  to 64 entries.
 - `acknowledgeRisk?: boolean` — retries a blocked quality-gate rejection for
   the exact range set.
 - Hard constraints enforced before commit (per entry, failures reported
@@ -106,7 +112,9 @@ Compresses one or more surface ranges into model-written checkpoints.
   Blocking failures reject the whole plan once; the exact-range retry with
   `acknowledgeRisk` bypasses. Non-blocking mode records the outcome.
 - Result: `{ compressed: [...], failures: [...] }` with per-entry
-  `compactionId`, `tier`, shadowed seqs/tokens, summary tokens, author.
+  `compactionId`, `tier`, shadowed `startSeq`/`endSeq`, `shadowedSeqs`,
+  `shadowedTokenCount`, `summaryTokenCount`, `author`, `topic?`,
+  `expandedFrom?`, `quality?`.
 
 ### `context_decompress`
 Restores compressed content by replaying the log.
@@ -141,7 +149,8 @@ Restores compressed content by replaying the log.
 Re-reads checkpoint summaries without decompressing the originals.
 
 - `compactionIds?: string[]` — omit to recap every checkpoint on the
-  current surface.
+  current surface. Explicit ids resolve against the full log, including
+  checkpoints that a later compression consumed.
 - Summaries are read from the durable `compaction/summary` events, so a
   recap never depends on the original compress call still being visible.
 - Read-only: no surface mutation, no budget is charged beyond the returned
@@ -150,7 +159,8 @@ Re-reads checkpoint summaries without decompressing the originals.
 ### `context_status`
 Reports usage (token-meter baseline kind/tokens, total, window, percent),
 checkpoints by tier with their shadowed spans, per-tier token totals,
-protected seqs, recommended ranges, and the recent surface nodes with
+protected seqs (protection policy, recent tail, tier cap), recommended
+ranges, and the recent surface nodes with
 seq/position/kind/tokens/tier/protection/preview. Positions are 0-based
 surface positions (0 = the oldest current surface node); the recent-node
 list is capped to the last 40 nodes and each entry carries its own
@@ -159,8 +169,9 @@ position.
 ### `context_search`
 Full-text search through the optional session-query service. `scope:
 session` searches the current session; `scope: workspace` searches all
-sessions. Hits carry `seq`, `type`, `surface` (`visible` | `shadowed` |
-`log-only`), and a snippet. Requires a session-query backend such as
+sessions. Hits carry `seq`, `type`, `surface` (`current` | `shadowed` |
+`log-only`), and a snippet; session-scope shadowed hits also carry the
+owning `checkpointId`. Requires a session-query backend such as
 `@deepseek-ai/dsh-session-query-sqlite`.
 
 ## 5. Automatic behavior
@@ -193,16 +204,18 @@ distillation accumulate growth across captures.
 
 `compactIfNeeded('context-overflow')`, `compactNow`, and `compactRegion`
 share one path: selection with the routed-model retention budget
-(`thresholdRatio`/`retainRatio`/`retainTokens`/`modelPolicies`, scaled by
-the adapter's context window), hard fences for protected nodes, the
-configured recent-tail node count, and the tier cap; then one
+(`retainRatio`/`retainTokens`/`modelPolicies`, scaled by the adapter's
+context window; `thresholdRatio` is the validation ceiling the budget must
+stay below), hard fences for protected nodes, the configured recent-tail
+node count, and the tier cap; then one
 `ctx.llm.stream()` call whose envelope reuses the conversation's own system
 prompt and tool schemas and carries the shadowed region in surface order
 (KV-cache friendly); then the same durable transaction with author `fallback`. `compactRegion` re-validates
 its explicit range against the protection and tier-cap policy before
 summarizing. `compactNow` additionally runs under `agent.runMaintenance`,
-writes a standalone bracket (owner `null`), and flushes through
-`ctx.sessions.flush`.
+uses selected-span stability (context may land outside the span between the
+marker pair), writes a standalone bracket (owner `null`), and flushes
+through `ctx.sessions.flush`.
 
 ## 7. Protection policy
 
@@ -210,9 +223,9 @@ writes a standalone bracket (owner `null`), and flushes through
 |---|---|---|
 | First human user message never compressed | on | `protection.protectFirstUserMessage` |
 | Recent tail never included in a range | 20 nodes | `protection.retainRecentMessages` |
-| `context_compress`/`context_decompress` call records are compressible like any other surface content; the audit lives in log-only `compaction/*` events | — | fixed |
+| `context_compress`/`context_decompress` call records are compressible like any other surface content; compression audit lives in log-only `compaction/*` events and decompression audit lives in the restored `user/message` plus shadowed originals | — | fixed |
 | Tool outputs excluded from ranges | `[]` | `protection.protectedTools` |
-| Plugin-sourced injected messages excluded | `[]` | `protection.protectedSources` |
+| Plugin-sourced injected messages excluded (including `dsh-asc`'s own nudges/notices/restores when listed) | `[]` | `protection.protectedSources` |
 | All human user messages excluded | off | `protection.protectUserMessages` |
 | Checkpoints at the tier cap cannot be consumed | tier 3 | `tiers.maxTier` |
 
@@ -232,7 +245,8 @@ See [usage.md](usage.md#configuration) for the full table with defaults.
 ## 10. Reliability properties
 
 - **Reversible**: every compression is a log replacement; the original
-  events remain in the log and `context_decompress` restores them exactly.
+  events remain in the log and `context_decompress` replays their original
+  text content as a serialized transcript back into the surface.
 - **Searchable**: FTS indexes the full log including shadowed events.
 - **Auditable**: model-visible ⟺ logged; every nudge is a durable user
   message, every compression is the upstream bracket, and every restored

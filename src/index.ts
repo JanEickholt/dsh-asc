@@ -90,11 +90,21 @@ export const Config = AgenticCompactionEngine.Config
  */
 export function apply(ctx: Context, config: AgenticCompactionConfig = {}): () => void {
   const engine = new AgenticCompactionEngine(ctx, config)
-  const disposePhilosophy = registerPhilosophyPrompt(ctx)
-  const disposeTools = registerContextTools(ctx, engine)
+  let disposePhilosophy: (() => void) | undefined
+  let disposeTools: (() => void) | undefined
+  try {
+    disposePhilosophy = registerPhilosophyPrompt(ctx)
+    disposeTools = registerContextTools(ctx, engine)
+  } catch (error: unknown) {
+    // A partial apply must not leave automatic listeners behind.
+    disposeTools?.()
+    disposePhilosophy?.()
+    engine.dispose()
+    throw error
+  }
   return () => {
-    disposeTools()
-    disposePhilosophy()
+    disposeTools?.()
+    disposePhilosophy?.()
     engine.dispose()
   }
 }

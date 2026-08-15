@@ -121,7 +121,7 @@ log but nothing restores it to the visible surface), no tiered distillation,
 no search over shadowed content from the model's point of view (the FTS
 corpus indexes *all* events — shadowed text is searchable, but no tool
 surfaces that), and no nudge guidance. `session-query` provides
-`searchEvents`/`searchSessions` with per-event `surface: visible | shadowed |
+`searchEvents`/`searchSessions` with per-event `surface: current | shadowed |
 log-only` classification, which is exactly the missing retrieval primitive.
 
 ## 2. opencode-acp: context management as model-owned state
@@ -221,7 +221,7 @@ every decision on DSH's log:
    is measurable.
 5. **Search → the full log.** `context_search` runs session-query FTS over
    the whole log, including `shadowed` events, and reports each hit's
-   surface status and owning checkpoint.
+   surface status (session-scope shadowed hits also name their checkpoint).
 6. **Degradation → the deterministic backend.** If overflow recovery needs
    automatic action (or manual compaction is requested), the engine falls
    back to deterministic selection + LLM summarization, exactly like

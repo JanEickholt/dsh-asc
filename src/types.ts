@@ -8,7 +8,7 @@ import type { CompactionId } from '@deepseek-ai/dsh-compaction'
 
 /** Policy fields shared by the default policy and exact model overrides. */
 export interface CompactionPolicyFields {
-  /** Compact at this fraction of the model's context window. Defaults to `0.8`. */
+  /** High-pressure reference fraction of the model's context window; scales the fallback retention budget. Defaults to `0.8`. */
   thresholdRatio?: number
   /** Recent context retained as a fraction of the model's window. Defaults to `0.16`. */
   retainRatio?: number
@@ -198,6 +198,8 @@ export interface CompressionOutcome {
   readonly summaryTokenCount: number
   readonly author: 'model' | 'fallback'
   readonly quality?: QualityReport
+  /** The per-range topic label supplied by the model, when present. */
+  readonly topic?: string
   /**
    * The requested range before automatic tool-pair extension, when the
    * committed range was extended beyond what the model asked for. The model
@@ -288,11 +290,11 @@ export interface RecommendedRange {
   readonly kind: 'history' | 'tool-result'
   readonly reason: string
   /**
-   * Whether the range is guaranteed to pass the commit-time validation
-   * (balanced tool pairing at both edges, no protected node inside). Every
-   * recommendation is pre-validated before it is shown, so this is always
-   * `true` today; the field exists so the model can trust recommendations
-   * without re-checking the surface itself.
+   * Whether the range passed the commit-time validation (balanced tool
+   * pairing at both edges, no protected node, outside the recent tail,
+   * below the tier cap) against the surface shown by the same
+   * `context_status` call. It is always `true`; re-verify with a fresh
+   * `context_status` after any surface change.
    */
   readonly balanced: true
 }
@@ -321,17 +323,21 @@ export interface SurfaceNodePreview {
   readonly kind: 'user' | 'assistant' | 'tool' | 'checkpoint' | 'nudge' | 'restored'
   readonly tokens: number
   readonly tier: number
-  /** Whether the node is excluded from compression ranges by the protection policy. */
+  /** Whether the node cannot be part of any valid compression range under the current policy. */
   readonly protected: boolean
   readonly preview: string
 }
 
-/** Complete `context_status` payload. */
+/**
+ * Engine `status()` payload. The `context_status` tool summarizes this
+ * into a compact model-facing JSON: usage fields are nested under `usage`,
+ * and `recentNodes` is capped to the last 40 nodes.
+ */
 export interface ContextStatus {
   readonly sessionId: string
   readonly totalTokens: number
   readonly surfaceTokens: number
-  readonly baselineKind: string
+  readonly baselineKind: 'none' | 'estimated' | 'usage'
   readonly baselineTokens: number
   readonly contextWindow?: number
   readonly usagePercent?: number
@@ -346,6 +352,7 @@ export interface ContextStatus {
   }
   readonly checkpoints: readonly CheckpointView[]
   readonly tierTokens: TierTokenUsage
+  /** Surface seqs that cannot appear in a valid compression range (protection policy, recent tail, tier cap). */
   readonly protectedSeqs: readonly number[]
   readonly recommendations: readonly RecommendedRange[]
   readonly recentNodes: readonly SurfaceNodePreview[]

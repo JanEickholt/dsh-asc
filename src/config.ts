@@ -20,6 +20,8 @@ const DEFAULT_RETAIN_RATIO = 0.16
 
 /** Config errors classified by the exact provider/model route so overflow recovery can report the failing target precisely. */
 export class TargetPolicyConfigError extends Error {
+  override readonly name = 'TargetPolicyConfigError'
+
   /**
    * @param targetKey - exact provider/model route used as the warning key.
    * @param message - actionable configuration failure detail.
@@ -420,11 +422,15 @@ function validateSummarizationPair(
 ): void {
   const provider = group.summarizationProvider
   const model = group.summarizationModel
-  if (provider !== undefined && typeof provider !== 'string') {
-    throw new Error(`${name}.summarizationProvider must be a string`)
+  const invalidProvider = provider !== undefined
+    && (typeof provider !== 'string' || (provider.length > 0 && provider.trim().length === 0))
+  const invalidModel = model !== undefined
+    && (typeof model !== 'string' || (model.length > 0 && model.trim().length === 0))
+  if (invalidProvider) {
+    throw new Error(`${name}.summarizationProvider must be empty or a non-blank string`)
   }
-  if (model !== undefined && typeof model !== 'string') {
-    throw new Error(`${name}.summarizationModel must be a string`)
+  if (invalidModel) {
+    throw new Error(`${name}.summarizationModel must be empty or a non-blank string`)
   }
   if (provider === undefined && model === undefined) return
   if (provider === undefined || model === undefined

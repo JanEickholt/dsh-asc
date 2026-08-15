@@ -154,8 +154,9 @@ export function decideNudge(input: NudgeInput): NudgeDecision {
   const total = measurement.totalTokens
   const baseline = state.lastBaselineTokens
   const growth = Math.max(0, total - baseline)
-  const overMax = contextWindow !== undefined && total >= contextWindow * nudge.maxRatio
-  const overMin = contextWindow !== undefined && total >= contextWindow * nudge.minRatio
+  const hasWindow = contextWindow !== undefined && contextWindow > 0
+  const overMax = hasWindow && total >= contextWindow * nudge.maxRatio
+  const overMin = hasWindow && total >= contextWindow * nudge.minRatio
 
   // Over-max pressure keeps its own cadence: the window itself is the
   // threshold, so a step counter plus the frequency gate is enough.
@@ -173,7 +174,9 @@ export function decideNudge(input: NudgeInput): NudgeDecision {
     const usage = tierTokenUsage(session, measurement)
     for (let inputTier = 1; inputTier < tiers.maxTier; inputTier += 1) {
       const tierTokens = usage.get(inputTier) ?? 0
-      const tierBaseline = state.tierBaselines.get(inputTier) ?? tierTokens
+      // An absent baseline means the tier was not on the surface when the
+      // baseline was recorded: its whole pile is new growth.
+      const tierBaseline = state.tierBaselines.get(inputTier) ?? 0
       if (tierTokens - tierBaseline >= tiers.growthTokens
         && hasConsumableCheckpoint(session, inputTier, config)) {
         return {
@@ -217,13 +220,17 @@ function none(): NudgeDecision {
 }
 
 function percent(tokens: number, window: number | undefined): number {
-  return window === undefined ? 0 : Math.round((tokens * 100) / window)
+  return window === undefined || window <= 0 ? 0 : Math.round((tokens * 100) / window)
 }
 
 /** Whether at least one current checkpoint at `tier` is consumable. */
 function hasConsumableCheckpoint(session: Session, tier: number, config: ResolvedConfig): boolean {
   const snap = tierSnapshot(session)
-  for (const seq of session.surface.nodes) {
+  const nodes = session.surface.nodes
+  const tailBoundary = Math.max(0, nodes.length - config.protection.retainRecentMessages)
+  for (let index = 0; index < tailBoundary; index += 1) {
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- index is in bounds
+    const seq = nodes[index]!
     if ((snap.tierBySeq.get(seq) ?? 0) !== tier) continue
     if (!isProtectedNode(session, seq, config)) return true
   }
@@ -415,6 +422,10 @@ function recommendHeadRange(
   const protectedSeqs = new Set(
     nodes.filter(seq => isProtectedNode(session, seq, config)),
   )
+  const tiers = tierSnapshot(session)
+  for (const seq of nodes) {
+    if ((tiers.tierBySeq.get(seq) ?? 0) >= config.tiers.maxTier) protectedSeqs.add(seq)
+  }
   // Start after any leading protected nodes (e.g. a protected first prompt).
   let startIdx = 0
   while (startIdx < tailBoundary && protectedSeqs.has(nodes[startIdx]!)) startIdx += 1

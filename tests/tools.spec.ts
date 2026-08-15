@@ -99,13 +99,43 @@ describe('registerContextTools', () => {
     const value = { scope: 'session', query: 'needle', hits: [{ seq: 1, surface: 'shadowed' }] }
     // defineTool calls render(args, value): a one-argument renderer would
     // serialize the args and silently drop the actual result.
-    const rendered = status.output.render({}, value as never)
+    const rendered = search.output.render({}, value as never)
     const text = rendered.map(block => (block as { text: string }).text).join('')
     expect(text).toContain('"hits"')
     expect(text).toContain('"shadowed"')
-    expect(text).not.toContain('"scope": "workspace"')
-    void search
+    expect(text).not.toContain('"scope":"workspace"')
+    void status
     void engine
+  })
+
+  it('renders context_status with recent nodes first and one line per node', () => {
+    const ctx = createContext()
+    const registry = recordingRegistry(ctx)
+    const engine = new AgenticCompactionEngine(ctx, { auto: false })
+    registerContextTools(ctx, engine)
+    const status = registry.tools.find(tool => tool.name === 'context_status')!
+    const value = {
+      sessionId: 's1',
+      usage: { totalTokens: 100, surfaceTokens: 40 },
+      recentNodes: [{
+        seq: 7,
+        position: 0,
+        kind: 'tool',
+        tokens: 55,
+        tier: 0,
+        protected: false,
+        preview: 'huge output body',
+      }],
+      recommendations: [],
+      checkpoints: [],
+      tierTokens: {},
+      protectedSeqs: [],
+    }
+    const text = status.output.render({}, value)
+      .map(block => (block as { text: string }).text).join('')
+    expect(text.indexOf('Recent surface nodes')).toBeLessThan(text.indexOf('Usage'))
+    expect(text).toContain('seq 7 pos 0 tool 55t tier 0')
+    expect(text).toContain('huge output body')
   })
 
   it('renders toFile restores as written paths, not in-place restores', () => {
