@@ -855,8 +855,14 @@ export class AgenticCompactionEngine extends CompactionEngine {
     const checkpoints = checkpointViews(session).map(view => {
       const summaryEvent = summaryByCompactionId.get(view.compactionId)
       let summaryChars = 0
+      let topic: string | undefined
       for (const block of summaryEvent?.data.summary ?? []) {
-        if (block.type === 'text') summaryChars += Array.from(block.text).length
+        if (block.type !== 'text') continue
+        if (topic === undefined && block.text.startsWith('## Topic: ')) {
+          topic = block.text.slice('## Topic: '.length).trim()
+          continue
+        }
+        summaryChars += Array.from(block.text).length
       }
       return {
         compactionId: view.compactionId,
@@ -866,6 +872,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
         shadowedTokenCount: summaryEvent?.data.shadowedTokenCount ?? 0,
         summaryChars,
         author: summaryEvent?.data.llmStreamCall === true ? 'fallback' as const : 'model' as const,
+        ...topic === undefined ? {} : { topic },
       }
     })
 

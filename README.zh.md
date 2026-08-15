@@ -83,9 +83,8 @@ dsh plugin --profile <name> add "link:$(pwd)"
 
 系统提示词把这些工具串成一条操作闭环：把已经消费的原始工作压成 T1
 检查点，把稳定下来的 T1 堆蒸馏成 T2 决策、再把 T2 堆凝结成 T3 事实索引；
-事实和决策直接看表面摘要或 `context_recap`，精确关键词用
-`context_search`（可加 `surface: "shadowed"`）检索被压缩的原文，然后
-用 `context_decompress` 逐层展开，而不是一次性全部恢复。
+先用检查点目录（topic 和 tier）定位，只有不知道内容属于哪一块时才用
+精确关键词搜索，定位之后再用 `context_decompress` 逐层展开。
 
 ## 工作原理
 

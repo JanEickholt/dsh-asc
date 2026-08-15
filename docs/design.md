@@ -57,7 +57,10 @@ represented.**
   transient per-session baselines.
 - Search covers the full log. `context_search` runs session-query FTS over
   *all* events — including `shadowed` ones — and reports each hit's surface
-  status.
+  status. It is the locator for unknown locations: name an exact token, get
+  the owning checkpoint. Decompression is the fetcher for an already-located
+  block; the visible summaries plus `context_recap` are the table of
+  contents.
 - Degradation is deterministic. Overflow recovery and manual compaction
   fall back to head-anchored selection plus one cache-friendly
   `ctx.llm.stream()` summarization call, exactly like `compaction-basic`.

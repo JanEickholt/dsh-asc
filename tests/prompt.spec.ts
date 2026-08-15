@@ -50,8 +50,10 @@ describe('registerPhilosophyPrompt', () => {
     // Context retrieval and maintenance: the plugin teaches the complete
     // read/update/archive workflow, not just how to write a summary.
     expect(section!.text).toContain('COMPRESSION CONTRACT FOR RETRIEVAL')
-    expect(section!.text).toContain('CONTEXT RETRIEVAL (READ BEFORE YOU EXPAND)')
-    expect(section!.text).toContain('surface: "shadowed"')
+    expect(section!.text).toContain('CONTEXT RETRIEVAL (LOCATE FIRST, EXPAND SECOND)')
+    expect(section!.text).toContain('BLOCK NAVIGATION')
+    expect(section!.text).toContain('TOKEN SEARCH')
+    expect(section!.text).toContain('checkpointId')
     expect(section!.text).toContain('CONTEXT MAINTENANCE (UPDATE / ARCHIVE)')
     // Our additions: planned review + cadence.
     expect(section!.text).toContain('WHEN TO REVIEW')

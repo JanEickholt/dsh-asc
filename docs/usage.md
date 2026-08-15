@@ -217,9 +217,10 @@ checkpoint summaries, optionally filtered by tier (1 detail, 2 decisions,
 Recommended ranges appear both in `context_status` and in nudges. The
 doctrine ties the tools into one operating loop: compress consumed raw
 work into tier 1, distill settled tier-1 piles into tier 2 and tier-2
-piles into tier 3, read facts/decisions from visible summaries or
-`context_recap`, search exact keywords in shadowed originals before
-expanding, and `context_decompress` one tier at a time. The nudge
+piles into tier 3, locate by the checkpoint table of contents (topic and
+tier), search exact keywords only when the owning block is unknown, and
+`context_decompress` one tier at a time after a block has been located.
+The nudge
 text is pinned and test-asserted; it always tells the model that context
 management is optional and that content is never lost (it can be searched
 with `context_search` and restored with

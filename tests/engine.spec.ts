@@ -108,6 +108,10 @@ describe('AgenticCompactionEngine.compressByModel', () => {
       .toContain('## Topic: auth decisions')
     const recapped = await engine.recapByModel(agent, [result.compressed[0]!.compactionId])
     expect(recapped[0]!.summary).toContain('## Topic: auth decisions')
+    // The status table of contents exposes the topic so the model can
+    // navigate to this block without a full-text search.
+    const status = await engine.status(agent)
+    expect(status.checkpoints[0]!.topic).toBe('auth decisions')
   })
 
   it('rejects ranges that include protected or recent-tail content', async () => {

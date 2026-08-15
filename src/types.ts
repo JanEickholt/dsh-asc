@@ -319,6 +319,8 @@ export interface CheckpointView {
   readonly shadowedTokenCount: number
   readonly summaryChars: number
   readonly author: 'model' | 'fallback'
+  /** Topic label persisted with the summary, when the model supplied one. */
+  readonly topic?: string
 }
 
 /** Per-tier summary token totals for the current surface. */
