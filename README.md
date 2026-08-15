@@ -48,6 +48,20 @@ backfill-releases → Run workflow).
 `.github/workflows/npm-publish.yml` publishes automatically when a GitHub
 Release is published.
 
+**First publish with 2FA (one time only)**
+
+If the npm package does not exist yet, trusted publishing cannot be
+configured until the first publish. Log in locally, then publish with a
+current authenticator OTP — no 2FA bypass is needed:
+
+```sh
+npm whoami --registry=https://registry.npmjs.org
+npm publish --access public --registry=https://registry.npmjs.org --otp=<6-digit-code>
+```
+
+After that first publish, add the Trusted Publisher below and never use a
+token or OTP again.
+
 **Preferred: npm trusted publishing (OIDC, no long-lived token)**
 
 1. Publish the package once (or create the npm package page) so its

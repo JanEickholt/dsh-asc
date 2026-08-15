@@ -34,6 +34,20 @@ Release 或刷新 notes，在 Actions → backfill-releases → Run workflow 手
 `dsh-asc` 目前还没有发布到 npm。`.github/workflows/npm-publish.yml` 会在
 GitHub Release 发布后自动执行。
 
+**首次带 2FA 发布（只需要一次）**
+
+如果 npm 上还不存在这个包，必须等首次发布之后才能配置 Trusted
+Publishing。本地登录后，用验证器当前的一次性码发布即可，**不需要勾选
+2FA bypass**：
+
+```sh
+npm whoami --registry=https://registry.npmjs.org
+npm publish --access public --registry=https://registry.npmjs.org --otp=<6位验证码>
+```
+
+首次发布完成后，按下面配置 Trusted Publisher，以后就不再需要 token 或
+OTP。
+
 **推荐：npm Trusted Publishing（OIDC，不需要长期 token）**
 
 1. 先发布一次（或创建 npm 包页面），让包设置存在。
