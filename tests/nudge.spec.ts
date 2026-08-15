@@ -265,6 +265,24 @@ describe('buildNudgeText', () => {
     expect(text).toContain('Context is high')
   })
 
+  it('does not promise the fallback when it is disabled', () => {
+    const decision = {
+      kind: 'pressure' as const,
+      reason: 'over max',
+      growth: 0,
+      recommendations: [],
+    }
+    const text = buildNudgeText({
+      decision,
+      totalTokens: 1000,
+      surfaceTokens: 500,
+      contextWindow: 1000,
+      config: resolveConfig({ nudge: { force: 'strong' }, fallback: { enabled: false } }),
+    })
+    expect(text).toContain('deterministic fallback is disabled')
+    expect(text).not.toContain('deterministic fallback will compact automatically')
+  })
+
   it('tier nudges name the exact distillation rule to follow', () => {
     const decision = {
       kind: 'tier' as const,

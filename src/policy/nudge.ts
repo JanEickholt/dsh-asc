@@ -503,12 +503,15 @@ export function buildNudgeText(input: {
     + `${surfaceTokens} surface tokens; ${decision.growth} tokens of growth since the last check.`,
   ]
   if (decision.kind === 'pressure') {
-    lines.push(
-      config.nudge.force === 'strong'
+    if (config.nudge.force === 'strong') {
+      lines.push(config.fallback.enabled
         ? 'Context is high. Compress older spans now with context_compress to avoid overflow; '
           + 'if the request does overflow, the deterministic fallback will compact automatically.'
-        : 'If older spans are no longer needed verbatim, consider compressing them with context_compress.',
-    )
+        : 'Context is high. Compress older spans now with context_compress to avoid overflow; '
+          + 'the deterministic fallback is disabled, so an overflowing request will fail with a context-window error.')
+    } else {
+      lines.push('If older spans are no longer needed verbatim, consider compressing them with context_compress.')
+    }
   } else if (decision.kind === 'tier') {
     const rule = decision.tier === 3
       ? 'TIER 3 CONDENSATION'

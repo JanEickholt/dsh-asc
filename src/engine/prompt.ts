@@ -121,6 +121,7 @@ export const COMPACTION_PHILOSOPHY = [
   '4. READ BEFORE YOU SHRINK: context_recap reads a checkpoint summary without restoring it; context_search finds content anywhere in the log; context_decompress restores one tier up by default, and full: true only when you truly need raw text.',
   'The quality gate is tier-aware: tier-1 captures use the full length/coverage floors; tier-2/3 distillation only needs the shorter distillation length/retention floors, because those rules intentionally drop lower-level vocabulary.',
   'A range that contains a checkpoint of tier N creates a tier N+1 checkpoint; use the writing rules for the RESULTING tier, not for the raw messages. Multiple entries create separate checkpoints. A checkpoint at the tier cap is marked protected in context_status and cannot be consumed again.',
+  'If the deployment raises maxTier above 3, tiers 4+ repeat the TIER 3 CONDENSATION pattern: condense the previous tier into an even smaller bare-fact index, targeting about one third of the previous tier.',
   '',
   'TIER 2 DISTILLATION',
   'You are compressing historical summaries (not raw conversation). Your job is to DISTILL them: a holistic summary of what matters for future work, discarding the process.',
