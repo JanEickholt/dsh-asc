@@ -37,11 +37,14 @@ jobs:
           set -euo pipefail
           for tag in $(git tag -l 'v*' | sort -V); do
             bash .github/scripts/extract-changelog.sh "${tag}" release-notes.md
-            if gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-              echo "refreshing release notes for ${tag}"
-              gh release edit "${tag}" \
-                --repo "${GITHUB_REPOSITORY}" \
-                --notes-file release-notes.md
+            echo "notes for ${tag}:"
+            head -n 3 release-notes.md
+            release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" --jq '{id: .id}' 2>/dev/null || true)"
+            if [ -n "${release_json}" ]; then
+              release_id="$(echo "${release_json}" | jq -r '.id')"
+              echo "refreshing notes for ${tag} (release ${release_id})"
+              gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+                -F body=@"release-notes.md" >/dev/null
               continue
             fi
             echo "publishing release for ${tag}"
