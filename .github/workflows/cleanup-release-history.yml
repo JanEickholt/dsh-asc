@@ -1,0 +1,32 @@
+name: cleanup-release-history
+
+on:
+  push:
+    branches:
+      - 'cleanup-release-history'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete fine-grained intermediate releases and tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for tag in v0.1.1 v0.1.2 v0.1.3 v0.1.4 v0.1.5 v0.1.6 v0.1.7 v0.1.8 v0.1.9 v0.1.10 v0.1.11; do
+            release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" --jq '.id' 2>/dev/null || true)"
+            if [ -n "${release_id}" ]; then
+              echo "deleting release ${tag}"
+              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${release_id}" >/dev/null
+            fi
+            ref="$(gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" --jq '.ref' 2>/dev/null || true)"
+            if [ -n "${ref}" ]; then
+              echo "deleting tag ${tag}"
+              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" >/dev/null
+            fi
+          done

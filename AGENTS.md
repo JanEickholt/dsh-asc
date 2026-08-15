@@ -66,6 +66,10 @@ docs/          analysis, design, usage, e2e-validation
   must pass.
 - **Non-trivial changes include a doc update** in the same commit (README,
   usage, or design as appropriate).
+- **Tags are consolidated releases, not commits.** Create a version tag
+  only for a coherent, meaningful release; small fixes accumulate on `main`
+  until the next release. Every tag needs a matching `CHANGELOG.md` section
+  and a packed artifact.
 
 ## Conventions
 

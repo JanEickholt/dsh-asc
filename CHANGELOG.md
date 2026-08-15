@@ -5,184 +5,101 @@ All notable changes to dsh-asc are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.11] - 2026-08-15
+Releases are consolidated: tags are only created for meaningful, coherent
+releases, not for every commit.
 
-### Fixed
+## [0.2.0] - 2026-08-15
 
-- `npm-publish` also triggers on version tag pushes, because the
-  `release published` event did not fire for releases created by the
-  release workflow itself.
+First audited release after the initial `0.1.0` package.
 
-## [0.1.10] - 2026-08-15
+### Core correctness and safety
 
-### Changed
+- Wired the routed retention policy (`thresholdRatio` / `retainRatio` /
+  `retainTokens` / `modelPolicies`) into deterministic fallback selection;
+  it was previously parsed but never used.
+- Enforced protection, recent-tail, and tier-cap checks inside the
+  compaction transaction, including an expected-shadowed-span identity
+  check after the LLM summary call, so concurrent surface changes or
+  overlapping batch ranges cannot commit a summary against different
+  content.
+- Repaired restored-node tier derivation: non-checkpoint replacements now
+  return to tier 0 instead of inheriting `checkpoint tier + 1`.
+- Fixed cache invalidation for tool names and tier snapshots when the
+  surface receives plain appends.
+- Made `toFile` decompression write distinct sibling paths for multiple
+  targets and report the fs-resolved path; the decompress budget now prices
+  the actual combined restored message.
+- Hardened `compactNow`: selected-span stability, exact abort-reason
+  propagation, correct busy/summary classification, and end-seed lifecycle
+  handling for open turns.
+- Added the missing `@deepseek-ai/dsh-system-prompt` peer dependency and
+  disposed partial plugin/tool registrations on failure.
 
-- `npm-publish` now prefers npm trusted publishing (GitHub OIDC) with no
-  long-lived token; a classic `NPM_TOKEN` secret remains available as a
-  fallback.
-- README documents the trusted-publisher setup and why the 2FA-bypass
-  option should not be enabled.
+### Tiers, quality gate, and doctrine
 
-## [0.1.9] - 2026-08-15
+- Turned tier 1/2/3 into an explicit operating model in the system
+  doctrine: capture raw work into T1, distill settled T1 piles into T2,
+  condense settled T2 piles into T3, and read before shrinking.
+- Added a tier-aware quality gate: raw tier-1 captures keep the full
+  length/coverage floors; tier >= 2 distillation uses its own shorter
+  floors and waives the keyword-coverage layer, because those rules
+  intentionally drop lower-level vocabulary.
+- Tier nudges now name the exact TIER 2 DISTILLATION or TIER 3
+  CONDENSATION rules to use, and the doctrine explains tiers above 3 when
+  the cap is raised.
+- Model-facing wording is truthful under non-default configuration
+  (auto-expansion off, fallback off, non-blocking or disabled quality
+  gate).
 
-### Added
+### Retrieval and context management
 
-- `CHANGELOG.md` with per-version notes; GitHub Releases now take their
-  notes from this file instead of auto-generated commit summaries.
-- `npm-publish` workflow: publishes to the npm registry when a GitHub
-  Release is published and the `NPM_TOKEN` secret is configured; it no-ops
-  safely while the secret is absent.
-- Release and backfill workflows can refresh release notes for already
-  published tags.
-
-### Changed
-
-- The npm tarball now includes `CHANGELOG.md`.
-
-## [0.1.8] - 2026-08-15
-
-### Added
-
-- GitHub Actions release workflow: every new `v*` tag builds the package,
-  packs it, and publishes a GitHub Release with the tarball attached.
-- Release backfill workflow for tags that predate the automation.
-
-### Fixed
-
-- Release workflow no longer performs a redundant tag checkout on tag
-  pushes, which made the first automated release run fail.
-
-## [0.1.7] - 2026-08-15
-
-### Added
-
+- Added `COMPRESSION CONTRACT FOR RETRIEVAL`: summaries must retain future
+  search keys, declare deliberately dropped detail, and carry a topic.
+- Topics are persisted inside durable summaries; `context_status` exposes
+  them as a checkpoint index.
 - Every checkpoint text now carries its own `Compaction id`, so a visible
   summary can be expanded directly without a lookup step.
+- Retrieval is recognition-first: visible summaries are the primary
+  locator, `context_search` is for details whose owning block is unknown,
+  and `context_decompress` only fetches a located block one tier at a time.
+- `context_recap` gained a `tier` filter; `context_search` gained a
+  `surface` filter; session-scope shadowed search hits carry the owning
+  `checkpointId`.
+- `context_status` uses a one-line-per-node renderer so recent nodes and
+  recommendations survive the output cap, and shows nested tool-output
+  text in previews.
 
-### Changed
+### Protection, nudges, and recommendations
 
-- Retrieval doctrine is now recognition-first: read visible summaries,
-  decompress a recognized block directly, and use search only when no
-  visible summary names the owning block.
-- `context_status` is positioned as a compress-planning tool rather than a
-  retrieval prerequisite.
-- Tool descriptions and docs were synchronized with the retrieval model.
+- `protectedSources` now also protects this plugin's own nudge, notice,
+  and restored messages when `dsh-asc` is listed; `context_status` marks
+  recent-tail and tier-cap nodes as protected.
+- Nudge baselines re-measure after nudge/notice appends; consumed tier
+  baselines are removed when the tier disappears; newly appeared piles are
+  measured from zero; tail-only piles do not fire tier nudges.
+- In-place decompression resets the transient nudge baseline so the
+  model's own restore is not treated as unexpected growth.
+- Recommended ranges are validated against the full eligibility policy,
+  are pairwise non-overlapping, and cut around tier-cap nodes.
 
-## [0.1.6] - 2026-08-15
+### Quality gate details
 
-### Added
+- The gate prices the framed checkpoint and reports measured ROUGE/recall
+  values even on L1 failures; acknowledged retries still record and return
+  the rejected report.
+- Mixed CJK/Latin text is tokenized correctly, keeping Latin words intact.
 
-- `context_status` checkpoint rows expose the persisted topic label as the
-  table of contents of the compressed context.
-- Doctrine now distinguishes block navigation from token search and
-  teaches "search is the locator, decompress is the fetcher".
+### Packaging, docs, and automation
 
-### Changed
-
-- `context_decompress` is documented as a fetch operation, not a discovery
-  operation; `context_search` is documented as the fallback for unknown
-  locations.
-
-## [0.1.5] - 2026-08-15
-
-### Added
-
-- `COMPRESSION CONTRACT FOR RETRIEVAL` in the doctrine: summaries must
-  retain future-search keys, declare deliberately dropped detail, and use
-  topics.
-- `context_recap` gains a `tier` filter for reading one whole level
-  (1 detail, 2 decisions, 3 facts).
-- `context_search` gains a `surface` filter (`current`, `shadowed`,
-  `log-only`).
-- Model-supplied topics are now persisted inside the durable summary so
-  recap and search can find them.
-
-### Changed
-
-- Retrieval doctrine rewritten as a context-management loop: capture,
-  distill, condense, read, update, archive.
-
-## [0.1.4] - 2026-08-15
-
-### Fixed
-
-- The doctrine no longer promises automatic tool-pair expansion when the
-  deployment disabled `compress.autoExpandToolPairs`.
-- Strong pressure nudges no longer promise the deterministic fallback when
-  `fallback.enabled` is false.
-- The model is told when the quality gate is non-blocking or disabled.
-- Tiers above 3 are explained for deployments that raise `tiers.maxTier`.
-
-## [0.1.3] - 2026-08-15
-
-### Added
-
-- Tier-aware quality gate: tier >= 2 distillation uses dedicated
-  `distillationMinChars` / `distillationMinRetentionPct` floors, and the
-  keyword-coverage layer is waived because the tier rules intentionally
-  drop lower-level vocabulary.
-- The doctrine now teaches the complete raw/T1/T2/T3 operating model:
-  capture, distill, condense, read before shrinking.
-- Tier nudges name the exact TIER 2 DISTILLATION or TIER 3 CONDENSATION
-  rules to follow.
-
-### Changed
-
-- `context_compress`, `context_status`, and nudge text expose tier piles
-  (`tierTokens`) and the resulting-tier writing rules.
-
-## [0.1.2] - 2026-08-15
-
-### Added
-
-- Protection and tier-cap checks are enforced inside the compaction
-  transaction, with expected-shadowed-span identity verified at commit time.
-- Session-scope shadowed search hits carry the owning `checkpointId`.
-- `context_recap` resolves consumed checkpoints from the full log.
-- `context_status` renders one line per node so recent nodes and
-  recommendations survive the output cap.
-- The `fs`-resolved `toFile` path is reported; nested tool-result text is
-  shown in status previews.
-- `@deepseek-ai/dsh-system-prompt` is declared as a peer dependency.
-
-### Changed
-
-- `compactNow` uses selected-span stability, preserves caller abort
-  reasons, and classifies async maintenance failures as `summary`.
-- Open-turn detection honors the latest `session/end-seed` boundary.
-- `protectedSources` now applies to the plugin's own nudge/restored nodes.
-- Newly appeared tier piles are measured from a zero baseline, and
-  tail-only tier piles no longer trigger nudges.
-- Partial plugin/tool registration failures dispose their already-mounted
-  effects.
-- Documentation and tool schemas were reconciled with runtime behavior.
-
-## [0.1.1] - 2026-08-15
-
-### Added
-
-- Routed retention policy (`thresholdRatio` / `retainRatio` /
-  `retainTokens` / `modelPolicies`) is now wired into deterministic
-  fallback selection instead of being dead configuration.
-- Fallback selection honors protected nodes, the recent-tail fence, and the
-  tier cap; `compactRegion` validates explicit ranges against policy.
-- The quality gate prices the framed checkpoint and reports measured
-  coverage values on L1 failures; acknowledged retries retain the report.
-- `toFile` restores with multiple targets write distinct sibling paths.
-
-### Fixed
-
-- Restored transcripts no longer inherit the consumed checkpoint's tier.
-- `toolNameIndex` and tier snapshots invalidate correctly on surface
-  appends.
-- Decompress budget prices the actual combined restored message.
-- `resolveTargetPolicy` no longer lets a global `retainTokens` override an
-  explicit per-model `retainRatio`.
-- Nudge baselines are re-measured after nudge/notice appends, and consumed
-  tier baselines are dropped when the tier disappears.
-- `pnpm-workspace.yaml` no longer contains the invalid `allowBuilds`
-  placeholder; `prepare`/`prepack` build the package before install/pack.
-- README installation now names the actual distribution channel.
+- Fixed the invalid `allowBuilds` placeholder in `pnpm-workspace.yaml`;
+  `prepare`/`prepack` now build the package before install/pack.
+- Added `CHANGELOG.md`; GitHub Releases are created automatically for
+  meaningful `v*` tags with changelog notes and the built tarball.
+- Added `npm-publish`: prefers npm trusted publishing (GitHub OIDC) with a
+  classic `NPM_TOKEN` fallback; publishes trigger on version tags.
+- Reconciled README/design/usage/prompt/tool schemas with runtime behavior,
+  including the five-tool contract, real search surface values, and the
+  current GitHub/npm distribution channels.
 
 ## [0.1.0] - 2026-08-14
 
