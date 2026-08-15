@@ -10,7 +10,7 @@ changelog="${3:-CHANGELOG.md}"
 section="[${tag#v}]"
 
 awk -v section="${section}" '
-  index($0, "## [" section "] - ") == 1 { in_section = 1; next }
+  index($0, "## " section " - ") == 1 { in_section = 1; next }
   /^## \[/ { if (in_section) exit }
   in_section { print }
 ' "${changelog}" > "${out}"
