@@ -6,7 +6,13 @@ below).
 
 ## Installation
 
-The current distribution channel is the GitHub release:
+The package is published on npm as `dsh-asc`:
+
+```sh
+dsh plugin --profile <name> add dsh-asc
+```
+
+GitHub releases are available for commits newer than the npm version:
 
 ```sh
 dsh plugin --profile <name> add github:lmst2/dsh-asc
@@ -15,15 +21,13 @@ dsh plugin --profile <name> add github:lmst2/dsh-asc
 To install the package directly into a deployment that runs `dsh`:
 
 ```sh
-pnpm add github:lmst2/dsh-asc
-# or, once published to npm:
 pnpm add dsh-asc
+# or the latest GitHub commit:
+pnpm add github:lmst2/dsh-asc
 ```
 
-> The npm name `dsh-asc` is reserved in package metadata but not yet
-> published. GitHub is the current distribution channel. To build from
-> source: `pnpm install && pnpm build` in this repository, then reference
-> the package path in your composition.
+To build from source: `pnpm install && pnpm build` in this repository,
+then reference the package path in your composition.
 
 ## Mounting
 
