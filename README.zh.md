@@ -1,7 +1,7 @@
 # dsh-asc
 
-[![npm](https://img.shields.io/npm/v/dsh-asc.svg)](https://www.npmjs.com/package/dsh-asc)
-[![license](https://img.shields.io/npm/l/dsh-asc.svg)](LICENSE)
+[![GitHub tag](https://img.shields.io/github/v/tag/lmst2/dsh-asc)](https://github.com/lmst2/dsh-asc/releases)
+[![license](https://img.shields.io/github/license/lmst2/dsh-asc.svg)](LICENSE)
 
 [English](./README.md) | [中文](./README.zh.md)
 
@@ -14,8 +14,10 @@
 
 **前置要求**：已安装 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh` 命令可用）；Node.js `^22.19` 或 `>=24`。
 
+**从 GitHub 安装**（当前的分发渠道）：
+
 ```sh
-dsh plugin --profile <name> add dsh-asc
+dsh plugin --profile <name> add github:lmst2/dsh-asc
 ```
 
 `dsh plugin` 会把插件加入 profile，并根据包内的 `dsh.bundle` 声明自动启用它；工具和系统提示随该 profile 一起加载。
@@ -24,10 +26,10 @@ dsh plugin --profile <name> add dsh-asc
 
 ### 其他安装方式
 
-**从 GitHub 安装**——想用尚未发布到 npm 的最新提交：
+**从 npm 安装**——待包发布到 npm registry 后：
 
 ```sh
-dsh plugin --profile <name> add github:lmst2/dsh-asc
+dsh plugin --profile <name> add dsh-asc
 ```
 
 **从源码安装**——要改插件本身，或参与开发：

@@ -6,14 +6,22 @@ compaction backend.
 
 ## Installation
 
+The current distribution channel is the GitHub release:
+
 ```sh
-# inside the deployment that runs dsh (where dsh's node_modules live)
-npm install dsh-asc
-# or with pnpm
+dsh plugin --profile <name> add github:lmst2/dsh-asc
+```
+
+To install the package directly into a deployment that runs `dsh`:
+
+```sh
+pnpm add github:lmst2/dsh-asc
+# or, once published to npm:
 pnpm add dsh-asc
 ```
 
-> The package is published to npm as `dsh-asc`. To build from source:
+> Until the first npm publish, the npm name `dsh-asc` resolves only in
+> package metadata; use the GitHub form above. To build from source:
 > `pnpm install && pnpm build` in this repository, then reference the
 > package path in your composition.
 

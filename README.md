@@ -1,7 +1,7 @@
 # dsh-asc
 
-[![npm](https://img.shields.io/npm/v/dsh-asc.svg)](https://www.npmjs.com/package/dsh-asc)
-[![license](https://img.shields.io/npm/l/dsh-asc.svg)](LICENSE)
+[![GitHub tag](https://img.shields.io/github/v/tag/lmst2/dsh-asc)](https://github.com/lmst2/dsh-asc/releases)
+[![license](https://img.shields.io/github/license/lmst2/dsh-asc.svg)](LICENSE)
 
 [English](./README.md) | [中文](./README.zh.md)
 
@@ -23,8 +23,10 @@ compacted originals.
 **Prerequisites**: a working [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 installation (`dsh` CLI available); Node.js `^22.19` or `>=24`.
 
+**From GitHub** (the current distribution channel):
+
 ```sh
-dsh plugin --profile <name> add dsh-asc
+dsh plugin --profile <name> add github:lmst2/dsh-asc
 ```
 
 `dsh plugin` adds the plugin to the profile and enables it automatically
@@ -36,10 +38,10 @@ system prompt load together with that profile.
 
 ### Other install options
 
-**From GitHub** — to use the latest commit that is not yet published to npm:
+**From npm** — once the package is published to the npm registry:
 
 ```sh
-dsh plugin --profile <name> add github:lmst2/dsh-asc
+dsh plugin --profile <name> add dsh-asc
 ```
 
 **From source** — to modify the plugin itself, or to contribute:
