@@ -74,6 +74,7 @@ describe('registerContextTools', () => {
     const search = registry.tools.find(tool => tool.name === 'context_search')!
     expect(search.parameters.required).toContain('query')
     expect(search.parameters.properties?.scope?.enum).toEqual(['session', 'workspace'])
+    expect(search.parameters.properties?.surface?.enum).toEqual(['current', 'shadowed', 'log-only'])
   })
 
   it('unregisters every tool on disposal', () => {

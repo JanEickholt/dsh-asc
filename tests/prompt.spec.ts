@@ -47,6 +47,12 @@ describe('registerPhilosophyPrompt', () => {
     expect(section!.text).toContain('TIER 2 DISTILLATION')
     expect(section!.text).toContain('TIER 3 CONDENSATION')
     expect(section!.text).toContain('lookup index, not a knowledge base')
+    // Context retrieval and maintenance: the plugin teaches the complete
+    // read/update/archive workflow, not just how to write a summary.
+    expect(section!.text).toContain('COMPRESSION CONTRACT FOR RETRIEVAL')
+    expect(section!.text).toContain('CONTEXT RETRIEVAL (READ BEFORE YOU EXPAND)')
+    expect(section!.text).toContain('surface: "shadowed"')
+    expect(section!.text).toContain('CONTEXT MAINTENANCE (UPDATE / ARCHIVE)')
     // Our additions: planned review + cadence.
     expect(section!.text).toContain('WHEN TO REVIEW')
     expect(section!.text).toContain('complete a large phase or a major task')

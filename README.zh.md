@@ -81,6 +81,12 @@ dsh plugin --profile <name> add "link:$(pwd)"
 
 压缩后的内容永不丢失：原文保留在会话日志里，随时可解压或检索。
 
+系统提示词把这些工具串成一条操作闭环：把已经消费的原始工作压成 T1
+检查点，把稳定下来的 T1 堆蒸馏成 T2 决策、再把 T2 堆凝结成 T3 事实索引；
+事实和决策直接看表面摘要或 `context_recap`，精确关键词用
+`context_search`（可加 `surface: "shadowed"`）检索被压缩的原文，然后
+用 `context_decompress` 逐层展开，而不是一次性全部恢复。
+
 ## 工作原理
 
 - **事件溯源**：压缩 = 日志里的一个事务（`compaction/start` → `compaction/summary` → 替换 `user/message` → `compaction/end`），无侧面状态。

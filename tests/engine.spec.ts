@@ -99,6 +99,15 @@ describe('AgenticCompactionEngine.compressByModel', () => {
     }])
     expect(result.failures).toEqual([])
     expect(result.compressed[0]!.topic).toBe('auth decisions')
+    // The topic is durable: it is part of the summary event and therefore
+    // visible to recap/search, not just echoed by this call.
+    const summaryEvent = session.events.find(event => event.type === 'compaction/summary') as
+      | { data: { summary: Array<{ text?: string }> } }
+      | undefined
+    expect(summaryEvent?.data.summary.map(block => block.text ?? '').join('\n'))
+      .toContain('## Topic: auth decisions')
+    const recapped = await engine.recapByModel(agent, [result.compressed[0]!.compactionId])
+    expect(recapped[0]!.summary).toContain('## Topic: auth decisions')
   })
 
   it('rejects ranges that include protected or recent-tail content', async () => {
@@ -725,6 +734,10 @@ describe('AgenticCompactionEngine.recapByModel', () => {
     expect(recapped[0]!.compactionId).toBe(firstId)
     expect(recapped[0]!.tier).toBe(1)
     expect(recapped[0]!.summary).toContain(TURN_SUMMARY)
+    // The tier filter reads one whole pile without naming ids.
+    const tier2 = await engine.recapByModel(agent, undefined, 2)
+    expect(tier2).toHaveLength(1)
+    expect(tier2[0]!.tier).toBe(2)
   })
 })
 

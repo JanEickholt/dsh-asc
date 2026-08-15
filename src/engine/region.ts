@@ -59,6 +59,8 @@ export type SummarySource =
     provider: string
     /** The routed model that wrote the summary. */
     model: string
+    /** Optional per-range topic label, persisted with the summary. */
+    topic?: string
     /** Quality-gate outcome, when the gate ran. */
     quality?: QualityReport
   }
@@ -370,6 +372,14 @@ function prepareCompaction(
   return { selection, shadowedTokenCount, shadowedTiers, framed: { measurement, selectedNodes } }
 }
 
+/** Model summary blocks, with the optional topic label persisted first. */
+function modelSummaryBlocks(source: Extract<SummarySource, { kind: 'model' }>): ContentBlock[] {
+  return [
+    ...source.topic === undefined ? [] : [{ type: 'text' as const, text: `## Topic: ${source.topic}` }],
+    { type: 'text', text: source.summary },
+  ]
+}
+
 /** Build the checkpoint message and enforce the shrink invariant. */
 function frameCheckpoint(
   dependencies: CommitDependencies,
@@ -379,7 +389,7 @@ function frameCheckpoint(
   sourceCommandId: CommandId | undefined,
 ): { message: UserMessage; framedTokenCount: number } {
   const summaryBlocks: ContentBlock[] = source.kind === 'model'
-    ? [{ type: 'text', text: source.summary }]
+    ? modelSummaryBlocks(source)
     : source.summary
   if (summaryBlocks.length === 0) {
     throw new Error('compaction: summary content is empty')
@@ -434,7 +444,7 @@ function commitBody(
   const { selection, shadowedTokenCount, shadowedTiers } = prepared
   const { start, end, shadowedSeqs } = selection
   const summaryBlocks: ContentBlock[] = source.kind === 'model'
-    ? [{ type: 'text', text: source.summary }]
+    ? modelSummaryBlocks(source)
     : source.summary
   const callProvenance = source.kind === 'llm'
     ? source.rawOutput === undefined ? {} : { rawOutput: source.rawOutput, llmStreamCall: true as const }

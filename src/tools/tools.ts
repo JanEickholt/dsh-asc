@@ -16,7 +16,7 @@ import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import { defineTool, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import type { JsonValue, SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEventSearchRequest, SessionSearchRequest } from '@deepseek-ai/dsh-session-query'
+import type { SessionEventSearchRequest, SessionEventSurface, SessionSearchRequest } from '@deepseek-ai/dsh-session-query'
 import type { AgenticCompactionEngine } from '../engine/engine.ts'
 import { tierSnapshot } from '../engine/tier.ts'
 import { textPreview } from '../utils/text.ts'
@@ -393,13 +393,17 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
         'Re-fetch checkpoint summaries WITHOUT decompressing the original content.',
         'Use when a past context_compress call\'s summary has scrolled out of context or you need to recall what a checkpoint covers before deciding to decompress it.',
         'Summaries are read from the durable session log, so they survive even when the compress call that wrote them is gone; explicit ids also resolve checkpoints that a later compression consumed.',
-        'Args: compactionIds — optional list of checkpoint ids (from context_status). Omitted = recap every checkpoint on the current surface; unknown ids are omitted.',
+        'Args: compactionIds — optional list of checkpoint ids (from context_status). Omitted = recap every checkpoint on the current surface; unknown ids are omitted. tier — optional level filter (1 = full detail, 2 = decisions, 3 = facts).',
       ].join('\n'),
       parameters: {
         compactionIds: {
           type: 'array',
           description: 'Checkpoint ids to recap, from context_status. Omitted = recap every checkpoint on the current surface.',
           items: { type: 'string' },
+        },
+        tier: {
+          type: 'number',
+          description: 'Only recap checkpoints of this tier (1 full detail, 2 decisions, 3 facts; omit for all).',
         },
       },
       output: {
@@ -408,7 +412,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
       },
       async execute(args, exec: ToolRunContext) {
         const agent = requireAgent(exec)
-        const recapped = await engine.recapByModel(agent, args.compactionIds)
+        const recapped = await engine.recapByModel(agent, args.compactionIds, args.tier)
         return recapped as unknown as JsonValue
       },
     })));
@@ -436,6 +440,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
       description: [
         'Full-text search over the session log, including content that was compressed (shadowed) into checkpoints.',
         'Compression never deletes content: the original text remains in the log and is fully searchable. A hit reports whether it is still current on the surface, shadowed by a checkpoint, or log-only. Session-scope shadowed hits also carry the owning checkpointId so you can decompress or recap it.',
+        'Use surface:"current" to search only what is visible now (raw nodes plus checkpoint summaries); use surface:"shadowed" to search only compressed originals when you need a vanished path, error string, command, or verbatim detail; omit it to search everything. Use context_recap or context_decompress on the returned checkpointId when a shadowed hit is relevant.',
         'Scope: "session" searches the current session; "workspace" searches all sessions.',
       ].join('\n'),
       parameters: {
@@ -444,6 +449,11 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
           type: 'string',
           enum: ['session', 'workspace'],
           description: 'Search scope. Default "session".',
+        },
+        surface: {
+          type: 'string',
+          enum: ['current', 'shadowed', 'log-only'],
+          description: 'Only hits with this surface placement. current = visible now (checkpoint summaries included); shadowed = compressed originals; log-only = audit/log records. Omit for all.',
         },
         limit: { type: 'number', description: 'Maximum hits. Default 20, max 100.' },
       },
@@ -501,7 +511,7 @@ async function searchContext(
   ctx: Context,
   sessionId: SessionId,
   exec: ToolRunContext,
-  args: { query: string; scope?: string; limit?: number },
+  args: { query: string; scope?: string; surface?: string; limit?: number },
 ): Promise<Record<string, JsonValue>> {
   const sessionQuery = ctx.get('sessionQuery')
   if (sessionQuery === null || sessionQuery === undefined) {
@@ -519,8 +529,25 @@ async function searchContext(
     throw new Error(`context_search scope must be "session" or "workspace", got ${JSON.stringify(args.scope)}`)
   }
   const scope = args.scope === 'workspace' ? 'workspace' : 'session'
+  let surface: SessionEventSurface | undefined
+  if (args.surface !== undefined) {
+    if (args.surface !== 'current' && args.surface !== 'shadowed' && args.surface !== 'log-only') {
+      throw new Error(
+        `context_search surface must be "current", "shadowed", or "log-only", got ${JSON.stringify(args.surface)}`,
+      )
+    }
+    surface = args.surface
+  }
+  const eventFilters = surface === undefined
+    ? undefined
+    : [{ kind: 'surface', values: [surface] }] as const
   if (scope === 'session') {
-    const request: SessionEventSearchRequest = { sessionId, query, limit }
+    const request: SessionEventSearchRequest = {
+      sessionId,
+      query,
+      limit,
+      ...eventFilters === undefined ? {} : { filters: eventFilters },
+    }
     const page = await sessionQuery.searchEvents(request, { signal: exec.signal })
     const session = ctx.sessions.get(sessionId)
     let ownerBySeq: ReadonlyMap<number, string> | undefined
@@ -555,7 +582,11 @@ async function searchContext(
       }),
     }
   }
-  const request: SessionSearchRequest = { query, limit }
+  const request: SessionSearchRequest = {
+    query,
+    limit,
+    ...eventFilters === undefined ? {} : { eventFilters },
+  }
   const page = await sessionQuery.searchSessions(request, { signal: exec.signal })
   return {
     scope: 'workspace',

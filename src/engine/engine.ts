@@ -582,6 +582,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
           {
             kind: 'model',
             summary: plan.range.summary,
+            topic: plan.range.topic,
             provider: target?.provider ?? agent.options.provider ?? '',
             model: target?.model ?? agent.options.model ?? '',
             ...report === undefined ? {} : { quality: report },
@@ -721,11 +722,13 @@ export class AgenticCompactionEngine extends CompactionEngine {
    * @param agent - agent whose session is read.
    * @param compactionIds - optional ids to recap; every checkpoint on the
    *   current surface when omitted.
+   * @param tier - optional tier filter: only recaps checkpoints of this tier.
    * @returns each checkpoint's summary text plus coverage metadata.
    */
   async recapByModel(
     agent: Agent,
     compactionIds: readonly string[] | undefined,
+    tier?: number,
   ): Promise<Array<{
     compactionId: CompactionId
     tier: number
@@ -773,7 +776,10 @@ export class AgenticCompactionEngine extends CompactionEngine {
     }
 
     if (wanted === undefined) {
-      for (const view of checkpointViews(session)) push(view)
+      for (const view of checkpointViews(session)) {
+        if (tier !== undefined && view.tier !== tier) continue
+        push(view)
+      }
       return recapped
     }
 
@@ -796,10 +802,12 @@ export class AgenticCompactionEngine extends CompactionEngine {
       reported.add(id)
       const seq = byCompactionId.get(id)
       if (seq === undefined) continue
+      const resolvedTier = tiers.tierBySeq.get(seq) ?? 0
+      if (tier !== undefined && resolvedTier !== tier) continue
       push({
         compactionId: CompactionId(id),
         seq,
-        tier: tiers.tierBySeq.get(seq) ?? 0,
+        tier: resolvedTier,
         shadowedSeqs: tiers.shadowedBySeq.get(seq) ?? [],
       })
     }

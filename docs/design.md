@@ -95,7 +95,8 @@ counted as unexpected growth on the next step.
 Compresses one or more surface ranges into model-written checkpoints.
 
 - `content: [{ topic?, startSeq, endSeq, summary, acknowledgeRisk? }]` — up
-  to 64 entries.
+  to 64 entries. A supplied topic is persisted as a heading inside the
+  checkpoint summary, so later search/recap can locate it by topic.
 - `acknowledgeRisk?: boolean` — retries a blocked quality-gate rejection for
   the exact range set.
 - Hard constraints enforced before commit (per entry, failures reported
@@ -154,6 +155,8 @@ Re-reads checkpoint summaries without decompressing the originals.
 - `compactionIds?: string[]` — omit to recap every checkpoint on the
   current surface. Explicit ids resolve against the full log, including
   checkpoints that a later compression consumed.
+- `tier?: number` — optional level filter (1 full detail, 2 decisions,
+  3 facts); combine with omitted ids to read one whole pile.
 - Summaries are read from the durable `compaction/summary` events, so a
   recap never depends on the original compress call still being visible.
 - Read-only: no surface mutation, no budget is charged beyond the returned
@@ -172,9 +175,10 @@ position.
 ### `context_search`
 Full-text search through the optional session-query service. `scope:
 session` searches the current session; `scope: workspace` searches all
-sessions. Hits carry `seq`, `type`, `surface` (`current` | `shadowed` |
-`log-only`), and a snippet; session-scope shadowed hits also carry the
-owning `checkpointId`. Requires a session-query backend such as
+sessions. `surface` optionally restricts hits to `current`, `shadowed`, or
+`log-only`. Hits carry `seq`, `type`, `surface`, and a snippet;
+session-scope shadowed hits also carry the owning `checkpointId`. Requires
+a session-query backend such as
 `@deepseek-ai/dsh-session-query-sqlite`.
 
 ## 5. Automatic behavior

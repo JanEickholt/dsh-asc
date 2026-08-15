@@ -203,15 +203,23 @@ therefore compresses proactively and distills in levels instead of waiting
 for nudges or overflow.
 
 The tools are self-describing: `context_status` lists the current surface
-with seqs, 0-based surface positions, kinds, tiers, protection flags, and
-previews (the recent-node list is capped to the last 40 nodes, and every
-recommended range is pre-validated against the surface shown by that
-status call — re-run it after any surface change); `context_compress`
-takes exactly those seqs and auto-extends tool-pair-splitting ranges;
-`context_decompress` takes the `compactionId`s that `context_status`
-reports; `context_recap` re-reads checkpoint summaries without
-decompressing them.
-Recommended ranges appear both in `context_status` and in nudges. The nudge
+with seqs, 0-based surface positions, kinds, tiers, protection flags,
+tierTokens, and previews (the recent-node list is capped to the last 40
+nodes, and every recommended range is pre-validated against the surface
+shown by that status call — re-run it after any surface change);
+`context_compress` takes exactly those seqs, persists an optional topic,
+and auto-extends tool-pair-splitting ranges; `context_decompress` takes
+the `compactionId`s that `context_status` reports; `context_recap` re-reads
+checkpoint summaries, optionally filtered by tier (1 detail, 2 decisions,
+3 facts); `context_search` can restrict hits by surface placement
+(`current` = what is visible now, `shadowed` = compressed originals,
+`log-only` = audit records).
+Recommended ranges appear both in `context_status` and in nudges. The
+doctrine ties the tools into one operating loop: compress consumed raw
+work into tier 1, distill settled tier-1 piles into tier 2 and tier-2
+piles into tier 3, read facts/decisions from visible summaries or
+`context_recap`, search exact keywords in shadowed originals before
+expanding, and `context_decompress` one tier at a time. The nudge
 text is pinned and test-asserted; it always tells the model that context
 management is optional and that content is never lost (it can be searched
 with `context_search` and restored with

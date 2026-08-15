@@ -99,6 +99,13 @@ The plugin provides five model tools:
 Compacted content is never lost: the originals stay in the session log and
 can be decompressed or searched at any time.
 
+The system prompt ties the tools into one operating loop: capture consumed
+raw work into tier-1 checkpoints, distill settled tier-1 piles into tier-2
+decisions and tier-2 piles into a tier-3 fact index, read facts from
+visible summaries or `context_recap`, search exact keywords in shadowed
+originals with `context_search` (optionally `surface: "shadowed"`), and
+`context_decompress` one tier at a time instead of restoring everything.
+
 ## How it works
 
 - **Event sourcing**: a compaction is a transaction in the log
