@@ -5,6 +5,14 @@ All notable changes to dsh-asc are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] - 2026-08-15
+
+### Fixed
+
+- `npm-publish` also triggers on version tag pushes, because the
+  `release published` event did not fire for releases created by the
+  release workflow itself.
+
 ## [0.1.10] - 2026-08-15
 
 ### Changed
