@@ -1,5 +1,5 @@
 allowBuilds:
-  esbuild: set this to true or false
+  esbuild: true
 # The whole DeepSeek Harness family publishes coherent rc releases; pin every
 # transitive @deepseek-ai dependency to the same generation so compiled types
 # and runtime exports never disagree.

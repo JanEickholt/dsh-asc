@@ -13,7 +13,7 @@ src/           plugin entry + public API surface
   index.ts     plugin entry: registers ctx.compaction + tools
   config.ts    strict config validation
   types.ts     config and result vocabulary
-  events.ts    SessionEventMap declaration merges
+  events.ts    session-event vocabulary documentation (no custom members)
   invariant.ts runtime invariant companion
   engine/      the compaction engine core
     engine.ts  AgenticCompactionEngine (extends CompactionEngine)
@@ -31,7 +31,7 @@ src/           plugin entry + public API surface
   utils/       shared helpers
     text.ts    text serialization and preview helpers
 tests/         vitest suites
-docs/          analysis, design, usage (English + Chinese)
+docs/          analysis, design, usage, e2e-validation
 ```
 
 ## Non-negotiables

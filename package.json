@@ -1,7 +1,7 @@
 {
   "name": "dsh-asc",
   "description": "Agentic Surface Compaction (ASC) for DeepSeek Harness: the model decides when and what to compact, committed as durable session-log replacements with full replay, search, and degradation",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },
@@ -96,7 +96,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "prepack": "node -e \"const fs=require('fs'),p=process.cwd();for(const f of ['README.md','README.zh.md','LICENSE','NOTICE'])if(!fs.existsSync(require('path').join(p,f)))throw new Error('missing '+f)\"",
+    "prepare": "pnpm build",
+    "prepack": "pnpm build && node -e \"const fs=require('fs'),p=process.cwd();for(const f of ['README.md','README.zh.md','LICENSE','NOTICE'])if(!fs.existsSync(require('path').join(p,f)))throw new Error('missing '+f)\"",
     "clean": "node -e \"const fs=require('fs');for(const d of ['lib','dist'])fs.rmSync(d,{recursive:true,force:true})\""
   },
   "engines": {

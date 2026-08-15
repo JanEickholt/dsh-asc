@@ -6,6 +6,11 @@
 > report body below was produced by the harness itself during the final
 > validation run; the section above it summarizes what the four runs
 > established and the defects they surfaced.
+>
+> Note: the current release restores IN PLACE (the checkpoint is replaced
+> by the replayed transcript and leaves the current surface). Early-run
+> observations about a restored checkpoint persisting in `context_status`
+> predate that contract and no longer describe current behavior.
 
 ## Summary of the validation campaign
 
@@ -66,7 +71,7 @@ documented in-place contract in [design.md](design.md).
 | Capability | Verdict | Evidence |
 |---|---|---|
 | Compress (checkpoint creation) | 鉁?PASS | tier-1 checkpoint `d7a3b741-...`, 9 nodes / 7,417 tokens →2,382-token summary (≥.1×) |
-| Decompress (log replay, zero storage) | 鉁?PASS | 9 events restored, 29,781 chars, content verified verbatim in replay output |
+| Decompress (log replay, no side-state) | 鉁?PASS | 9 events restored, 29,781 chars, content verified verbatim in replay output |
 | Invalid-range rejection | 鉁?PASS | exact error, no surface mutation |
 | Unknown-id handling | 鉁?PASS | graceful skip |
 | context_status surface report | 鉁?**PASS (fixed)** | structured result on every call —usage, checkpoints (shadowedSeqs / tier / summaryChars / author), tierTokens, protectedSeqs, recommendations, recentNodes, lastCompression. Run 3 recommendation #2 addressed. |
@@ -108,7 +113,7 @@ documented in-place contract in [design.md](design.md).
 | Capability | Verdict | Evidence |
 |---|---|---|
 | Compress (checkpoint creation) | 鉁?PASS | tier-1 checkpoint `7ff50848-...`, 11 nodes / 15,714 tokens →3,614-token summary (≥.35×) |
-| Decompress (log replay, zero storage) | 鉁?PASS | 11 events restored, 62,979 chars, content verified verbatim in replay output (largest restore across all runs) |
+| Decompress (log replay, no side-state) | 鉁?PASS | 11 events restored, 62,979 chars, content verified verbatim in replay output (largest restore across all runs) |
 | Invalid-range rejection | 鉁?PASS | exact error, no surface mutation |
 | Unknown-id handling | 鉁?PASS | graceful skip |
 | context_status surface report | 鈿狅笍 PARTIAL | tool returns `{}` on every call (3rd run unchanged); surface info only via harness `[context-management]` notices |
@@ -148,7 +153,7 @@ documented in-place contract in [design.md](design.md).
 | Capability | Verdict | Evidence |
 |---|---|---|
 | Compress (checkpoint creation) | 鉁?PASS | tier-1 checkpoint `3a8e9f18-...`, 14 nodes / 8,912 tokens →2,230-token summary |
-| Decompress (log replay, zero storage) | 鉁?PASS | 14 events restored, 35,742 chars, content verified verbatim in replay output |
+| Decompress (log replay, no side-state) | 鉁?PASS | 14 events restored, 35,742 chars, content verified verbatim in replay output |
 | Invalid-range rejection | 鉁?PASS | exact error, no surface mutation |
 | Unknown-id handling | 鉁?PASS | graceful skip |
 | context_status surface report | 鈿狅笍 PARTIAL | tool returns `{}`; surface info only via harness `[context-management]` notices |
@@ -156,7 +161,7 @@ documented in-place contract in [design.md](design.md).
 
 ### Run 2 —Key findings
 
-1. **Core round-trip works end-to-end (2nd consecutive run)**: compress →checkpoint →decompress →verbatim restore. The ASC design's "decompress replays the log with zero storage" behavior is confirmed live again (8,912 tokens in, 35,742 chars restored across 14 events).
+1. **Core round-trip works end-to-end (2nd consecutive run)**: compress →checkpoint →decompress →verbatim restore. Replay-based restore with no side-state is confirmed live again (8,912 tokens in, 35,742 chars restored across 14 events).
 2. **Version-skew bug in the observability layer, reproduced in a fresh session**: this session's log carries a `context/nudge` event at **seq 466** (prior session: seq 2047) that is **unknown to this harness** and not marked ignorable, so `context_search` (and its persistence observation) refuses to interpret the log. The log is append-only, so the failure persists before and after compression —the FTS-over-shadowed-originals capability (ASC reaction 鈶? still cannot be validated in this deployment.
 3. `context_status` never returned a structured result (`{}` every call) —the plugin/harness status report is not wired through in this session; checkpoint metadata is only visible in the compress result.
 4. Compression ratio this run: 8,912 →2,230 summary tokens (≥.0×) in one tier-1 pass (prior run: ≥1.8×). Ratio varies with summary density and range coverage; both passes produced functional checkpoints.

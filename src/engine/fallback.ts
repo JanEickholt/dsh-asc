@@ -2,11 +2,11 @@
  * Deterministic fallback summarization.
  *
  * When overflow recovery or manual compaction needs an automatic summary,
- * the engine falls back to one `ctx.llm.stream()` call whose prefix reuses
- * the conversation's own system prompt, tools, and leading messages — a
- * genuine prefix of the last routed request, so the provider's KV cache is
- * reused instead of invalidated. The summary is then committed through the
- * same durable transaction as a model-written summary.
+ * the engine falls back to one `ctx.llm.stream()` call whose envelope reuses
+ * the conversation's own system prompt and tool schemas and carries the
+ * shadowed region in surface order, so the provider can reuse the cached
+ * prefix instead of invalidating it. The summary is then committed through
+ * the same durable transaction as a model-written summary.
  *
  * @module dsh-asc/fallback
  */

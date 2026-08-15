@@ -18,9 +18,10 @@ plugins:
       auto: true
 ```
 
-It also registers four model-facing tools (`context_compress`,
-`context_decompress`, `context_status`, `context_search`) and, optionally,
-the invariant companion row (`dsh-asc/invariant`).
+It also registers five model-facing tools (`context_compress`,
+`context_decompress`, `context_recap`, `context_status`,
+`context_search`) and, optionally, the invariant companion row
+(`dsh-asc/invariant`).
 
 Nothing in the agent loop changes. Everything the plugin produces is either
 a session event on the existing log or a registration on an existing seam:
@@ -83,7 +84,7 @@ Nudge cadence and tier baselines are **transient in-memory state**
 baseline before nudging again, so a restart can never double-fire, and the
 nudge messages themselves remain durable and replayable.
 
-## 4. The four tools
+## 4. The five tools
 
 ### `context_compress`
 Compresses one or more surface ranges into model-written checkpoints.
@@ -110,13 +111,14 @@ Compresses one or more surface ranges into model-written checkpoints.
 ### `context_decompress`
 Restores compressed content by replaying the log.
 
-- `compactionIds?: string[]` and/or `startSeq/endSeq` (mutually exclusive
-  targeting; a range resolves every checkpoint whose shadowed span
-  overlaps it).
+- `compactionIds?: string[]` or `startSeq/endSeq` (mutually exclusive
+  targeting; a range resolves every checkpoint whose current surface
+  position — the position of its collapsed shadowed span — lies inside it).
 - `full?: boolean` — one tier up by default; recursive to raw content with
   `full: true`.
-- Budgets: `decompress.maxTokens` per call (over-budget targets are skipped
-  and reported) and `decompress.maxBlocks` per call (hard error).
+- Budgets: `decompress.maxTokens` per call (priced as the combined
+  `user/message` that will actually be appended; over-budget targets are
+  skipped and reported) and `decompress.maxBlocks` per call (hard error).
 - Each restored transcript is committed back into the surface at its
   checkpoint's position — an in-place replace (the checkpoint node is
   shadowed by a `user/message` carrying the original content with
@@ -124,17 +126,35 @@ Restores compressed content by replaying the log.
   undone and the original content appears where it used to be. A target
   whose checkpoint is no longer on the surface (already restored) is
   skipped and reported.
-- The tool result reports statistics and a preview only (no inline
+- `toFile` writes the transcript through the optional fs service and keeps
+  the checkpoint compressed. A single target uses the requested path
+  verbatim; multiple targets receive derived sibling paths (`name-1.ext`,
+  `name-2.ext`, …) so no transcript overwrites another, and each result
+  reports the path it wrote.
+- The tool result reports statistics and a preview or path only (no inline
   content), keeping the model-visible footprint equal to the restored
   transcript rather than doubling it.
 - Result: `{ restored: [{ compactionId, tier, checkpointSeq, restoredSeqs,
-  restoredTokens, restoredChars, preview }], skipped: [...] }`.
+  restoredTokens, restoredChars, preview, path? }], skipped: [...] }`.
+
+### `context_recap`
+Re-reads checkpoint summaries without decompressing the originals.
+
+- `compactionIds?: string[]` — omit to recap every checkpoint on the
+  current surface.
+- Summaries are read from the durable `compaction/summary` events, so a
+  recap never depends on the original compress call still being visible.
+- Read-only: no surface mutation, no budget is charged beyond the returned
+  summary text itself.
 
 ### `context_status`
 Reports usage (token-meter baseline kind/tokens, total, window, percent),
 checkpoints by tier with their shadowed spans, per-tier token totals,
 protected seqs, recommended ranges, and the recent surface nodes with
-seq/kind/tokens/tier/preview so the model can choose ranges.
+seq/position/kind/tokens/tier/protection/preview. Positions are 0-based
+surface positions (0 = the oldest current surface node); the recent-node
+list is capped to the last 40 nodes and each entry carries its own
+position.
 
 ### `context_search`
 Full-text search through the optional session-query service. `scope:
@@ -153,7 +173,7 @@ Registered only when `auto: true` (default):
   `tiers.growthTokens`, only for tiers below the cap with consumable
   checkpoints), or `iteration` (messages since the last user prompt past
   `nudge.iterationThreshold`, in the over-min band). On a decision, the
-  engine appends `context/nudge` + the nudge `user/message`. Always calls
+  engine appends the nudge `user/message`. Always calls
   `next()`.
 - `agent/request-error` (waterfall): on `CONTEXT_WINDOW_EXCEEDED`, prunes
   tool results through the optional `toolResultPruner`, selects a range with
@@ -172,11 +192,15 @@ distillation accumulate growth across captures.
 ## 6. Deterministic fallback
 
 `compactIfNeeded('context-overflow')`, `compactNow`, and `compactRegion`
-share one path: head-anchored selection (skipping leading protected nodes,
-balanced and protected-free), one `ctx.llm.stream()` call whose prefix
-reuses the conversation's own system prompt, tools, and leading messages
-(KV-cache friendly), then the same durable transaction with author
-`fallback`. `compactNow` additionally runs under `agent.runMaintenance`,
+share one path: selection with the routed-model retention budget
+(`thresholdRatio`/`retainRatio`/`retainTokens`/`modelPolicies`, scaled by
+the adapter's context window), hard fences for protected nodes, the
+configured recent-tail node count, and the tier cap; then one
+`ctx.llm.stream()` call whose envelope reuses the conversation's own system
+prompt and tool schemas and carries the shadowed region in surface order
+(KV-cache friendly); then the same durable transaction with author `fallback`. `compactRegion` re-validates
+its explicit range against the protection and tier-cap policy before
+summarizing. `compactNow` additionally runs under `agent.runMaintenance`,
 writes a standalone bracket (owner `null`), and flushes through
 `ctx.sessions.flush`.
 
@@ -186,7 +210,7 @@ writes a standalone bracket (owner `null`), and flushes through
 |---|---|---|
 | First human user message never compressed | on | `protection.protectFirstUserMessage` |
 | Recent tail never included in a range | 20 nodes | `protection.retainRecentMessages` |
-| `context_compress`/`context_decompress` calls+results force-protected | on | fixed |
+| `context_compress`/`context_decompress` call records are compressible like any other surface content; the audit lives in log-only `compaction/*` events | — | fixed |
 | Tool outputs excluded from ranges | `[]` | `protection.protectedTools` |
 | Plugin-sourced injected messages excluded | `[]` | `protection.protectedSources` |
 | All human user messages excluded | off | `protection.protectUserMessages` |

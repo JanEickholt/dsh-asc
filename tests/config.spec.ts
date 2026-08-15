@@ -114,6 +114,20 @@ describe('resolveTargetPolicy and resolveCompactSpec', () => {
     expect(other.thresholdRatio).toBe(0.8)
   })
 
+  it('lets an override retainRatio replace a global retainTokens', () => {
+    const config = resolveConfig({
+      retainTokens: 2000,
+      modelPolicies: [{ provider: 'p', model: 'm', retainRatio: 0.25 }],
+    })
+    const policy = resolveTargetPolicy(config, { provider: 'p', model: 'm' })
+    expect(policy.retainRatio).toBe(0.25)
+    expect(policy.retainTokens).toBeUndefined()
+    // Unmatched targets still get the global absolute budget.
+    const other = resolveTargetPolicy(config, { provider: 'p', model: 'other' })
+    expect(other.retainTokens).toBe(2000)
+    expect(other.retainRatio).toBe(0)
+  })
+
   it('scales budgets from the context window', () => {
     const spec = resolveCompactSpec({ thresholdRatio: 0.8, retainRatio: 0.16 }, 100_000)
     expect(spec.thresholdTokens).toBe(80_000)

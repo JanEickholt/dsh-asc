@@ -31,13 +31,30 @@ const CJK_RE = /[\u3400-\u9fff]/u
  */
 export function wordTokens(text: string): Token[] {
   const tokens: Token[] = []
+  let latinRun = ''
+  const flushLatinRun = (): void => {
+    if (latinRun.length > 0) {
+      tokens.push(latinRun)
+      latinRun = ''
+    }
+  }
   for (const part of text.toLowerCase().split(WORD_BOUNDARY)) {
     if (part.length === 0) continue
-    if (CJK_RE.test(part)) {
-      for (const char of part) tokens.push(char)
-    } else {
+    if (!CJK_RE.test(part)) {
       tokens.push(part)
+      continue
     }
+    // Mixed runs keep Latin/digit words together and split only the CJK
+    // ideographs into unigrams, instead of exploding the whole run.
+    for (const char of part) {
+      if (CJK_RE.test(char)) {
+        flushLatinRun()
+        tokens.push(char)
+      } else {
+        latinRun += char
+      }
+    }
+    flushLatinRun()
   }
   return tokens
 }
@@ -120,6 +137,12 @@ export function evaluateQuality(
   const isNoise = uniqueRatio < config.noiseUniqueRatio
   const noteParts: string[] = []
 
+  // L2 signals are measured on every evaluation so L1 rejections report the
+  // real coverage values instead of fabricated zeros.
+  const summaryTokensList = wordTokens(input.summaryText)
+  const rouge = rouge1F1(originalTokensList, summaryTokensList)
+  const recall = topKeywordRecall(originalTokensList, summaryTokensList)
+
   if (summaryChars < config.layer1MinChars) {
     noteParts.push(`summary ${summaryChars} chars below the ${config.layer1MinChars}-char floor`)
   }
@@ -139,8 +162,8 @@ export function evaluateQuality(
       metrics: {
         summaryChars,
         retentionPct,
-        rouge1F1: 0,
-        top20Recall: 0,
+        rouge1F1: rouge,
+        top20Recall: recall,
         layer1MinChars: config.layer1MinChars,
         layer1MinRetentionPct: config.layer1MinRetentionPct,
         layer2MaxRougeF1: config.layer2MaxRougeF1,
@@ -149,9 +172,6 @@ export function evaluateQuality(
     }
   }
 
-  const summaryTokensList = wordTokens(input.summaryText)
-  const rouge = rouge1F1(originalTokensList, summaryTokensList)
-  const recall = topKeywordRecall(originalTokensList, summaryTokensList)
   if (!isNoise && rouge < config.layer2MaxRougeF1 && recall < config.layer2MaxTop20Recall) {
     return {
       gate: 'rouge-recall-v1',

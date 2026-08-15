@@ -84,6 +84,53 @@ describe('tierSnapshot', () => {
     expect(snapshot.tierBySeq.get(nodes.at(-2)!)).toBe(0)
     expect(snapshot.tierBySeq.get(nodes.at(-1)!)).toBe(0)
   })
+
+  it('returns restored replacement transcripts to tier 0, not checkpoint tier + 1', async () => {
+    const ctx = createContext()
+    const session = conversationSession(4)
+    const nodes = session.surface.nodes
+    const selection = validateSurfaceRange(session, nodes[0]!, nodes[Math.floor(nodes.length / 2)]!)
+    const compacted = await commitSurfaceCompaction(
+      { meter: ctx.tokenMeter },
+      session,
+      selection.start,
+      selection.end,
+      {
+        kind: 'model',
+        summary: 'consolidated checkpoint preserving file paths, decisions, and next steps',
+        provider: MODEL,
+        model: MODEL,
+      },
+      { owner: 'current-turn', stability: 'whole-surface' },
+    )
+    const checkpointSeq = checkpointViews(session)[0]!.seq
+    const restored = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'the original transcript is back' }],
+      source: { kind: 'plugin', plugin: 'dsh-asc', op: 'decompress', compactionId: compacted.compactionId },
+    }), {
+      surfaceOp: { op: 'replace', start: checkpointSeq, end: checkpointSeq },
+      sourceEventSeqs: [checkpointSeq, ...compacted.shadowedSeqs],
+    })
+    const snapshot = tierSnapshot(session)
+    expect(snapshot.tierBySeq.get(restored.seq)).toBe(0)
+    expect(nodeKindOf(session, restored.seq)).toBe('restored')
+  })
+
+  it('rebuilds the tier snapshot after plain surface appends', () => {
+    const session = conversationSession(2)
+    void tierSnapshot(session)
+    const appended = session.append('assistant/message', {
+      turn: 2,
+      step: 1,
+      message: createAssistantMessage({
+        content: [{ type: 'text', text: 'a newly appended assistant node' }],
+        source: { provider: MODEL, model: MODEL },
+      }),
+    }, { surfaceOp: 'append' })
+    const fresh = tierSnapshot(session)
+    expect(fresh.kindBySeq.get(appended.seq)).toBe('assistant')
+    expect(fresh.tierBySeq.get(appended.seq)).toBe(0)
+  })
 })
 
 describe('tierTokenUsage', () => {

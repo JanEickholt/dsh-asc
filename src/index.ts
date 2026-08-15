@@ -3,7 +3,7 @@
  *
  * Mount this package instead of `@deepseek-ai/dsh-compaction-basic` on the
  * same `ctx.compaction` seam. The model decides when and what to compact
- * through the four `context_*` tools; every decision is committed as a
+ * through the five `context_*` tools; every decision is committed as a
  * durable session-log replacement, decompression replays the log, nudges
  * are logged and precisely priced, and overflow recovery or manual
  * compaction falls back to the deterministic LLM summarizer.

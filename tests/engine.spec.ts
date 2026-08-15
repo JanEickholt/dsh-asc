@@ -527,6 +527,58 @@ describe('AgenticCompactionEngine.decompressByModel', () => {
       toFile: '/tmp/x.txt',
     })).rejects.toThrow(/toFile requires the fs service/)
   })
+
+  it('writes multiple toFile targets to distinct derived paths', async () => {
+    const { ctx, engine } = engineWith()
+    const writes: string[] = []
+    ctx.provide('fs', {
+      resolve: async (path: string) => ({ path }),
+      writeText: async (target: { path: string }, content: string) => {
+        writes.push(target.path)
+        expect(content.length).toBeGreaterThan(0)
+        return { version: 1 }
+      },
+    } as never)
+    const session = conversationSession(8)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    const first = await engine.compressByModel(agent, [{
+      startSeq: nodes[0]!,
+      endSeq: nodes[1]!,
+      summary: TURN_SUMMARY,
+    }])
+    const after = [...session.surface.nodes]
+    const second = await engine.compressByModel(agent, [{
+      startSeq: after[after.length - 3]!,
+      endSeq: after[after.length - 2]!,
+      summary: `${TURN_SUMMARY} second`,
+    }])
+    const result = await engine.decompressByModel(agent, {
+      compactionIds: [first.compressed[0]!.compactionId, second.compressed[0]!.compactionId],
+      toFile: '/tmp/restore.txt',
+    })
+    expect(result.restored).toHaveLength(2)
+    expect(writes).toHaveLength(2)
+    expect(new Set(writes).size).toBe(2)
+    expect(writes).toContain('/tmp/restore-1.txt')
+    expect(writes).toContain('/tmp/restore-2.txt')
+    expect(result.restored.map(entry => entry.path)).toEqual(writes)
+    // The checkpoints stay compressed: nothing was restored in place.
+    for (const view of checkpointViews(session)) {
+      expect(session.surface.nodes).toContain(view.seq)
+    }
+  })
+
+  it('rejects compaction ids combined with a range', async () => {
+    const { engine } = engineWith()
+    const session = conversationSession(4)
+    const agent = agentOf(session)
+    await expect(engine.decompressByModel(agent, {
+      compactionIds: ['some-id'],
+      startSeq: 1,
+      endSeq: 2,
+    })).rejects.toThrow(/mutually exclusive/)
+  })
 })
 
 describe('AgenticCompactionEngine.recapByModel', () => {
@@ -600,8 +652,10 @@ describe('AgenticCompactionEngine.status', () => {
     expect(status.recentNodes[0]!.seq).toBeDefined()
     expect(status.protectedSeqs).toContain(session.surface.nodes[0])
     expect(status.lastCompression?.author).toBe('model')
-    // Every recent node carries its protection flag, so the model can pick
-    // ranges without tripping the policy.
+    // Every recent node carries its full-surface position and protection
+    // flag, so the model can map recommendation positions without a full
+    // node dump.
+    expect(status.recentNodes[0]!.position).toBe(0)
     for (const node of status.recentNodes) {
       expect(typeof node.protected).toBe('boolean')
       expect(node.protected).toBe(status.protectedSeqs.includes(node.seq))
@@ -646,7 +700,7 @@ describe('AgenticCompactionEngine automatic behavior', () => {
   })
 
   it('compacts automatically on context overflow through the fallback summarizer', async () => {
-    const { engine } = engineWith()
+    const { engine } = engineWith({ retainTokens: 1 })
     const session = conversationSession(4)
     const agent = agentOf(session)
     const before = session.surface.nodes.length
@@ -680,6 +734,40 @@ describe('AgenticCompactionEngine automatic behavior', () => {
     expect(result).toBeNull()
   })
 
+  it('overflow fallback never consumes checkpoints at the tier cap', async () => {
+    const { engine } = engineWith({ retainTokens: 1, tiers: { maxTier: 1 } })
+    const session = conversationSession(6)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    const first = await engine.compressByModel(agent, [{
+      startSeq: nodes[0]!,
+      endSeq: nodes[2]!,
+      summary: TURN_SUMMARY,
+    }])
+    expect(first.compressed).toHaveLength(1)
+    const checkpointSeq = checkpointViews(session)[0]!.seq
+    const result = await engine.compactIfNeeded(agent, 'context-overflow', new AbortController().signal)
+    expect(result).not.toBeNull()
+    expect(result!.shadowedSeqs).not.toContain(checkpointSeq)
+    // The tier-capped checkpoint stayed on the surface.
+    expect(session.surface.nodes).toContain(checkpointSeq)
+  })
+
+  it('compactRegion rejects explicit ranges that violate the protection or tier policy', async () => {
+    const { engine } = engineWith({ tiers: { maxTier: 1 } })
+    const session = conversationSession(4)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    await engine.compressByModel(agent, [{
+      startSeq: nodes[0]!,
+      endSeq: nodes[1]!,
+      summary: TURN_SUMMARY,
+    }])
+    const after = [...session.surface.nodes]
+    await expect(engine.compactRegion(after[0]!, after[1]!, agent))
+      .rejects.toThrow(/tier-1 checkpoint at the tier cap/)
+  })
+
   it('compactRegion commits through the fallback summarizer', async () => {
     const { engine } = engineWith()
     const session = conversationSession(4)
@@ -691,7 +779,7 @@ describe('AgenticCompactionEngine automatic behavior', () => {
   })
 
   it('compactNow requires an idle agent and commits standalone brackets', async () => {
-    const { ctx, engine } = engineWith()
+    const { ctx, engine } = engineWith({ retainTokens: 1 })
     const session = closedSession(3)
     ctx.sessions.enter(session)
     let taskRan = false
@@ -722,6 +810,19 @@ describe('AgenticCompactionEngine automatic behavior', () => {
     // compactNow throws synchronously when the idle phase is claimed.
     expect(() => engine.compactNow(agent as never, new AbortController().signal))
       .toThrow(/requires an idle agent/)
+  })
+
+  it('classifies an asynchronously rejected maintenance claim as busy too', async () => {
+    const { engine } = engineWith()
+    const session = conversationSession(4)
+    const agent = {
+      ...agentOf(session),
+      runMaintenance: async () => {
+        throw new Error('busy')
+      },
+    } as never
+    await expect(engine.compactNow(agent as never, new AbortController().signal))
+      .rejects.toThrow(/requires an idle agent/)
   })
 
   it('range eligibility honors the tier cap', async () => {

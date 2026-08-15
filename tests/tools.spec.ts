@@ -107,4 +107,27 @@ describe('registerContextTools', () => {
     void search
     void engine
   })
+
+  it('renders toFile restores as written paths, not in-place restores', () => {
+    const ctx = createContext()
+    const registry = recordingRegistry(ctx)
+    const engine = new AgenticCompactionEngine(ctx, { auto: false })
+    registerContextTools(ctx, engine)
+    const decompress = registry.tools.find(tool => tool.name === 'context_decompress')!
+    const entry = {
+      compactionId: 'cp-1',
+      tier: 1,
+      checkpointSeq: 10,
+      restoredSeqs: [1, 2],
+      restoredTokens: 100,
+      restoredChars: 400,
+      preview: 'written to /tmp/restore-1.txt (400 chars)',
+      path: '/tmp/restore-1.txt',
+    }
+    const text = decompress.output.render({}, { restored: [entry], skipped: [] })
+      .map(block => (block as { text: string }).text).join('')
+    expect(text).toContain('/tmp/restore-1.txt')
+    expect(text).toContain('the checkpoint stays compressed')
+    expect(text).not.toContain('content is back in the surface')
+  })
 })

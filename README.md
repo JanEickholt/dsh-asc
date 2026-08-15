@@ -106,8 +106,8 @@ can be decompressed or searched at any time.
 - **Tiered compaction**: checkpoints have tiers (T1 full detail → T2
   distilled decisions → T3 bare facts); summaries get thinner as they are
   reused.
-- **Reversible**: decompression replays the events shadowed in the log, at
-  zero storage cost.
+- **Reversible**: decompression replays the events shadowed in the log and
+  commits one in-place replacement event; no side state is needed.
 - **Auditable**: who compacted what, the full summary text, and the token
   cost are all in the log.
 
@@ -118,7 +118,7 @@ src/
   index.ts      plugin entry: registers ctx.compaction + the five tools
   config.ts     strict config validation
   types.ts      shared config and result types
-  events.ts     SessionEventMap declaration merges
+  events.ts     session-event vocabulary documentation (no custom members)
   invariant.ts  runtime invariant companion (subpath export)
   engine/       the compaction engine core (engine, region, tier,
                 quality gate, fallback, prompt, restore)

@@ -24,7 +24,7 @@ import { toolPairingBalancedAfter } from '@deepseek-ai/dsh-compaction'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
 import type { ResolvedConfig, RecommendedRange } from '../types.ts'
-import { isProtectedNode, nearestBalancedRange, validateSurfaceRange } from './protected.ts'
+import { isProtectedNode, nearestBalancedRange, rangeIneligibility, validateSurfaceRange } from './protected.ts'
 import { nodeKindOf, tierSnapshot, tierTokenUsage } from '../engine/tier.ts'
 
 /** A recommended range before commit-readiness validation. */
@@ -72,7 +72,13 @@ export function applyCompressionBaseline(
   if (tier > 1) {
     const consumedTier = tier - 1
     const consumed = tierTokens.get(consumedTier)
-    if (consumed !== undefined) tierBaselines.set(consumedTier, consumed)
+    if (consumed === undefined) {
+      // The consumed pile is gone entirely (distilled into the new tier):
+      // drop its stale baseline so the next pile is measured from zero.
+      tierBaselines.delete(consumedTier)
+    } else {
+      tierBaselines.set(consumedTier, consumed)
+    }
   }
   return {
     lastBaselineTokens: totalTokens,
@@ -177,7 +183,7 @@ export function decideNudge(input: NudgeInput): NudgeDecision {
             + `${tierTokens - tierBaseline} tokens since the last baseline`,
           growth,
           recommendations: recommendTierRanges(session, measurement, config, inputTier)
-            .map(candidate => commitReadyRange(session, measurement, candidate))
+            .map(candidate => commitReadyRange(session, measurement, config, candidate))
             .filter((range): range is RecommendedRange => range !== null),
         }
       }
@@ -243,10 +249,11 @@ export function nodesSinceLastUser(session: Session): number {
 
 /**
  * Build up to three recommended ranges: the head-history span and the two
- * largest eligible tool results. Every returned range is pre-validated so a
- * model acting on a recommendation never hits a commit-time rejection: an
- * unbalanced candidate is extended to the minimal complete tool turns, and a
- * candidate that cannot be made valid is dropped.
+ * largest eligible tool results, in priority order and pairwise
+ * non-overlapping so the model can batch them in one context_compress call.
+ * Every returned range is pre-validated (balanced edges, no protected node,
+ * outside the recent tail, below the tier cap) so a model acting on one
+ * against the same surface cannot hit a commit-time rejection.
  * @param session - session owning the surface.
  * @param measurement - current measurement.
  * @param config - resolved policy.
@@ -257,15 +264,22 @@ export function recommendRanges(
   measurement: TokenMeasurement,
   config: ResolvedConfig,
 ): RecommendedRange[] {
-  const recommendations: RecommendedRangeCandidate[] = []
+  const candidates: RecommendedRangeCandidate[] = []
   const head = recommendHeadRange(session, measurement, config)
-  if (head !== null) recommendations.push(head)
+  if (head !== null) candidates.push(head)
   for (const big of recommendBigToolResults(session, measurement, config, 2)) {
-    recommendations.push(big)
+    candidates.push(big)
   }
-  return recommendations
-    .map(candidate => commitReadyRange(session, measurement, candidate))
-    .filter((range): range is RecommendedRange => range !== null)
+  const accepted: RecommendedRange[] = []
+  for (const candidate of candidates) {
+    const ready = commitReadyRange(session, measurement, config, candidate)
+    if (ready === null) continue
+    if (accepted.some(range => (
+      ready.startPosition <= range.endPosition && ready.endPosition >= range.startPosition
+    ))) continue
+    accepted.push(ready)
+  }
+  return accepted
 }
 
 /**
@@ -280,11 +294,17 @@ export function recommendRanges(
 function commitReadyRange(
   session: Session,
   measurement: TokenMeasurement,
+  config: ResolvedConfig,
   candidate: RecommendedRangeCandidate,
 ): RecommendedRange | null {
   try {
-    validateSurfaceRange(session, candidate.startSeq, candidate.endSeq)
-    return { ...candidate, balanced: true }
+    const selection = validateSurfaceRange(session, candidate.startSeq, candidate.endSeq)
+    // A balanced candidate that is ineligible (protected, recent tail, tier
+    // cap) can never be repaired by extension — drop it instead of showing a
+    // range the model cannot commit.
+    return rangeIneligibility(session, selection, config) === undefined
+      ? { ...candidate, balanced: true }
+      : null
   } catch {
     // Fall through to extension; validateSurfaceRange only fails on missing,
     // reversed, or unbalanced spans, so a recommendation that is stale or
@@ -293,6 +313,10 @@ function commitReadyRange(
   const nodes = session.surface.nodes
   const expanded = nearestBalancedRange(session, candidate.startSeq, candidate.endSeq)
   if (expanded === null) return null
+  const expandedSelection = validateSurfaceRange(session, expanded.start, expanded.end)
+  if (rangeIneligibility(session, expandedSelection, config) !== undefined) {
+    return null
+  }
   const startPosition = nodes.indexOf(expanded.start)
   const endPosition = nodes.indexOf(expanded.end)
   if (startPosition === -1 || endPosition === -1) return null
@@ -471,7 +495,7 @@ export function buildNudgeText(input: {
     lines.push(
       config.nudge.force === 'strong'
         ? 'Context is high. Compress older spans now with context_compress to avoid overflow; '
-          + 'otherwise the deterministic fallback will compact automatically.'
+          + 'if the request does overflow, the deterministic fallback will compact automatically.'
         : 'If older spans are no longer needed verbatim, consider compressing them with context_compress.',
     )
   } else if (decision.kind === 'tier') {
@@ -486,7 +510,7 @@ export function buildNudgeText(input: {
     )
   }
   if (decision.recommendations.length > 0) {
-    lines.push('Recommended ranges (surface seqs; positions follow context_status recentNodes order):')
+    lines.push('Recommended ranges (surface seqs; positions are 0-based surface positions, 0 = the oldest current node):')
     for (const range of decision.recommendations) {
       lines.push(
         `- seqs ${range.startSeq}..${range.endSeq} (positions ${range.startPosition}..${range.endPosition}, `

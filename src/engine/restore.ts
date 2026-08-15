@@ -90,12 +90,13 @@ export interface RestoreTarget {
 }
 
 /**
- * Resolve decompression targets from the log by compaction ids, by a surface
- * position range, or by both (ids take precedence).
+ * Resolve decompression targets from the log by compaction ids or by a
+ * surface position range. The two targeting modes are mutually exclusive.
  * @param session - session owning the log.
  * @param compactionIds - exact checkpoint ids to restore.
- * @param range - optional surface span; every checkpoint whose shadowed span
- *   overlaps it is restored.
+ * @param range - optional surface span; every checkpoint whose current
+ *   surface position (the position of the collapsed shadowed span) lies
+ *   inside the range is restored.
  * @returns resolved targets in surface order and unknown ids.
  */
 export function resolveRestoreTargets(
@@ -103,12 +104,20 @@ export function resolveRestoreTargets(
   compactionIds: readonly string[] | undefined,
   range: { startSeq: number; endSeq: number } | undefined,
 ): { targets: RestoreTarget[]; unknown: readonly string[] } {
+  const hasIds = compactionIds !== undefined && compactionIds.length > 0
+  if (hasIds && range !== undefined) {
+    throw new Error(
+      'compactionIds and startSeq/endSeq are mutually exclusive; '
+      + 'use one targeting mode per context_decompress call',
+    )
+  }
   const views = checkpointViews(session)
-  if (compactionIds !== undefined && compactionIds.length > 0) {
+  if (hasIds) {
     const wanted = new Set(compactionIds)
     const targets: RestoreTarget[] = []
     const unknown: string[] = []
     const seen = new Set<string>()
+    const reported = new Set<string>()
     for (const view of views) {
       if (!wanted.has(view.compactionId)) continue
       if (seen.has(view.compactionId)) continue
@@ -121,7 +130,10 @@ export function resolveRestoreTargets(
       })
     }
     for (const id of compactionIds) {
-      if (!seen.has(id)) unknown.push(id)
+      if (!seen.has(id) && !reported.has(id)) {
+        unknown.push(id)
+        reported.add(id)
+      }
     }
     return { targets, unknown }
   }
@@ -139,19 +151,13 @@ export function resolveRestoreTargets(
     const targets: RestoreTarget[] = []
     for (const view of views) {
       const nodeIdx = nodes.indexOf(view.seq)
-      const shadowedIdx = view.shadowedSeqs
-        .map(seq => nodes.indexOf(seq))
-        .filter(index => index !== -1)
-      const minIdx = shadowedIdx.length === 0 ? nodeIdx : Math.min(nodeIdx, ...shadowedIdx)
-      const maxIdx = shadowedIdx.length === 0 ? nodeIdx : Math.max(nodeIdx, ...shadowedIdx)
-      if (minIdx <= endIdx && maxIdx >= startIdx) {
-        targets.push({
-          compactionId: view.compactionId,
-          tier: view.tier,
-          checkpointSeq: view.seq,
-          shadowedSeqs: view.shadowedSeqs,
-        })
-      }
+      if (nodeIdx === -1 || nodeIdx < startIdx || nodeIdx > endIdx) continue
+      targets.push({
+        compactionId: view.compactionId,
+        tier: view.tier,
+        checkpointSeq: view.seq,
+        shadowedSeqs: view.shadowedSeqs,
+      })
     }
     return { targets, unknown: [] }
   }
@@ -202,27 +208,45 @@ export function expandRestoreSeqs(
  * @param session - session owning the log.
  * @param target - resolved target.
  * @param full - whether to expand to raw content.
- * @param meter - token meter pricing the restored messages.
- * @returns the leaf seqs, transcript text, and its estimated token price.
+ * @param meter - token meter pricing the restored message.
+ * @returns the leaf seqs, transcript text, its combined message price, and
+ *   the exact user message that carries the restored transcript.
  */
 export function buildRestoredContent(
   session: Session,
   target: RestoreTarget,
   full: boolean,
   meter: TokenMeter,
-): { restoredSeqs: number[]; text: string; tokens: number; chars: number } {
+): {
+  restoredSeqs: number[]
+  text: string
+  tokens: number
+  chars: number
+  message: ReturnType<typeof createUserMessage>
+} {
   const leaves = expandRestoreSeqs(session, target.shadowedSeqs, full)
   const events = session.events
   const messages: Message[] = []
-  let tokens = 0
   for (const seq of leaves) {
     const message = session.deriveEventMessage(eventForSeq(events, seq))
     if (message === null) continue
     messages.push(message)
-    tokens += meter.estimateMessage(message)
   }
   const text = serializeMessages(messages)
-  return { restoredSeqs: leaves, text, tokens, chars: Array.from(text).length }
+  // Price the message that will actually be appended — one combined user
+  // message — rather than the sum of the individual leaf estimates.
+  const restoredMessage = createUserMessage({
+    content: text.length === 0 ? [] : [{ type: 'text', text }],
+    source: restoredSource(target.compactionId),
+  })
+  const tokens = text.length === 0 ? 0 : meter.estimateMessage(restoredMessage)
+  return {
+    restoredSeqs: leaves,
+    text,
+    tokens,
+    chars: Array.from(text).length,
+    message: restoredMessage,
+  }
 }
 
 /**
@@ -253,7 +277,11 @@ export function restoreTargets(
   const skipped: string[] = []
   let budgetUsed = 0
   for (const target of targets) {
-    const { restoredSeqs, text, tokens, chars } = buildRestoredContent(session, target, full, meter)
+    const { restoredSeqs, text, tokens, chars, message } = buildRestoredContent(session, target, full, meter)
+    if (text.length === 0 || restoredSeqs.length === 0) {
+      skipped.push(`${target.compactionId} (no restorable message content)`)
+      continue
+    }
     if (budgetUsed + tokens > config.decompress.maxTokens) {
       skipped.push(
         `${target.compactionId} (${tokens} tokens; combined ${budgetUsed + tokens} exceeds `
@@ -270,10 +298,7 @@ export function restoreTargets(
       skipped.push(`${target.compactionId} (checkpoint seq ${target.checkpointSeq} is no longer on the surface)`)
       continue
     }
-    session.append('user/message', createUserMessage({
-      content: [{ type: 'text', text }],
-      source: restoredSource(target.compactionId),
-    }), {
+    session.append('user/message', message, {
       surfaceOp: { op: 'replace', start: target.checkpointSeq, end: target.checkpointSeq },
       sourceEventSeqs: [target.checkpointSeq, ...restoredSeqs],
     })

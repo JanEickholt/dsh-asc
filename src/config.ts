@@ -18,7 +18,7 @@ const DEFAULT_THRESHOLD_RATIO = 0.8
 /** Default verbatim-tail fraction for every routed model. */
 const DEFAULT_RETAIN_RATIO = 0.16
 
-/** Config errors are classified so the auto listener can suppress repeat warnings per target. */
+/** Config errors classified by the exact provider/model route so overflow recovery can report the failing target precisely. */
 export class TargetPolicyConfigError extends Error {
   /**
    * @param targetKey - exact provider/model route used as the warning key.
@@ -288,10 +288,17 @@ export function resolveTargetPolicy(
   const override = config.modelPolicies.find(policy => (
     policy.provider === target.provider && policy.model === target.model
   ))
-  const retainTokens = override?.retainTokens ?? config.retainTokens
+  // Each policy is an independent override: an explicit retainRatio on the
+  // matched policy must win over a global retainTokens (and vice versa),
+  // instead of silently mixing the two retention forms.
+  const retainTokens = override?.retainTokens !== undefined
+    ? override.retainTokens
+    : override?.retainRatio === undefined ? config.retainTokens : undefined
   return deepFreeze({
     thresholdRatio: override?.thresholdRatio ?? config.thresholdRatio,
-    retainRatio: retainTokens === undefined ? config.retainRatio : 0,
+    retainRatio: retainTokens === undefined
+      ? (override?.retainRatio ?? config.retainRatio)
+      : 0,
     ...retainTokens === undefined ? {} : { retainTokens },
   })
 }

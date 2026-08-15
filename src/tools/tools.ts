@@ -1,11 +1,12 @@
 /**
- * The four model-facing context tools.
+ * The five model-facing context tools.
  *
  * `context_compress` commits model-chosen ranges with model-written
  * summaries; `context_decompress` restores compressed content by replaying
- * the log; `context_status` reports usage, checkpoints, tiers, and
- * recommendations; `context_search` runs full-text search over the complete
- * session log — including shadowed (compressed) events.
+ * the log; `context_recap` re-reads checkpoint summaries; `context_status`
+ * reports usage, checkpoints, tiers, and recommendations; `context_search`
+ * runs full-text search over the complete session log — including shadowed
+ * (compressed) events.
  *
  * @module dsh-asc/tools
  */
@@ -40,7 +41,7 @@ function requireAgent(exec: ToolRunContext): NonNullable<ToolRunContext['agent']
   return exec.agent
 }
 
-/** Register the four context tools on a context. */
+/** Register the five context tools on a context. */
 export function registerContextTools(ctx: Context, engine: AgenticCompactionEngine): () => void {
   const disposers = [
     ctx.tools.register(defineTool({
@@ -50,7 +51,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
         'This is the core context-management tool: pick ranges of surface seqs (see context_status for the current surface and recommendations) whose content is no longer needed verbatim, and write a dense summary for each. The original content stays in the session log and can be restored later with context_decompress.',
         '',
         'Rules:',
-        '- Surface seqs are EVENT SEQUENCE NUMBERS, not positions: they do not sort by size. The current surface order is the recentNodes list from context_status (positions 0..N-1, oldest first); a range is its first and last surface member.',
+        '- Surface seqs are EVENT SEQUENCE NUMBERS, not positions: they do not sort by size. The current surface order is reported by context_status. Positions are 0-based surface positions (0 = the oldest current surface node); recentNodes only shows the last 40 nodes and each entry carries its own position.',
         '- Each range must be within the current surface; both seqs must be listed by context_status.',
         '- Ranges cannot include protected content (recent tail, protected tools, protected sources) — such ranges are rejected with a reason.',
         '- The framed checkpoint must be smaller than the shadowed content; too-long summaries are rejected.',
@@ -108,6 +109,17 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
                       endSeq: { type: 'number', required: true },
                     },
                   },
+                  quality: {
+                    type: 'object',
+                    additionalProperties: true,
+                    description: 'Quality-gate report; present when the gate evaluated this summary.',
+                    properties: {
+                      passed: { type: 'boolean', required: true },
+                      blocking: { type: 'boolean' },
+                      layer: { type: 'string' },
+                      note: { type: 'string' },
+                    },
+                  },
                 },
               },
             },
@@ -132,10 +144,15 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
               ? ''
               : ` (extended from seqs ${entry.expandedFrom.startSeq}..${entry.expandedFrom.endSeq} `
                 + 'to keep tool calls paired with their results)'
+            const quality = entry.quality === undefined
+              ? ''
+              : entry.quality.passed
+                ? ' (quality gate passed)'
+                : ` (quality gate ${entry.quality.blocking ? 'failed (blocking was acknowledged)' : 'recorded a failure'})`
             lines.push(
               `compressed seqs ${entry.startSeq}..${entry.endSeq} (${entry.shadowedSeqs.length} nodes, `
               + `~${entry.shadowedTokenCount} tokens) into checkpoint ${entry.compactionId} `
-              + `(tier ${entry.tier}, ~${entry.summaryTokenCount} summary tokens)${expanded}`,
+              + `(tier ${entry.tier}, ~${entry.summaryTokenCount} summary tokens)${expanded}${quality}`,
             )
           }
           for (const failure of value.failures) {
@@ -170,6 +187,17 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
             ...entry.expandedFrom === undefined
               ? {}
               : { expandedFrom: { ...entry.expandedFrom } },
+            ...entry.quality === undefined
+              ? {}
+              : {
+                quality: {
+                  gate: entry.quality.gate,
+                  passed: entry.quality.passed,
+                  blocking: entry.quality.blocking,
+                  layer: String(entry.quality.layer),
+                  ...entry.quality.note === undefined ? {} : { note: entry.quality.note },
+                },
+              },
           })),
           failures: result.failures.map(failure => ({ ...failure })),
         }
@@ -182,11 +210,11 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
         'Restore previously compressed content.',
         'Compressed content is never lost: it stays in the session log and is restored by replay. Use this when you need exact details a checkpoint summary cannot provide.',
         'By default the restored transcript is committed back INTO the surface at the checkpoint\'s own position — the compression is undone, and the original content appears where it used to be in your next context window. The tool result reports statistics and a preview only.',
-        'With toFile, the transcript is written to that path through the filesystem service and the checkpoint stays compressed — use for very large restores that would otherwise inflate context; the result reports the path.',
+        'With toFile, the transcript is written to that path through the filesystem service and the checkpoint stays compressed — use for very large restores that would otherwise inflate context; the result reports the path. Multiple targets get derived sibling paths so none overwrites another.',
         '',
         'Two targeting modes (mutually exclusive):',
         '- compactionIds: exact checkpoint ids from context_status (e.g. ["bd2a1c5e-..."]). Array-only transports may pass the bare id array.',
-        '- startSeq/endSeq: every checkpoint whose shadowed span overlaps the given surface range is restored.',
+        '- startSeq/endSeq: every checkpoint whose current surface position (the position of its collapsed shadowed span) lies inside the given range is restored.',
         '',
         'Tier-aware restore: by default a checkpoint is restored one tier up (a tier-2 checkpoint reveals its tier-1 summaries). Pass full: true to expand recursively all the way to the original raw content — expensive, use only when necessary.',
         'Restoring inflates context: the combined restored transcript must stay within the configured budget; over-budget targets are skipped and reported.',
@@ -232,6 +260,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
                   restoredTokens: { type: 'number', required: true },
                   restoredChars: { type: 'number', required: true },
                   preview: { type: 'string', required: true },
+                  path: { type: 'string', description: 'File written by toFile mode; absent for in-place restores.' },
                 },
               },
             },
@@ -241,11 +270,19 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
         render: (_args, value) => {
           const lines: string[] = []
           for (const entry of value.restored) {
-            lines.push(
-              `restored checkpoint ${entry.compactionId} (tier ${entry.tier}): ${entry.restoredSeqs.length} `
-              + `events, ~${entry.restoredTokens} tokens, ${entry.restoredChars} chars — content is back `
-              + 'in the surface at its original position',
-            )
+            if (entry.path !== undefined) {
+              lines.push(
+                `wrote checkpoint ${entry.compactionId} (tier ${entry.tier}): ${entry.restoredSeqs.length} `
+                + `events, ~${entry.restoredTokens} tokens, ${entry.restoredChars} chars — content is in `
+                + `${entry.path}; the checkpoint stays compressed`,
+              )
+            } else {
+              lines.push(
+                `restored checkpoint ${entry.compactionId} (tier ${entry.tier}): ${entry.restoredSeqs.length} `
+                + `events, ~${entry.restoredTokens} tokens, ${entry.restoredChars} chars — content is back `
+                + 'in the surface at its original position',
+              )
+            }
             if (entry.preview.length > 0) lines.push(`preview: ${entry.preview}`)
           }
           for (const skip of value.skipped) lines.push(`skipped: ${skip}`)
@@ -277,6 +314,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
             restoredTokens: entry.restoredTokens,
             restoredChars: entry.restoredChars,
             preview: entry.preview,
+            ...entry.path === undefined ? {} : { path: entry.path },
           })),
           skipped: [...result.skipped],
         }
@@ -314,7 +352,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
       description: [
         'Report the current context state: token usage, surface nodes, compression checkpoints by tier, protected content, and recommended compression ranges.',
         'Use this before context_compress to find valid surface seqs, and after compressing to confirm the new checkpoint.',
-        'The recent surface nodes list gives each node its seq, kind, token estimate, tier, and a content preview so you can choose compression ranges.',
+        'The recent surface nodes list shows the last 40 nodes with seq, 0-based surface position, kind, token estimate, tier, protection flag, and a content preview so you can choose compression ranges. Positions are full surface positions (0 = oldest current surface node).',
       ].join('\n'),
       parameters: {},
       output: {
@@ -366,6 +404,7 @@ function summarizeStatus(status: Awaited<ReturnType<AgenticCompactionEngine['sta
       totalTokens: status.totalTokens,
       surfaceTokens: status.surfaceTokens,
       baselineKind: status.baselineKind,
+      baselineTokens: status.baselineTokens,
       ...status.contextWindow === undefined ? {} : { contextWindow: status.contextWindow },
       ...status.usagePercent === undefined ? {} : { usagePercent: status.usagePercent },
       surfaceNodes: status.surfaceNodes,
@@ -377,6 +416,7 @@ function summarizeStatus(status: Awaited<ReturnType<AgenticCompactionEngine['sta
     recommendations: status.recommendations,
     recentNodes: status.recentNodes.slice(-STATUS_NODES_CAP).map(node => ({
       seq: node.seq,
+      position: node.position,
       kind: node.kind,
       tokens: node.tokens,
       tier: node.tier,
@@ -398,14 +438,21 @@ async function searchContext(
   if (sessionQuery === null || sessionQuery === undefined) {
     throw new Error('context_search requires the session-query service (mount dsh-session-query with a backend)')
   }
-  const limit = args.limit === undefined ? 20 : Math.max(1, Math.min(100, Math.trunc(args.limit)))
+  if (typeof args.query !== 'string' || args.query.trim().length === 0) {
+    throw new Error('context_search requires a non-empty query')
+  }
+  const query = args.query
+  const requestedLimit = typeof args.limit === 'number' && Number.isFinite(args.limit)
+    ? Math.trunc(args.limit)
+    : 20
+  const limit = Math.max(1, Math.min(100, requestedLimit))
   const scope = args.scope === 'workspace' ? 'workspace' : 'session'
   if (scope === 'session') {
-    const request: SessionEventSearchRequest = { sessionId, query: args.query, limit }
+    const request: SessionEventSearchRequest = { sessionId, query, limit }
     const page = await sessionQuery.searchEvents(request, { signal: exec.signal })
     return {
       scope: 'session',
-      query: args.query,
+      query,
       hits: page.items.map(item => ({
         seq: item.seq,
         type: item.type,
@@ -414,11 +461,11 @@ async function searchContext(
       })),
     }
   }
-  const request: SessionSearchRequest = { query: args.query, limit }
+  const request: SessionSearchRequest = { query, limit }
   const page = await sessionQuery.searchSessions(request, { signal: exec.signal })
   return {
     scope: 'workspace',
-    query: args.query,
+    query,
     hits: page.items.map(item => ({
       sessionId: item.header.id,
       seq: item.bestMatch.seq,

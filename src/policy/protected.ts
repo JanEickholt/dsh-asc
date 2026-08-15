@@ -56,6 +56,7 @@ export interface ToolNameIndex {
 
 interface ToolNameCacheEntry {
   readonly generation: number
+  readonly nodes: number
   readonly index: ToolNameIndex
 }
 
@@ -69,7 +70,13 @@ const toolNameCache = new WeakMap<Session, ToolNameCacheEntry>()
 export function toolNameIndex(session: Session): ToolNameIndex {
   const generation = session.surface.replaceGeneration
   const cached = toolNameCache.get(session)
-  if (cached !== undefined && cached.generation === generation) return cached.index
+  // Appends do not bump replaceGeneration; track the node count so a newly
+  // appended tool-call node is indexed before its result is classified.
+  if (cached !== undefined
+    && cached.generation === generation
+    && cached.nodes === session.surface.nodes.length) {
+    return cached.index
+  }
   const byCallId = new Map<string, string>()
   const callSeqByCallId = new Map<string, number>()
   for (const seq of session.surface.nodes) {
@@ -81,7 +88,7 @@ export function toolNameIndex(session: Session): ToolNameIndex {
     }
   }
   const index: ToolNameIndex = { byCallId, callSeqByCallId }
-  toolNameCache.set(session, { generation, index })
+  toolNameCache.set(session, { generation, nodes: session.surface.nodes.length, index })
   return index
 }
 

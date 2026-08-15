@@ -3,7 +3,7 @@ import { CallId, createAssistantMessage, createToolResultMessage, createUserMess
 import {
   commitSurfaceCompaction,
 } from '../src/engine/region.ts'
-import { validateSurfaceRange } from '../src/policy/protected.ts'
+import { rangeIneligibility, validateSurfaceRange } from '../src/policy/protected.ts'
 import {
   applyCompressionBaseline,
   applyNudgeBaseline,
@@ -57,6 +57,15 @@ describe('freshNudgeState and baselines', () => {
     // A tier-1 capture only grows the pile: nothing resets.
     const afterCapture = applyCompressionBaseline(base, 800, 1, new Map([[1, 500]]))
     expect(afterCapture.tierBaselines.get(1)).toBe(300)
+  })
+
+  it('drops the consumed tier baseline when the tier disappears entirely', () => {
+    const base = applyNudgeBaseline(1000, new Map([[1, 300]]))
+    // A tier-2 checkpoint consumed every tier-1 checkpoint: tier 1 no longer
+    // exists on the surface, so its old 300-token high-water mark must go.
+    const after = applyCompressionBaseline(base, 200, 2, new Map([[2, 200]]))
+    expect(after.tierBaselines.has(1)).toBe(false)
+    expect(after.tierBaselines.get(2)).toBeUndefined()
   })
 })
 
@@ -240,7 +249,7 @@ describe('recommendRanges', () => {
     expect(ranges.length).toBeGreaterThan(0)
     expect(ranges[0]!.kind).toBe('history')
     // The first user message is protected by default; the head range starts
-    // after it, and positions mirror recentNodes order.
+    // after it, and positions are 0-based surface positions.
     expect(ranges[0]!.startSeq).not.toBe(session.surface.nodes[0])
     expect(ranges[0]!.startPosition).toBeLessThan(ranges[0]!.endPosition)
   })
@@ -254,7 +263,22 @@ describe('recommendRanges', () => {
     for (const range of ranges) {
       expect(range.balanced).toBe(true)
       // A model acting on the recommendation must never hit a rejection.
-      expect(() => validateSurfaceRange(session, range.startSeq, range.endSeq)).not.toThrow()
+      const selection = validateSurfaceRange(session, range.startSeq, range.endSeq)
+      expect(rangeIneligibility(session, selection, config)).toBeUndefined()
+    }
+  })
+
+  it('returns pairwise non-overlapping recommendations for safe batching', () => {
+    const ctx = createContext()
+    const session = toolSession()
+    const config = resolveConfig({ protection: { retainRecentMessages: 0 } })
+    const ranges = recommendRanges(session, ctx.tokenMeter.measure(session), config)
+    for (let left = 0; left < ranges.length; left += 1) {
+      for (let right = left + 1; right < ranges.length; right += 1) {
+        const a = ranges[left]!
+        const b = ranges[right]!
+        expect(a.endPosition < b.startPosition || b.endPosition < a.startPosition).toBe(true)
+      }
     }
   })
 

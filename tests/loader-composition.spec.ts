@@ -63,7 +63,7 @@ async function loadYaml(lines: readonly string[]): Promise<Context> {
 }
 
 describe('real Loader composition', () => {
-  it('mounts the engine, the four tools, and the invariant companion', async () => {
+  it('mounts the engine, the five tools, and the invariant companion', async () => {
     const loaded = await loadYaml([
       "- name: '@deepseek-ai/dsh-llm'",
       "- name: '@deepseek-ai/dsh-session'",

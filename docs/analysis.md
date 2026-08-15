@@ -73,10 +73,10 @@ and its replacement to be appended synchronously adjacent.
    (bounded by the last `session/end-seed`), append `compaction/start`;
 3. **Prepare**: price the span through the token meter, build the
    summarization input by replaying the region's own derived messages;
-4. **Summarize**: one `ctx.llm.stream()` call whose prefix reuses the
-   conversation's own system prompt, tools, and leading messages — a genuine
-   prefix of the last routed request, so the provider's **KV cache is
-   reused** instead of invalidated;
+4. **Summarize**: one `ctx.llm.stream()` call whose envelope reuses the
+   conversation's own system prompt and tool schemas and carries the
+   shadowed region in surface order, so the provider can reuse the cached
+   **prefix** of the last routed request;
 5. **Frame + shrink check**: wrap the summary in checkpoint framing and
    require the framed node to be strictly smaller than the shadowed content
    (token-meter priced);
@@ -210,12 +210,13 @@ every decision on DSH's log:
    `isCompactCheckpointSource`; their tier is a fold over the shadow chain
    (T1 = shadows raw nodes, T2 = shadows T1 checkpoints, …). No side files,
    so the entire 39-bug state-drift family is structurally impossible.
-3. **Decompression → replay.** `context_decompress` reconstructs the
+3. **Decompression → replay in place.** `context_decompress` reconstructs the
    shadowed transcript from the log (tier-aware: one level up by default,
-   `full: true` to the raw bottom) and appends it as a durable user message.
-   Zero stored state, zero copy, exact fidelity, auditable.
-4. **Nudges → logged, precisely priced.** The nudge state machine is a fold
-   over `context/nudge` events plus the token meter; the nudge itself is an
+   `full: true` to the raw bottom) and replaces the checkpoint node with a
+   durable `user/message` carrying that transcript. No side-state store; the
+   original events stay shadowed in the log.
+4. **Nudges → logged, precisely priced.** The nudge state machine folds the
+   token meter with transient per-session baselines; the nudge itself is an
    appended `user/message`, so "model-visible ⟺ logged" holds and its cost
    is measurable.
 5. **Search → the full log.** `context_search` runs session-query FTS over

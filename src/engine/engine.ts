@@ -31,10 +31,11 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
 // Type-only: the optional pruner service; our own event vocabulary is empty by design.
 import type {} from '@deepseek-ai/dsh-compaction-tool-result-pruner'
-import { resolveConfig } from '../config.ts'
+import { resolveCompactSpec, resolveConfig, resolveTargetPolicy, TargetPolicyConfigError } from '../config.ts'
 import type { AgenticCompactionConfig, ResolvedConfig } from '../types.ts'
 import {
   commitSurfaceCompaction,
+  frameSummary,
   regionMessages,
   selectCompactableRange,
   type CommitResult,
@@ -100,6 +101,21 @@ function routedTarget(session: Session): { provider: string; model: string } | u
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Derive a distinct write path for one of several `toFile` restores. The
+ * requested path is used verbatim for a single target; additional targets
+ * get `-<n>` inserted before the extension so no transcript overwrites
+ * another.
+ */
+function uniqueToFilePath(requested: string, index: number, total: number): string {
+  if (total <= 1) return requested
+  const lastSlash = Math.max(requested.lastIndexOf('/'), requested.lastIndexOf('\\'))
+  const lastDot = requested.lastIndexOf('.')
+  const suffix = `-${index + 1}`
+  if (lastDot <= lastSlash + 1) return `${requested}${suffix}`
+  return `${requested.slice(0, lastDot)}${suffix}${requested.slice(lastDot)}`
 }
 
 /** Engine configuration schema (strict validation lives in `resolveConfig`). */
@@ -327,7 +343,12 @@ export class AgenticCompactionEngine extends CompactionEngine {
           prune.pruneSession(session)
           measurement = meter.measure(session)
         }
-        const range = selectCompactableRange(session, measurement, 0, this.protectedSeqs(session))
+        const range = selectCompactableRange(
+          session,
+          measurement,
+          await this.fallbackRetainTokens(agent),
+          this.fallbackBlockedSeqs(session),
+        )
         if (range === null) return null
         return this.commitFallback(range.start, range.end, agent, {
           owner: 'current-turn',
@@ -364,8 +385,8 @@ export class AgenticCompactionEngine extends CompactionEngine {
           const range = selectCompactableRange(
             session,
             this.ctx.tokenMeter.measure(session),
-            0,
-            this.protectedSeqs(session),
+            await this.fallbackRetainTokens(agent),
+            this.fallbackBlockedSeqs(session),
           )
           if (range === null) return null
           return await this.commitFallback(range.start, range.end, agent, {
@@ -383,6 +404,15 @@ export class AgenticCompactionEngine extends CompactionEngine {
           operationSignal.throwIfAborted()
           throw error
         }
+      }).catch((error: unknown) => {
+        // Preserve the inner cancellation/commit classification; anything
+        // else is the maintenance phase refusing to start (busy).
+        if (error instanceof ManualCompactionError) throw error
+        throw new ManualCompactionError(
+          'busy',
+          'manual compaction requires an idle agent with no waking queued work',
+          { cause: error },
+        )
       })
     } catch (error: unknown) {
       throw new ManualCompactionError(
@@ -585,6 +615,12 @@ export class AgenticCompactionEngine extends CompactionEngine {
   ): Promise<DecompressResult> {
     signal?.throwIfAborted()
     const session = agent.session
+    if ((target.startSeq === undefined) !== (target.endSeq === undefined)) {
+      throw new Error('context_decompress range mode requires both startSeq and endSeq')
+    }
+    if (target.toFile !== undefined && target.toFile.trim().length === 0) {
+      throw new Error('context_decompress toFile must be a non-empty path')
+    }
     const range = target.startSeq !== undefined && target.endSeq !== undefined
       ? { startSeq: target.startSeq, endSeq: target.endSeq }
       : undefined
@@ -608,8 +644,12 @@ export class AgenticCompactionEngine extends CompactionEngine {
       const restored: DecompressTarget[] = []
       const skipped: string[] = [...unknown]
       let budgetUsed = 0
-      for (const t of targets) {
+      for (const [index, t] of targets.entries()) {
         const { restoredSeqs, text, tokens, chars } = buildRestoredContent(session, t, target.full === true, this.ctx.tokenMeter)
+        if (text.length === 0 || restoredSeqs.length === 0) {
+          skipped.push(`${t.compactionId} (no restorable message content)`)
+          continue
+        }
         if (budgetUsed + tokens > this.config.decompress.maxTokens) {
           skipped.push(
             `${t.compactionId} (${tokens} tokens; combined ${budgetUsed + tokens} exceeds `
@@ -618,7 +658,8 @@ export class AgenticCompactionEngine extends CompactionEngine {
           continue
         }
         budgetUsed += tokens
-        const resolved = await fs.resolve(target.toFile)
+        const path = uniqueToFilePath(target.toFile, index, targets.length)
+        const resolved = await fs.resolve(path)
         await fs.writeText(resolved, text, undefined, signal)
         restored.push({
           compactionId: t.compactionId,
@@ -627,7 +668,8 @@ export class AgenticCompactionEngine extends CompactionEngine {
           restoredSeqs,
           restoredTokens: tokens,
           restoredChars: chars,
-          preview: `written to ${target.toFile} (${chars} chars)`,
+          preview: `written to ${path} (${chars} chars)`,
+          path,
           content: '',
         })
       }
@@ -706,13 +748,13 @@ export class AgenticCompactionEngine extends CompactionEngine {
       if (tier > 0) tierTokens[tier] = tokens
     }
 
-    // Where the current request's tokens are spent: system prompt + tool
-    // schemas (the non-conversation part of the baseline) vs conversation
-    // (the live surface). The model uses this to see which category
-    // dominates and compress that first — tool outputs are usually largest.
+    // Where the current request's tokens are spent: the non-conversation part
+    // of the baseline (system prompt plus tool schemas, which the meter does
+    // not split) vs the live conversation surface. The model uses this to see
+    // which category dominates and compress that first — tool outputs are
+    // usually the largest conversation-side item.
     const breakdown = measurement.baseline.kind === 'estimated' ? {
       systemTokens: Math.max(0, measurement.baseline.tokens - measurement.surfaceTokens),
-      toolsTokens: 0,
       messageTokens: measurement.surfaceTokens,
     } : undefined
 
@@ -733,12 +775,9 @@ export class AgenticCompactionEngine extends CompactionEngine {
 
     const checkpoints = checkpointViews(session).map(view => {
       const summaryEvent = summaryByCompactionId.get(view.compactionId)
-      const checkpointEvent = session.events[view.seq]
       let summaryChars = 0
-      if (checkpointEvent?.type === 'user/message') {
-        for (const block of checkpointEvent.data.content) {
-          if (block.type === 'text') summaryChars += Array.from(block.text).length
-        }
+      for (const block of summaryEvent?.data.summary ?? []) {
+        if (block.type === 'text') summaryChars += Array.from(block.text).length
       }
       return {
         compactionId: view.compactionId,
@@ -753,8 +792,9 @@ export class AgenticCompactionEngine extends CompactionEngine {
 
     const protectedSeqs = session.surface.nodes.filter(seq => isProtectedNode(session, seq, this.config))
 
-    const recentNodes = session.surface.nodes.slice(-STATUS_RECENT_NODES).map(seq => (
-      this.surfaceNodePreview(session, measurement, tiers, seq)
+    const recentStart = Math.max(0, session.surface.nodes.length - STATUS_RECENT_NODES)
+    const recentNodes = session.surface.nodes.slice(-STATUS_RECENT_NODES).map((seq, offset) => (
+      this.surfaceNodePreview(session, measurement, tiers, seq, recentStart + offset)
     ))
 
     const lastCompression = summarySeqs.sort((left, right) => left.seq - right.seq).at(-1)
@@ -818,9 +858,12 @@ export class AgenticCompactionEngine extends CompactionEngine {
       content: [{ type: 'text', text }],
       source: nudgeSource(),
     }), { surfaceOp: 'append' })
+    // Re-measure AFTER the append: the nudge's own tokens must not show up
+    // as "growth since the last check" on the very next step.
+    const after = meter.measure(session)
     this.nudgeStates.set(session, applyNudgeBaseline(
-      measurement.totalTokens,
-      tierTokenUsage(session, measurement),
+      after.totalTokens,
+      tierTokenUsage(session, after),
     ))
   }
 
@@ -851,6 +894,12 @@ export class AgenticCompactionEngine extends CompactionEngine {
   ): Promise<CommitResult> {
     const session = agent.session
     const selection = validateSurfaceRange(session, start, end)
+    // The fallback is deterministic, not exempt: explicit manual ranges must
+    // respect the same protection and tier-cap policy as model requests.
+    const ineligibility = rangeIneligibility(session, selection, this.config)
+    if (ineligibility !== undefined) {
+      throw new Error(rangeIneligibilityMessage(ineligibility))
+    }
     const header = session.requestHeader()
     const input = {
       ...header?.system === undefined ? {} : { system: header.system },
@@ -880,7 +929,6 @@ export class AgenticCompactionEngine extends CompactionEngine {
       },
       signal,
     )
-    this.applyPostCompressionBaseline(session, committed.tier)
     // Tell the model what happened: an automatic compaction replaced history
     // it may not have chosen to compress. The notice is a plugin-sourced user
     // message, so it is durable, model-visible, and replayable.
@@ -892,6 +940,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
         + 'to restore the original content if needed.' }],
       source: overflowNoticeSource(),
     }), { surfaceOp: 'append' })
+    this.applyPostCompressionBaseline(session, committed.tier)
     return committed
   }
 
@@ -907,7 +956,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
       return sum + (node?.tokens ?? 0)
     }, 0)
     const summaryMessage = createUserMessage({
-      content: [{ type: 'text', text: plan.range.summary }],
+      content: frameSummary([{ type: 'text', text: plan.range.summary }]),
       source: { kind: 'plugin', plugin: PLUGIN_NAME },
     })
     return evaluateQuality(
@@ -915,6 +964,8 @@ export class AgenticCompactionEngine extends CompactionEngine {
         originalText,
         shadowedTokens,
         summaryText: plan.range.summary,
+        // The gate must price what the commit will actually land: the framed
+        // checkpoint node, not the raw summary message.
         summaryTokens: this.ctx.tokenMeter.estimateMessage(summaryMessage),
       },
       this.config.qualityGate,
@@ -926,14 +977,70 @@ export class AgenticCompactionEngine extends CompactionEngine {
     return new Set(session.surface.nodes.filter(seq => isProtectedNode(session, seq, this.config)))
   }
 
-  /** Routed context-window capacity, resolving through the LLM seam when unlogged. */
-  private async contextWindowOfAsync(session: Session): Promise<number | undefined> {
+  /**
+   * Surface seqs the deterministic fallback must never select: protected
+   * nodes, checkpoints at the tier cap, and the retained recent tail. The
+   * fallback uses a token retention budget for the verbatim tail, but the
+   * configured node-count tail is a hard fence on top of that budget.
+   */
+  private fallbackBlockedSeqs(session: Session): Set<number> {
+    const blocked = this.protectedSeqs(session)
+    const tiers = tierSnapshot(session)
+    const nodes = session.surface.nodes
+    const tailBoundary = Math.max(0, nodes.length - this.config.protection.retainRecentMessages)
+    for (let index = 0; index < nodes.length; index += 1) {
+      // oxlint-disable-next-line typescript/no-non-null-assertion -- index is in bounds
+      const seq = nodes[index]!
+      if (index >= tailBoundary || (tiers.tierBySeq.get(seq) ?? 0) >= this.config.tiers.maxTier) {
+        blocked.add(seq)
+      }
+    }
+    return blocked
+  }
+
+  /**
+   * Resolve the token retention budget for deterministic fallback selection
+   * from the exact routed target and its context window. When the route or
+   * capacity is unknown, returns 0 — the hard recent-tail fence still applies.
+   */
+  private async fallbackRetainTokens(agent: CompactionAgentContext): Promise<number> {
+    const session = agent.session
+    const target = routedTarget(session) ?? (agent.options.provider !== undefined
+      && agent.options.model !== undefined
+      ? { provider: agent.options.provider, model: agent.options.model }
+      : undefined)
+    if (target === undefined) return 0
+    const contextWindow = await this.contextWindowOfAsync(session, target)
+    if (contextWindow === undefined) return 0
+    try {
+      return resolveCompactSpec(
+        resolveTargetPolicy(this.config, target),
+        contextWindow,
+      ).retainTokens
+    } catch (error: unknown) {
+      throw new TargetPolicyConfigError(
+        `${target.provider}/${target.model}`,
+        `cannot resolve the fallback retention budget: ${errorMessage(error)}`,
+      )
+    }
+  }
+
+  /**
+   * Routed context-window capacity, resolving through the LLM seam when
+   * unlogged. `fallbackTarget` supplies the route when the session has no
+   * durable request header of its own.
+   */
+  private async contextWindowOfAsync(
+    session: Session,
+    fallbackTarget?: { provider: string; model: string },
+  ): Promise<number | undefined> {
     const logged = session.requestContext()?.contextWindow
-    if (logged !== undefined) return logged
-    const target = routedTarget(session)
+    if (logged !== undefined) return logged > 0 ? logged : undefined
+    const target = routedTarget(session) ?? fallbackTarget
     if (target === undefined) return undefined
     try {
-      return (await this.ctx.llm.resolveModelInfo(target.provider, target.model)).context?.contextWindow
+      const resolved = (await this.ctx.llm.resolveModelInfo(target.provider, target.model)).context?.contextWindow
+      return resolved !== undefined && resolved > 0 ? resolved : undefined
     } catch {
       // An unresolvable capacity only disables ratio-based nudges; nothing to propagate.
       return undefined
@@ -946,6 +1053,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
     measurement: TokenMeasurement,
     tiers: ReturnType<typeof tierSnapshot>,
     seq: number,
+    position: number,
   ): SurfaceNodePreview {
     const kind = nodeKindOf(session, seq)
     const node = measurement.nodes.find(candidate => candidate.seq === seq)
@@ -962,6 +1070,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
     }
     return {
       seq,
+      position,
       kind,
       tokens: node?.tokens ?? 0,
       tier: tiers.tierBySeq.get(seq) ?? 0,

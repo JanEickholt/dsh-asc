@@ -31,7 +31,7 @@ export interface TierSnapshot {
   readonly shadowedBySeq: ReadonlyMap<number, readonly number[]>
 }
 
-const tierCache = new WeakMap<Session, TierSnapshot>()
+const tierCache = new WeakMap<Session, { generation: number; nodes: number; snapshot: TierSnapshot }>()
 
 /** The plugin name used in decompression message sources. */
 export const PLUGIN_NAME = 'dsh-asc'
@@ -86,7 +86,13 @@ export function tierSnapshot(session: Session): TierSnapshot {
   const surface = session.surface
   const generation = surface.replaceGeneration
   const cached = tierCache.get(session)
-  if (cached !== undefined && cached.generation === generation) return cached
+  // Appends do not bump replaceGeneration, so the cache key also tracks the
+  // surface node count: a stale snapshot would miss newly appended nodes.
+  if (cached !== undefined
+    && cached.generation === generation
+    && cached.nodes === surface.nodes.length) {
+    return cached.snapshot
+  }
 
   const folded = foldSurface(session.events)
   const shadowedBySeq = new Map<number, readonly number[]>()
@@ -94,13 +100,23 @@ export function tierSnapshot(session: Session): TierSnapshot {
   // Replacements arrive in log order, so a checkpoint's shadowed tiers are
   // always resolved before the checkpoint that consumed them.
   for (const replacement of folded.replacements) {
+    shadowedBySeq.set(replacement.seq, replacement.shadowedSeqs)
+    const event = session.events[replacement.seq]
+    const isCheckpoint = event?.type === 'user/message'
+      && isCompactCheckpointSource(event.data.source)
+    if (!isCheckpoint) {
+      // Non-checkpoint replacements (restored transcripts, tool-result
+      // rewrites) are raw surface content again: they must never inherit the
+      // consumed checkpoint's tier.
+      tierBySeq.set(replacement.seq, 0)
+      continue
+    }
     let maxShadowed = 0
     for (const shadowedSeq of replacement.shadowedSeqs) {
       const tier = tierBySeq.get(shadowedSeq) ?? 0
       if (tier > maxShadowed) maxShadowed = tier
     }
     tierBySeq.set(replacement.seq, maxShadowed + 1)
-    shadowedBySeq.set(replacement.seq, replacement.shadowedSeqs)
   }
 
   const kindBySeq = new Map<number, SurfaceNodeKind>()
@@ -116,7 +132,7 @@ export function tierSnapshot(session: Session): TierSnapshot {
     kindBySeq,
     shadowedBySeq,
   }
-  tierCache.set(session, snapshot)
+  tierCache.set(session, { generation, nodes: surface.nodes.length, snapshot })
   return snapshot
 }
 

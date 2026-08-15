@@ -22,7 +22,7 @@
       config:
         auto: true
         nudge:
-          minRatio: 0.10
+          minRatio: 0.45
           maxRatio: 0.8
           frequency: 5
           growthTokens: 50000

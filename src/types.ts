@@ -258,7 +258,13 @@ export interface DecompressTarget {
   readonly restoredTokens: number
   readonly restoredChars: number
   readonly preview: string
-  /** The complete restored transcript, carried in the tool result. */
+  /** Path written by `toFile` mode; absent for in-place restores. */
+  readonly path?: string
+  /**
+   * Always empty in the tool result: in-place restores put the transcript
+   * back on the surface, and `toFile` restores put it in a file, so the
+   * result deliberately never doubles the model-visible footprint.
+   */
   readonly content: string
 }
 
@@ -274,7 +280,7 @@ export interface RecommendedRange {
   readonly startSeq: number
   /** Last surface seq, inclusive (surface order, NOT numeric order). */
   readonly endSeq: number
-  /** 0-based surface position of the first node (mirrors recentNodes order). */
+  /** 0-based surface position of the first node (0 = oldest current node). */
   readonly startPosition: number
   /** 0-based surface position of the last node. */
   readonly endPosition: number
@@ -310,6 +316,8 @@ export interface TierTokenUsage {
 /** One surface-node preview for `context_status`. */
 export interface SurfaceNodePreview {
   readonly seq: number
+  /** 0-based surface position (0 = oldest current surface node). */
+  readonly position: number
   readonly kind: 'user' | 'assistant' | 'tool' | 'checkpoint' | 'nudge' | 'restored'
   readonly tokens: number
   readonly tier: number
@@ -328,10 +336,12 @@ export interface ContextStatus {
   readonly contextWindow?: number
   readonly usagePercent?: number
   readonly surfaceNodes: number
-  /** Where the current request's tokens are spent: system prompt, tool schemas, and conversation. */
+  /** Where the current request's tokens are spent. */
   readonly breakdown?: {
+    /** System prompt plus tool schemas when the meter cannot split them. */
     readonly systemTokens: number
-    readonly toolsTokens: number
+    /** Tool-schema tokens, present only when separately measurable. */
+    readonly toolsTokens?: number
     readonly messageTokens: number
   }
   readonly checkpoints: readonly CheckpointView[]

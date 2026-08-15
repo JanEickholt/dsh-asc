@@ -22,6 +22,10 @@ describe('wordTokens', () => {
     expect(wordTokens('上下文')).toEqual(['上', '下', '文'])
   })
 
+  it('keeps Latin words intact inside mixed CJK runs', () => {
+    expect(wordTokens('修复fix文件')).toEqual(['修', '复', 'fix', '文', '件'])
+  })
+
   it('keeps mixed text intact', () => {
     expect(wordTokens('fix: src/index.ts')).toEqual(['fix', 'src', 'index', 'ts'])
   })
@@ -86,6 +90,21 @@ describe('evaluateQuality', () => {
     expect(report.layer).toBe(1)
     expect(report.note).toContain('retains')
     expect(report.metrics!.retentionPct).toBeLessThan(GATE.layer1MinRetentionPct)
+  })
+
+  it('reports measured L2 signals on an L1 rejection instead of zeros', () => {
+    const report = evaluateQuality({
+      originalText: LONG_ORIGINAL,
+      shadowedTokens: 10_000,
+      summaryText: `word0 token0 concept0 ${'x'.repeat(250)}`,
+      summaryTokens: 5,
+    }, GATE)
+    expect(report.passed).toBe(false)
+    expect(report.layer).toBe(1)
+    // The summary does overlap the original; the metrics must say so even
+    // though L1 short-circuited the gate.
+    expect(report.metrics!.rouge1F1).toBeGreaterThan(0)
+    expect(report.metrics!.top20Recall).toBeGreaterThan(0)
   })
 
   it('fails L2 when both rouge and keyword recall are below floors', () => {

@@ -8,10 +8,9 @@
  * meter, frame the summary into a checkpoint message, require the framed
  * checkpoint to be strictly smaller than the shadowed content, re-check
  * surface stability, then append `compaction/summary`, the replacement
- * `user/message` (surfaceOp replace), our `context/compress` record, and
- * `compaction/end` — synchronously adjacent. Every later failure makes
- * exactly one `compaction/end` attempt so the unmatched start stays
- * detectable.
+ * `user/message` (surfaceOp replace), and `compaction/end` — synchronously
+ * adjacent. Every later failure makes exactly one `compaction/end` attempt
+ * so the unmatched start stays detectable.
  *
  * @module dsh-asc/region
  */

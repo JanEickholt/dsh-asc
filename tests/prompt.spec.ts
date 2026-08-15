@@ -21,8 +21,10 @@ describe('registerPhilosophyPrompt', () => {
     expect(section!.text).toContain('NOT user messages')
     // Tools with exact usage and batch example.
     expect(section!.text).toContain('THE TOOLS')
+    expect(section!.text).toContain('five context-management tools')
     expect(section!.text).toContain('context_compress')
     expect(section!.text).toContain('context_decompress')
+    expect(section!.text).toContain('context_recap')
     expect(section!.text).toContain('context_search')
     expect(section!.text).toContain('Batch (multiple unrelated ranges')
     // Philosophy: failure modes + single test.

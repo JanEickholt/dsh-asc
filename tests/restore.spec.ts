@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import {
   commitSurfaceCompaction,
   type CommitResult,
@@ -65,6 +66,23 @@ describe('resolveRestoreTargets', () => {
       startSeq: nodes[nodes.length - 1]!,
       endSeq: nodes[0]!,
     })).toThrow(/not a valid surface span/)
+  })
+
+  it('rejects using compaction ids and a range together', async () => {
+    const ctx = createContext()
+    const session = conversationSession(4)
+    const result = await commitT1(session, ctx.tokenMeter)
+    const nodes = session.surface.nodes
+    expect(() => resolveRestoreTargets(session, [result.compactionId], {
+      startSeq: nodes[0]!,
+      endSeq: nodes[1]!,
+    })).toThrow(/mutually exclusive/)
+  })
+
+  it('reports duplicated unknown ids once', () => {
+    const session = conversationSession(4)
+    const { unknown } = resolveRestoreTargets(session, ['missing', 'missing'], undefined)
+    expect(unknown).toEqual(['missing'])
   })
 
   it('requires a targeting mode', () => {
@@ -152,5 +170,14 @@ describe('buildRestoredContent and restoreTargets', () => {
     expect(content.text.length).toBeGreaterThan(0)
     expect(content.tokens).toBeGreaterThan(0)
     expect(content.chars).toBe(Array.from(content.text).length)
+    // The budget prices the exact message that will be appended, not the sum
+    // of the original leaf messages.
+    expect(content.tokens).toBe(ctx.tokenMeter.estimateMessage(content.message))
+    expect(ctx.tokenMeter.estimateMessage(content.message)).toBe(
+      ctx.tokenMeter.estimateMessage(createUserMessage({
+        content: [{ type: 'text', text: content.text }],
+        source: { kind: 'plugin', plugin: 'dsh-asc' },
+      })),
+    )
   })
 })

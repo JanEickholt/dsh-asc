@@ -13,8 +13,7 @@ npm install dsh-asc
 pnpm add dsh-asc
 ```
 
-> The package is published to npm as `dsh-asc`. Until
-> the first publish, build from source and link it:
+> The package is published to npm as `dsh-asc`. To build from source:
 > `pnpm install && pnpm build` in this repository, then reference the
 > package path in your composition.
 
@@ -58,8 +57,11 @@ dsh --profile web --dump-config | grep -A 20 compaction
 ```
 
 It requires the `@deepseek-ai/dsh-invariants` service (shipped in the base
-bundle). It vetoes log writes that violate the adjacency and bracket
-relations of the `context/*` events.
+bundle). It is currently an empty installer: the backend declares no custom
+session-event vocabulary, so the upstream `@deepseek-ai/dsh-compaction`
+invariant companion owns the `compaction/*` bracket relations. The row
+exists so compositions that mount it keep working as the vocabulary story
+evolves.
 
 ### Optional: full-text search
 
@@ -71,7 +73,7 @@ relations of the `context/*` events.
       name: "@deepseek-ai/dsh-session-query-sqlite"
 ```
 
-Without it, `context_search` fails with a clear message; the other three
+Without it, `context_search` fails with a clear message; the other four
 tools work normally.
 
 ### Optional: model-free tool-result pruning
@@ -96,9 +98,9 @@ All fields are optional; every unknown key fails plugin load.
 | Key | Default | Meaning |
 |---|---|---|
 | `auto` | `true` | Register automatic nudge injection and overflow recovery. |
-| `thresholdRatio` | `0.8` | Context fraction at which pressure is considered high (used by fallback selection and recommendations). |
-| `retainRatio` | `0.16` | Recent-tail budget as a fraction of the context window (fallback selection). |
-| `retainTokens` | — | Absolute recent-tail budget; mutually exclusive with `retainRatio`. |
+| `thresholdRatio` | `0.8` | High-pressure fraction of the routed model's context window; used to validate and scale the fallback retention budget. |
+| `retainRatio` | `0.16` | Recent-tail retention budget as a fraction of the routed model's context window (deterministic fallback selection). |
+| `retainTokens` | — | Absolute recent-tail retention budget; mutually exclusive with `retainRatio`. |
 | `modelPolicies` | `[]` | Per `{provider, model}` overrides of the three fields above; duplicate targets fail load. |
 
 ### `compress`
@@ -137,6 +139,7 @@ All fields are optional; every unknown key fails plugin load.
 | `layer1MinRetentionPct` | `1.0` | L1: minimum summary tokens as a percent of shadowed tokens. |
 | `layer2MaxRougeF1` | `0.05` | L2: fail when ROUGE-1 F1 is below this (AND with keyword recall). |
 | `layer2MaxTop20Recall` | `0.20` | L2: fail when top-20 keyword recall is below this (AND with ROUGE-1 F1). |
+| `noiseUniqueRatio` | `0.02` | Below this unique-token ratio the shadowed content is repetitive noise: the retention and ROUGE floors are waived, and a length-adequate summary passes. |
 
 ### `fallback`
 
@@ -154,7 +157,7 @@ All fields are optional; every unknown key fails plugin load.
 | `protectUserMessages` | `false` | Protect every human user message from compression. |
 | `protectFirstUserMessage` | `true` | Always protect the first human prompt. |
 | `retainRecentMessages` | `20` | Protect the last N surface nodes from inclusion in a range. |
-| `protectedTools` | `[]` | Tool names whose calls and results are excluded from ranges (`context_compress` and `context_decompress` are always protected). |
+| `protectedTools` | `[]` | Tool names whose calls and results are excluded from ranges. `context_compress`/`context_decompress` call records are deliberately NOT force-protected: their audit trail lives in log-only `compaction/*` events. |
 | `protectedSources` | `[]` | Plugin names whose injected `user/message` nodes are excluded. |
 
 ### `decompress`
@@ -170,21 +173,28 @@ checkpoint node is shadowed by a `user/message` carrying the original
 content), so the compression is undone and the original content appears
 where it used to be. The tool result reports statistics and a preview
 only; large restores are governed by the `maxTokens` budget instead.
+`toFile` writes the transcript through the optional fs service and keeps
+the checkpoint compressed; multiple targets get derived sibling paths so
+they never overwrite each other, and each result reports the written
+path.
 
 ## Model experience
 
 The plugin injects a pinned compression-philosophy section into the system
 prompt (`tool:dsh-asc`, order 114): the two failure modes, the
 single test ("is this content still needed by the current task step?"),
-proactive frugality, reversibility, and the four-tool workflow. The model
+proactive frugality, reversibility, and the five-tool workflow. The model
 therefore compresses proactively instead of waiting for nudges or overflow.
 
 The tools are self-describing: `context_status` lists the current surface
-with seqs, kinds, tiers, protection flags, and previews (and every
-recommended range is pre-validated, so acting on one never hits a
-commit-time rejection); `context_compress` takes exactly those seqs and
-auto-extends tool-pair-splitting ranges; `context_decompress` takes the
-`compactionId`s that `context_status` reports.
+with seqs, 0-based surface positions, kinds, tiers, protection flags, and
+previews (the recent-node list is capped to the last 40 nodes, and every
+recommended range is pre-validated against the surface shown by that
+status call — re-run it after any surface change); `context_compress`
+takes exactly those seqs and auto-extends tool-pair-splitting ranges;
+`context_decompress` takes the `compactionId`s that `context_status`
+reports; `context_recap` re-reads checkpoint summaries without
+decompressing them.
 Recommended ranges appear both in `context_status` and in nudges. The nudge
 text is pinned and test-asserted; it always tells the model that context
 management is optional and that content is never lost (it can be searched

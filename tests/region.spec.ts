@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { CallId, createAssistantMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { ManualCompactionError, isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import {
   commitSurfaceCompaction,
   selectCompactableRange,
   SummaryNotSmallerError,
 } from '../src/engine/region.ts'
-import { validateSurfaceRange, rangeIneligibility } from '../src/policy/protected.ts'
+import { isProtectedNode, toolNameIndex, validateSurfaceRange, rangeIneligibility } from '../src/policy/protected.ts'
 import { resolveConfig } from '../src/config.ts'
 import { createContext, conversationSession, closedSession, eventOf, MODEL } from './helpers.ts'
 
@@ -245,6 +245,42 @@ describe('selectCompactableRange', () => {
     expect(range).not.toBeNull()
     expect(range!.start).toBe(nodes[1]!)
     expect(nodes.indexOf(range!.start)).toBe(1)
+  })
+})
+
+describe('toolNameIndex cache', () => {
+  it('reindexes tool calls appended after the first snapshot', () => {
+    const session = conversationSession(2)
+    // Populate the cache BEFORE the tool turn arrives.
+    void toolNameIndex(session)
+    const callId = CallId('late-call')
+    const turn = 3
+    session.append('turn/start', { turn })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'run the protected tool' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    session.append('step/start', { turn, step: 1 })
+    const callSeq = session.append('assistant/message', {
+      turn,
+      step: 1,
+      message: createAssistantMessage({
+        content: [{ type: 'tool-call', id: callId, name: 'protected_tool', arguments: '{}' }],
+        source: { provider: MODEL, model: MODEL },
+      }),
+    }, { surfaceOp: 'append' }).seq
+    const resultSeq = session.append('tool/result', {
+      turn,
+      step: 1,
+      message: createToolResultMessage({
+        callId,
+        content: [{ type: 'tool-result', toolCallId: callId, content: [{ type: 'text', text: 'result' }] }],
+        isError: false,
+      }),
+    }, { surfaceOp: 'append' }).seq
+    const config = resolveConfig({ protection: { protectedTools: ['protected_tool'], retainRecentMessages: 0 } })
+    expect(isProtectedNode(session, callSeq, config)).toBe(true)
+    expect(isProtectedNode(session, resultSeq, config)).toBe(true)
   })
 })
 
