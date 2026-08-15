@@ -24,56 +24,6 @@ dsh plugin --profile <name> add github:lmst2/dsh-asc
 
 > **重启生效**：安装完成后，重启正在运行的 DeepSeek Harness 服务。
 
-每打一个 `v*` 标签，`.github/workflows/release.yml` 都会自动发布 GitHub
-Release，release notes 取自 [CHANGELOG.md](CHANGELOG.md)。要为旧标签补发
-Release 或刷新 notes，在 Actions → backfill-releases → Run workflow 手动
-运行一次。
-
-### npm 发布（可选）
-
-`dsh-asc` 目前还没有发布到 npm。`.github/workflows/npm-publish.yml` 会在
-GitHub Release 发布后自动执行。
-
-**首次带 2FA 发布（只需要一次）**
-
-如果 npm 上还不存在这个包，必须等首次发布之后才能配置 Trusted
-Publishing。本地登录后，用验证器当前的一次性码发布即可，**不需要勾选
-2FA bypass**：
-
-```sh
-npm whoami --registry=https://registry.npmjs.org
-npm publish --access public --registry=https://registry.npmjs.org --otp=<6位验证码>
-```
-
-首次发布完成后，按下面配置 Trusted Publisher，以后就不再需要 token 或
-OTP。
-
-**推荐：npm Trusted Publishing（OIDC，不需要长期 token）**
-
-1. 先发布一次（或创建 npm 包页面），让包设置存在。
-2. 在 <https://www.npmjs.com> 打开 `dsh-asc` 包 → **Settings → Access →
-   Trusted Publishers → Add Trusted Publisher**。
-3. 填写：
-   - Registry hostname: `registry.npmjs.org`
-   - Repository owner: `lmst2`
-   - Repository name: `dsh-asc`
-   - Workflow file path: `.github/workflows/npm-publish.yml`
-   - Environment: 留空。
-4. 完成。以后 Release 发布时，npm 会用 GitHub 的 OIDC 身份自动发布，
-   不需要 `NPM_TOKEN`。
-
-**备用：传统 Automation token**
-
-1. 在 <https://www.npmjs.com> 登录，进入 Account → Access Tokens →
-   Generate New Token → **Automation**。
-2. 不要勾选任何 “bypass two-factor authentication” 选项——Automation 类型
-   本来就能在 CI 发布时免 OTP。
-3. 把 token 添加到本仓库 Settings → Secrets and variables → Actions →
-   `NPM_TOKEN`。
-
-工作流在没有 `NPM_TOKEN` 时走 Trusted Publishing，有 token 时走传统
-token。详见 [npm trusted publishers 文档](https://docs.npmjs.com/trusted-publishers)。
-
 ### 其他安装方式
 
 **从 npm 安装**——待包发布到 npm registry 后：

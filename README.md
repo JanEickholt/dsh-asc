@@ -36,61 +36,6 @@ system prompt load together with that profile.
 > **Restart required**: after installing, restart the running DeepSeek
 > Harness service.
 
-GitHub Releases are published automatically for every new `v*` tag by
-`.github/workflows/release.yml`, with release notes taken from
-[CHANGELOG.md](CHANGELOG.md). To backfill releases or refresh notes for
-older tags, run the backfill workflow manually (Actions →
-backfill-releases → Run workflow).
-
-### npm publishing (optional)
-
-`dsh-asc` is not on the npm registry yet. The workflow
-`.github/workflows/npm-publish.yml` publishes automatically when a GitHub
-Release is published.
-
-**First publish with 2FA (one time only)**
-
-If the npm package does not exist yet, trusted publishing cannot be
-configured until the first publish. Log in locally, then publish with a
-current authenticator OTP — no 2FA bypass is needed:
-
-```sh
-npm whoami --registry=https://registry.npmjs.org
-npm publish --access public --registry=https://registry.npmjs.org --otp=<6-digit-code>
-```
-
-After that first publish, add the Trusted Publisher below and never use a
-token or OTP again.
-
-**Preferred: npm trusted publishing (OIDC, no long-lived token)**
-
-1. Publish the package once (or create the npm package page) so its
-   settings exist.
-2. On <https://www.npmjs.com>, open the `dsh-asc` package → **Settings →
-   Access → Trusted Publishers → Add Trusted Publisher**.
-3. Fill in:
-   - Registry hostname: `registry.npmjs.org`
-   - Repository owner: `lmst2`
-   - Repository name: `dsh-asc`
-   - Workflow file path: `.github/workflows/npm-publish.yml`
-   - Environment: leave empty.
-4. Done — future releases publish with GitHub's OIDC identity; no
-   `NPM_TOKEN` secret is needed.
-
-**Fallback: classic Automation token**
-
-1. Log in at <https://www.npmjs.com>, then Account → Access Tokens →
-   Generate New Token → **Automation**.
-2. Do NOT enable any "bypass two-factor authentication" option — the
-   Automation type already works for CI publishes without an OTP.
-3. Add the token in this repository under Settings → Secrets and
-   variables → Actions → `NPM_TOKEN`.
-
-The workflow uses trusted publishing when `NPM_TOKEN` is absent and the
-classic token when it is present. Refer to
-[the npm trusted publishers documentation](https://docs.npmjs.com/trusted-publishers)
-for details.
-
 ### Other install options
 
 **From npm** — once the package is published to the npm registry:

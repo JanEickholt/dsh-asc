@@ -21,11 +21,9 @@ pnpm add dsh-asc
 ```
 
 > The npm name `dsh-asc` is reserved in package metadata but not yet
-> published. GitHub is the current distribution channel. The repository
-> includes an npm-publish workflow that activates automatically once an
-> `NPM_TOKEN` secret is configured (see the README for token setup). To
-> build from source: `pnpm install && pnpm build` in this repository, then
-> reference the package path in your composition.
+> published. GitHub is the current distribution channel. To build from
+> source: `pnpm install && pnpm build` in this repository, then reference
+> the package path in your composition.
 
 ## Mounting
 
