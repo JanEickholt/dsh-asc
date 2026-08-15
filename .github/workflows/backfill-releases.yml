@@ -1,0 +1,54 @@
+name: backfill-releases
+
+on:
+  push:
+    branches:
+      - 'backfill-releases'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install once
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch all tags
+        run: git fetch --tags --force
+
+      - name: Publish missing releases for every v* tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for tag in $(git tag -l 'v*' | sort -V); do
+            if gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+              echo "release for ${tag} already exists; skipping"
+              continue
+            fi
+            echo "publishing release for ${tag}"
+            git checkout "${tag}"
+            rm -f dsh-asc-*.tgz
+            pnpm install --frozen-lockfile
+            pnpm pack
+            gh release create "${tag}" dsh-asc-*.tgz \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${tag}" \
+              --generate-notes
+            rm -f dsh-asc-*.tgz
+            git checkout main
+          done
