@@ -30,9 +30,13 @@ jobs:
           fi
           echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
 
-      - name: Check out the tagged commit
+      # On a tag push, actions/checkout is already at the tagged commit.
+      # Manual backfill runs on the default branch and must switch to the
+      # requested tag before packing.
+      - name: Check out the tagged commit (manual backfill only)
+        if: github.event_name == 'workflow_dispatch'
         run: |
-          git fetch --depth=1 origin tag "${{ steps.tag.outputs.tag }}"
+          git fetch --depth=1 origin "refs/tags/${{ steps.tag.outputs.tag }}:refs/tags/${{ steps.tag.outputs.tag }}"
           git checkout "${{ steps.tag.outputs.tag }}"
 
       - uses: pnpm/action-setup@v4
