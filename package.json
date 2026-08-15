@@ -1,7 +1,7 @@
 {
   "name": "dsh-asc",
   "description": "Agentic Surface Compaction (ASC) for DeepSeek Harness: the model decides when and what to compact, committed as durable session-log replacements with full replay, search, and degradation",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "publishConfig": {
     "access": "public"
   },
@@ -36,6 +36,7 @@
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
     "cordis.patch.yml",
+    "CHANGELOG.md",
     "README.md",
     "README.zh.md",
     "LICENSE",
@@ -98,7 +99,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "prepare": "pnpm build",
-    "prepack": "pnpm build && node -e \"const fs=require('fs'),p=process.cwd();for(const f of ['README.md','README.zh.md','LICENSE','NOTICE'])if(!fs.existsSync(require('path').join(p,f)))throw new Error('missing '+f)\"",
+    "prepack": "pnpm build && node -e \"const fs=require('fs'),p=process.cwd();for(const f of ['README.md','README.zh.md','LICENSE','NOTICE','CHANGELOG.md'])if(!fs.existsSync(require('path').join(p,f)))throw new Error('missing '+f)\"",
     "clean": "node -e \"const fs=require('fs');for(const d of ['lib','dist'])fs.rmSync(d,{recursive:true,force:true})\""
   },
   "engines": {

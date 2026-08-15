@@ -25,8 +25,22 @@ dsh plugin --profile <name> add github:lmst2/dsh-asc
 > **重启生效**：安装完成后，重启正在运行的 DeepSeek Harness 服务。
 
 每打一个 `v*` 标签，`.github/workflows/release.yml` 都会自动发布 GitHub
-Release。要为旧标签补发 Release，在 Actions → release → Run workflow 中
-手动填标签名运行一次即可。
+Release，release notes 取自 [CHANGELOG.md](CHANGELOG.md)。要为旧标签补发
+Release 或刷新 notes，在 Actions → backfill-releases → Run workflow 手动
+运行一次。
+
+### npm 发布（可选）
+
+`dsh-asc` 目前还没有发布到 npm。`.github/workflows/npm-publish.yml` 会在
+GitHub Release 发布后自动执行，前提是仓库配置了 `NPM_TOKEN` secret：
+
+1. 在 <https://www.npmjs.com> 登录（没有账号先注册）；
+2. 进入 Account → Access Tokens → Generate New Token；
+3. 选择 **Automation** 类型，这样 CI 发布才能使用；
+4. 在本仓库 Settings → Secrets and variables → Actions 中添加
+   `NPM_TOKEN`。
+
+没有 secret 时，publish 步骤会安全地跳过。
 
 ### 其他安装方式
 

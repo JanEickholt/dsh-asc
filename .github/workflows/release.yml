@@ -53,6 +53,9 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm pack
 
+      - name: Extract changelog notes
+        run: bash .github/scripts/extract-changelog.sh "${{ steps.tag.outputs.tag }}" release-notes.md
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -65,4 +68,4 @@ jobs:
           gh release create "${TAG}" dsh-asc-*.tgz \
             --repo "${GITHUB_REPOSITORY}" \
             --title "${TAG}" \
-            --generate-notes
+            --notes-file release-notes.md

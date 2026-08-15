@@ -30,14 +30,18 @@ jobs:
       - name: Fetch all tags
         run: git fetch --tags --force
 
-      - name: Publish missing releases for every v* tag
+      - name: Publish or refresh release notes for every v* tag
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           for tag in $(git tag -l 'v*' | sort -V); do
+            bash .github/scripts/extract-changelog.sh "${tag}" release-notes.md
             if gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-              echo "release for ${tag} already exists; skipping"
+              echo "refreshing release notes for ${tag}"
+              gh release edit "${tag}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --notes-file release-notes.md
               continue
             fi
             echo "publishing release for ${tag}"
@@ -48,7 +52,7 @@ jobs:
             gh release create "${tag}" dsh-asc-*.tgz \
               --repo "${GITHUB_REPOSITORY}" \
               --title "${tag}" \
-              --generate-notes
+              --notes-file release-notes.md
             rm -f dsh-asc-*.tgz
             git checkout main
           done

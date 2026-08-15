@@ -20,10 +20,12 @@ pnpm add github:lmst2/dsh-asc
 pnpm add dsh-asc
 ```
 
-> Until the first npm publish, the npm name `dsh-asc` resolves only in
-> package metadata; use the GitHub form above. To build from source:
-> `pnpm install && pnpm build` in this repository, then reference the
-> package path in your composition.
+> The npm name `dsh-asc` is reserved in package metadata but not yet
+> published. GitHub is the current distribution channel. The repository
+> includes an npm-publish workflow that activates automatically once an
+> `NPM_TOKEN` secret is configured (see the README for token setup). To
+> build from source: `pnpm install && pnpm build` in this repository, then
+> reference the package path in your composition.
 
 ## Mounting
 

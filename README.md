@@ -37,8 +37,24 @@ system prompt load together with that profile.
 > Harness service.
 
 GitHub Releases are published automatically for every new `v*` tag by
-`.github/workflows/release.yml`. To backfill releases for older tags, run
-that workflow manually with the tag name (Actions → release → Run workflow).
+`.github/workflows/release.yml`, with release notes taken from
+[CHANGELOG.md](CHANGELOG.md). To backfill releases or refresh notes for
+older tags, run the backfill workflow manually (Actions →
+backfill-releases → Run workflow).
+
+### npm publishing (optional)
+
+`dsh-asc` is not on the npm registry yet. The workflow
+`.github/workflows/npm-publish.yml` publishes automatically when a GitHub
+Release is published, once the repository secret `NPM_TOKEN` exists:
+
+1. log in at <https://www.npmjs.com> (create an account if needed);
+2. open Account → Access Tokens → Generate New Token;
+3. use the **Automation** token type so CI publishing works;
+4. add the token in this repository under Settings → Secrets and
+   variables → Actions → `NPM_TOKEN`.
+
+The publish step no-ops safely while the secret is absent.
 
 ### Other install options
 

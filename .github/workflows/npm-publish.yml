@@ -1,0 +1,47 @@
+name: npm-publish
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+          cache: pnpm
+
+      - name: Check npm token
+        id: token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "${NPM_TOKEN}" ]; then
+            echo "present=1" >> "${GITHUB_OUTPUT}"
+          else
+            echo "npm token secret is not configured; skipping publish"
+          fi
+
+      - name: Install and build
+        if: steps.token.outputs.present == '1'
+        run: pnpm install --frozen-lockfile
+
+      - name: Publish to npm
+        if: steps.token.outputs.present == '1'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
