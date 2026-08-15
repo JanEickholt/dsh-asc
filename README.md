@@ -101,10 +101,11 @@ can be decompressed or searched at any time.
 
 The system prompt ties the tools into one operating loop: capture consumed
 raw work into tier-1 checkpoints, distill settled tier-1 piles into tier-2
-decisions and tier-2 piles into a tier-3 fact index, locate by the
-checkpoint table of contents (topic and tier), search exact keywords only
-when the owning block is unknown, and `context_decompress` one tier at a
-time after a block has been located.
+decisions and tier-2 piles into a tier-3 fact index. Every checkpoint text
+carries its topic and Compaction id, so when a visible summary already
+points at the needed detail the model decompresses that block directly;
+`context_search` is used only when no visible summary says where a detail
+lives, and decompression always proceeds one tier at a time.
 
 ## How it works
 

@@ -217,9 +217,10 @@ checkpoint summaries, optionally filtered by tier (1 detail, 2 decisions,
 Recommended ranges appear both in `context_status` and in nudges. The
 doctrine ties the tools into one operating loop: compress consumed raw
 work into tier 1, distill settled tier-1 piles into tier 2 and tier-2
-piles into tier 3, locate by the checkpoint table of contents (topic and
-tier), search exact keywords only when the owning block is unknown, and
-`context_decompress` one tier at a time after a block has been located.
+piles into tier 3. Retrieval is recognition-first — every checkpoint text
+carries its topic and Compaction id, so a visible summary can be expanded
+directly; search is reserved for details whose owning block no visible
+summary names; decompression proceeds one tier at a time.
 The nudge
 text is pinned and test-asserted; it always tells the model that context
 management is optional and that content is never lost (it can be searched

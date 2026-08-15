@@ -395,7 +395,7 @@ function frameCheckpoint(
     throw new Error('compaction: summary content is empty')
   }
   const checkpointMessage = createUserMessage({
-    content: frameSummary(summaryBlocks),
+    content: frameSummary(summaryBlocks, compactionId),
     source: compactCheckpointSource(compactionId, sourceCommandId),
   })
   const framedTokenCount = dependencies.meter.estimateMessage(checkpointMessage)
@@ -499,9 +499,13 @@ function completeCommit(
 }
 
 /** Wrap raw summary blocks in the durable checkpoint framing. */
-export function frameSummary(summary: readonly ContentBlock[]): ContentBlock[] {
+export function frameSummary(
+  summary: readonly ContentBlock[],
+  compactionId?: CompactionResult['compactionId'],
+): ContentBlock[] {
+  const idLine = compactionId === undefined ? '' : `\n\nCompaction id: ${compactionId}`
   return [
-    { type: 'text', text: `${CHECKPOINT_PREAMBLE}\n\n${SUMMARY_OPEN_TAG}` },
+    { type: 'text', text: `${CHECKPOINT_PREAMBLE}${idLine}\n\n${SUMMARY_OPEN_TAG}` },
     ...summary,
     { type: 'text', text: SUMMARY_CLOSE_TAG },
   ]

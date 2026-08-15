@@ -84,6 +84,8 @@ export class CompressRejectedError extends Error {
 const MAX_RANGES_PER_CALL = 64
 const STATUS_RECENT_NODES = 40
 const STATUS_NODE_PREVIEW_CHARS = 60
+/** Same length as a UUID so the gate prices the id line that the commit adds. */
+const QUALITY_GATE_COMPACTION_ID = '00000000-0000-0000-0000-000000000000'
 
 const thresholdRatioSchema = z.number()
 const retainRatioSchema = z.number()
@@ -1079,7 +1081,10 @@ export class AgenticCompactionEngine extends CompactionEngine {
       return sum + (node?.tokens ?? 0)
     }, 0)
     const summaryMessage = createUserMessage({
-      content: frameSummary([{ type: 'text', text: plan.range.summary }]),
+      content: frameSummary([
+        ...plan.range.topic === undefined ? [] : [{ type: 'text' as const, text: `## Topic: ${plan.range.topic}` }],
+        { type: 'text', text: plan.range.summary },
+      ], CompactionId(QUALITY_GATE_COMPACTION_ID)),
       source: { kind: 'plugin', plugin: PLUGIN_NAME },
     })
     // Distillation is a deliberate lossy transform of already-summarized

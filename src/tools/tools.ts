@@ -276,7 +276,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
       description: [
         'Restore previously compressed content.',
         'Compressed content is never lost: it stays in the session log and is restored by replay. Use this when you need exact details a checkpoint summary cannot provide.',
-        'Expand, do not discover: locate the checkpoint first (surface summaries, context_recap, or a context_search hit), then decompress that checkpoint. Full: true is only for the rare case where you need the exact original text, not for reading around.',
+        'Each checkpoint text shows its Compaction id. If a visible summary already tells you the detail is underneath it, decompress that id directly (one tier first). Otherwise locate the id via context_recap or a context_search hit, then decompress. Full: true is only for the rare case where you need the exact original text.',
         'By default the restored transcript is committed back INTO the surface at the checkpoint\'s own position — the compression is undone, and the original content appears where it used to be in your next context window. The tool result reports statistics and a preview only.',
         'With toFile, the transcript is written to that path through the filesystem service and the checkpoint stays compressed — use for very large restores that would otherwise inflate context; the result reports the path. Multiple targets get derived sibling paths so none overwrites another.',
         '',
@@ -423,7 +423,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
       name: 'context_status',
       description: [
         'Report the current context state: token usage, surface nodes, compression checkpoints by tier, per-tier token piles (tierTokens), protected content, and recommended compression ranges.',
-        'Use this before context_compress to find valid surface seqs and to see when a tier pile (tierTokens[1] or tierTokens[2]) is ready for distillation. The checkpoint list includes each checkpoint\'s tier, topic label (when supplied), and shadowed span — use it as the table of contents of the compressed context.',
+        'Use this before context_compress to find valid surface seqs and to see when a tier pile (tierTokens[1] or tierTokens[2]) is ready for distillation. The checkpoint list includes each checkpoint\'s tier, topic label (when supplied), and shadowed span. For retrieval you normally do NOT need this first: the visible checkpoint text already carries its own Compaction id and topic.',
         'The recent surface nodes list shows the last 40 nodes with seq, 0-based surface position, kind, token estimate, tier, protection flag, and a content preview so you can choose compression ranges. Positions are full surface positions (0 = oldest current surface node).',
       ].join('\n'),
       parameters: {},
@@ -442,7 +442,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
       description: [
         'Full-text search over the session log, including content that was compressed (shadowed) into checkpoints.',
         'Compression never deletes content: the original text remains in the log and is fully searchable. A hit reports whether it is still current on the surface, shadowed by a checkpoint, or log-only. Session-scope shadowed hits also carry the owning checkpointId so you can decompress or recap it.',
-        'Use search as the locator when you do NOT know which checkpoint owns a detail: name an exact path, error, command, identifier, or quote. If a summary already names the right block, go straight to context_recap/context_decompress — search is for unknown locations, not for reading a block you already found.',
+        'Use search only when no visible summary tells you where the detail lives: name an exact path, error, command, identifier, or quote, and the hit names the owning checkpoint. If a visible summary already names the right block, decompress that block directly instead of searching.',
         'Use surface:"current" to search only what is visible now (raw nodes plus checkpoint summaries); use surface:"shadowed" to search only compressed originals when you need a vanished path, error string, command, or verbatim detail; omit it to search everything. Use context_recap or context_decompress on the returned checkpointId when a shadowed hit is relevant.',
         'Scope: "session" searches the current session; "workspace" searches all sessions.',
       ].join('\n'),

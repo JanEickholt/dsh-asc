@@ -192,6 +192,11 @@ describe('frameSummary', () => {
     expect((framed[0] as { text: string }).text).toContain('<compacted-summary>')
     expect((framed.at(-1) as { text: string }).text).toBe('</compacted-summary>')
   })
+
+  it('embeds the compaction id so a visible checkpoint can be expanded directly', () => {
+    const framed = frameSummary([{ type: 'text', text: 'body' }], CompactionId('cp-direct'))
+    expect((framed[0] as { text: string }).text).toContain('Compaction id: cp-direct')
+  })
 })
 
 void M
