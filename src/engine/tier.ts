@@ -53,7 +53,7 @@ export function isRestoredSource(source: { kind: string; plugin?: string; op?: s
  * @returns the node kind.
  */
 export function nodeKindOf(session: Session, seq: number): SurfaceNodeKind {
-  const event = session.events[seq]
+  const event = session.snapshotEvents()[seq]
   if (event === undefined) return 'user'
   switch (event.type) {
     case 'user/message': {
@@ -94,14 +94,14 @@ export function tierSnapshot(session: Session): TierSnapshot {
     return cached.snapshot
   }
 
-  const folded = foldSurface(session.events)
+  const folded = foldSurface(session.snapshotEvents())
   const shadowedBySeq = new Map<number, readonly number[]>()
   const tierBySeq = new Map<number, number>()
   // Replacements arrive in log order, so a checkpoint's shadowed tiers are
   // always resolved before the checkpoint that consumed them.
   for (const replacement of folded.replacements) {
     shadowedBySeq.set(replacement.seq, replacement.shadowedSeqs)
-    const event = session.events[replacement.seq]
+    const event = session.snapshotEvents()[replacement.seq]
     const isCheckpoint = event?.type === 'user/message'
       && isCompactCheckpointSource(event.data.source)
     if (!isCheckpoint) {

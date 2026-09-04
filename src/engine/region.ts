@@ -29,6 +29,7 @@ import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import { createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, Message, TokenUsage, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { TokenMeter, TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
+import { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { QualityReport, ResolvedConfig } from '../types.ts'
 import { eventForSeq, rangeIneligibility, validateSurfaceRange } from '../policy/protected.ts'
@@ -240,7 +241,7 @@ export async function commitSurfaceCompaction(
       throw new Error(eligibilityMessage(ineligibility))
     }
   }
-  const entryState = inspectCompactionEntryState(session.events)
+  const entryState = inspectCompactionEntryState(session.snapshotEvents())
   assertCompactionInactive(entryState.unmatchedCompactionStart, entryState.latestEndSeedSeq)
 
   let owner: number | null
@@ -457,8 +458,8 @@ function commitBody(
       : { sourceCommandId: startEvent.data.sourceCommandId },
     summary: summaryBlocks,
     ...callProvenance,
-    shadowedRange: { start, end },
-    shadowedSeqs: [...shadowedSeqs],
+    shadowedRange: { start: SessionSeq(start), end: SessionSeq(end) },
+    shadowedSeqs: shadowedSeqs.map(SessionSeq),
     shadowedTokenCount,
     provider: source.provider,
     model: source.model,
@@ -466,8 +467,8 @@ function commitBody(
     ...source.kind === 'llm' && source.usage !== undefined ? { usage: source.usage } : {},
   })
   session.append('user/message', checkpointMessage, {
-    surfaceOp: { op: 'replace', start, end },
-    sourceEventSeqs: [startEvent.seq, summaryEvent.seq, ...shadowedSeqs],
+    surfaceOp: { op: 'replace', start: SessionSeq(start), end: SessionSeq(end) },
+    sourceEventSeqs: [startEvent.seq, summaryEvent.seq, ...shadowedSeqs.map(SessionSeq)],
   })
 
   const tier = 1 + shadowedTiers.reduce((max, value) => Math.max(max, value), 0)
@@ -481,8 +482,8 @@ function commitBody(
     startSeq: startEvent.seq,
     summarySeq: summaryEvent.seq,
     summary: summaryBlocks,
-    shadowedRange: { start, end },
-    shadowedSeqs: [...shadowedSeqs],
+    shadowedRange: { start: SessionSeq(start), end: SessionSeq(end) },
+    shadowedSeqs: shadowedSeqs.map(SessionSeq),
     shadowedTokenCount,
     summaryTokenCount,
     tier,
@@ -572,7 +573,7 @@ export function inspectCompactionEntryState(events: readonly SessionEvent[]): Co
 
 /** Replay the shadowed region into model-visible messages, in surface order. */
 export function regionMessages(session: Session, shadowedSeqs: readonly number[]): Message[] {
-  const events = session.events
+  const events = session.snapshotEvents()
   return shadowedSeqs
     .map(seq => session.deriveEventMessage(eventForSeq(events, seq)))
     .filter((message): message is Message => message !== null)

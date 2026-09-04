@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session } from '@deepseek-ai/dsh-session'
 import { AgenticCompactionEngine, CompressRejectedError } from '../src/engine/engine.ts'
 import { registerContextTools } from '../src/tools/tools.ts'
@@ -101,7 +101,7 @@ describe('AgenticCompactionEngine.compressByModel', () => {
     expect(result.compressed[0]!.topic).toBe('auth decisions')
     // The topic is durable: it is part of the summary event and therefore
     // visible to recap/search, not just echoed by this call.
-    const summaryEvent = session.events.find(event => event.type === 'compaction/summary') as
+    const summaryEvent = session.snapshotEvents().find(event => event.type === 'compaction/summary') as
       | { data: { summary: Array<{ text?: string }> } }
       | undefined
     expect(summaryEvent?.data.summary.map(block => block.text ?? '').join('\n'))
@@ -301,8 +301,8 @@ describe('AgenticCompactionEngine auto tool-pair expansion', () => {
     const agent = agentOf(session)
     // The assistant message carrying the tool call precedes the result.
     const nodes = [...session.surface.nodes]
-    const callNodeIdx = nodes.findLastIndex(seq => session.events[seq]?.type === 'assistant/message')
-    const resultNodeIdx = nodes.findLastIndex(seq => session.events[seq]?.type === 'tool/result')
+    const callNodeIdx = nodes.findLastIndex(seq => session.snapshotEvents()[seq]?.type === 'assistant/message')
+    const resultNodeIdx = nodes.findLastIndex(seq => session.snapshotEvents()[seq]?.type === 'tool/result')
     expect(callNodeIdx).toBeGreaterThanOrEqual(0)
     expect(resultNodeIdx).toBeGreaterThan(callNodeIdx)
     // Request ONLY the tool result: the balanced span must pull in the call.
@@ -326,10 +326,10 @@ describe('AgenticCompactionEngine auto tool-pair expansion', () => {
     const session = toolTurnSession(2)
     const agent = agentOf(session)
     const nodes = [...session.surface.nodes]
-    const callNodeIdx = nodes.findLastIndex(seq => session.events[seq]?.type === 'assistant/message')
+    const callNodeIdx = nodes.findLastIndex(seq => session.snapshotEvents()[seq]?.type === 'assistant/message')
     const resultNodeIdxs = nodes
       .map((seq, index) => ({ seq, index }))
-      .filter(({ seq }) => session.events[seq]?.type === 'tool/result')
+      .filter(({ seq }) => session.snapshotEvents()[seq]?.type === 'tool/result')
     expect(resultNodeIdxs.length).toBe(2)
     // Request only the assistant message; both results must be included.
     const result = await engine.compressByModel(agent, [{
@@ -351,8 +351,8 @@ describe('AgenticCompactionEngine auto tool-pair expansion', () => {
     const session = toolTurnSession(1)
     const agent = agentOf(session)
     const nodes = [...session.surface.nodes]
-    const callNodeIdx = nodes.findLastIndex(seq => session.events[seq]?.type === 'assistant/message')
-    const resultNodeIdx = nodes.findLastIndex(seq => session.events[seq]?.type === 'tool/result')
+    const callNodeIdx = nodes.findLastIndex(seq => session.snapshotEvents()[seq]?.type === 'assistant/message')
+    const resultNodeIdx = nodes.findLastIndex(seq => session.snapshotEvents()[seq]?.type === 'tool/result')
     // The complete turn is already balanced: no expansion is reported.
     const result = await engine.compressByModel(agent, [{
       startSeq: nodes[callNodeIdx]!,
@@ -368,7 +368,7 @@ describe('AgenticCompactionEngine auto tool-pair expansion', () => {
     const session = toolTurnSession(1)
     const agent = agentOf(session)
     const nodes = [...session.surface.nodes]
-    const resultNodeIdx = nodes.findLastIndex(seq => session.events[seq]?.type === 'tool/result')
+    const resultNodeIdx = nodes.findLastIndex(seq => session.snapshotEvents()[seq]?.type === 'tool/result')
     const result = await engine.compressByModel(agent, [{
       startSeq: nodes[resultNodeIdx]!,
       endSeq: nodes[resultNodeIdx]!,
@@ -397,7 +397,7 @@ function toolTurnSession(results = 1): Session {
     source: { kind: 'user' },
   }), { surfaceOp: 'append' })
   session.append('step/start', { turn, step: 1 })
-  const calls = Array.from({ length: results }, (_, index) => CallId(`call-${index}`))
+  const calls = Array.from({ length: results }, (_, index) => ToolCallId(`call-${index}`))
   session.append('assistant/message', {
     turn,
     step: 1,
@@ -451,7 +451,7 @@ describe('AgenticCompactionEngine.decompressByModel', () => {
     expect(result.restored[0]!.content).toBe('')
     expect(session.surface.nodes).not.toContain(view.seq)
     const restoredSeq = session.surface.nodes.find(seq => {
-      const event = session.events[seq]
+      const event = session.snapshotEvents()[seq]
       return event?.type === 'user/message'
         && (event.data.source as { op?: string }).op === 'decompress'
     })
@@ -535,7 +535,7 @@ describe('AgenticCompactionEngine.decompressByModel', () => {
     expect(session.surface.nodes).not.toContain(view.seq)
     // The restored node carries the original content and the restored source.
     const restoredSeq = session.surface.nodes.find(seq => {
-      const event = session.events[seq]
+      const event = session.snapshotEvents()[seq]
       return event?.type === 'user/message'
         && (event.data.source as { op?: string }).op === 'decompress'
     })
@@ -831,7 +831,7 @@ describe('AgenticCompactionEngine automatic behavior', () => {
     // First observation: baseline only, no nudge message.
     const first = await engine.compactIfNeeded(agent, 'pressure', new AbortController().signal)
     expect(first).toBeNull()
-    expect(session.events.some(event => event.type === 'user/message'
+    expect(session.snapshotEvents().some(event => event.type === 'user/message'
       && (event.data.source as { purpose?: string }).purpose === 'nudge')).toBe(false)
     // Grow the surface so total exceeds 10% of the window and nudge fires.
     for (let i = 0; i < 30; i += 1) {
@@ -842,10 +842,10 @@ describe('AgenticCompactionEngine automatic behavior', () => {
     }
     const second = await engine.compactIfNeeded(agent, 'pressure', new AbortController().signal)
     expect(second).toBeNull()
-    const nudgeIdx = session.events.findIndex(event => event.type === 'user/message'
+    const nudgeIdx = session.snapshotEvents().findIndex(event => event.type === 'user/message'
       && (event.data.source as { purpose?: string }).purpose === 'nudge')
     expect(nudgeIdx).toBeGreaterThanOrEqual(0)
-    const nudgeMessage = eventOf(session.events, nudgeIdx, 'user/message')
+    const nudgeMessage = eventOf(session.snapshotEvents(), nudgeIdx, 'user/message')
     expect((nudgeMessage.data.content as { text: string }[])[0]!.text).toContain('[context-management]')
   })
 
@@ -859,14 +859,14 @@ describe('AgenticCompactionEngine automatic behavior', () => {
     expect(session.surface.nodes.length).toBeLessThan(before)
     // The fallback authorship is recoverable from the upstream summary
     // event's llmStreamCall flag.
-    const summaryIdx = session.events.findIndex(event => event.type === 'compaction/summary')
-    const summary = eventOf(session.events, summaryIdx, 'compaction/summary')
+    const summaryIdx = session.snapshotEvents().findIndex(event => event.type === 'compaction/summary')
+    const summary = eventOf(session.snapshotEvents(), summaryIdx, 'compaction/summary')
     expect(summary.data.llmStreamCall).toBe(true)
     expect(summary.data.shadowedSeqs.length).toBeGreaterThan(0)
     expect(result!.shadowedSeqs.length).toBeGreaterThan(0)
     // The model is told the automatic compaction happened: a durable notice
     // names the replaced range and how to restore it.
-    const notice = session.events.find(event => event.type === 'user/message'
+    const notice = session.snapshotEvents().find(event => event.type === 'user/message'
       && (event.data.source as { kind: string }).kind === 'plugin'
       && (event.data.source as { purpose?: string }).purpose === 'overflow-notice')
     expect(notice).toBeDefined()
@@ -943,7 +943,7 @@ describe('AgenticCompactionEngine automatic behavior', () => {
     const result = await engine.compactNow(agent as never, new AbortController().signal)
     expect(taskRan).toBe(true)
     expect(result).not.toBeNull()
-    const events = session.events
+    const events = session.snapshotEvents()
     expect(events.some(event => event.type === 'compaction/start' && event.data.turn === null)).toBe(true)
     expect(events.some(event => event.type === 'compaction/end' && event.data.turn === null)).toBe(true)
   })

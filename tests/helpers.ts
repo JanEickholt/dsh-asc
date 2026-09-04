@@ -11,6 +11,7 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import type { LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 
@@ -23,6 +24,7 @@ let sessionCounter = 0
 export function createContext(contextWindow = 100_000, summaryText = ''): Context {
   const ctx = new Context()
   void new LlmRuntime(ctx)
+  void new SessionProjectionRegistry(ctx)
   void new TokenMeter(ctx)
   ctx.llm.registerAdapter([MODEL], new FakeAdapter(contextWindow, summaryText))
   return ctx

@@ -5,4 +5,4 @@ allowBuilds:
 # and runtime exports never disagree.
 overrides:
   '@deepseek-ai/cordis': 4.0.1
-  '@deepseek-ai/dsh-*': 0.1.0-rc.6
+  '@deepseek-ai/dsh-*': 0.1.2-rc.1

@@ -31,7 +31,7 @@ describe('dsh-asc invariant companion', () => {
       content: [{ type: 'text', text: 'ordinary' }],
       source: { kind: 'user' },
     } as never, { surfaceOp: 'append' })
-    expect(session.events).toHaveLength(1)
+    expect(session.snapshotEvents()).toHaveLength(1)
   })
 
   it('keeps the upstream compaction bracket enforcement intact', async () => {
@@ -41,7 +41,7 @@ describe('dsh-asc invariant companion', () => {
     // compaction/start is accepted by ours — the bracket belongs to
     // @deepseek-ai/dsh-compaction/invariant.
     session.append('compaction/start', { compactionId: 'c1' as never, turn: null })
-    expect(session.events.at(-1)!.type).toBe('compaction/start')
+    expect(session.snapshotEvents().at(-1)!.type).toBe('compaction/start')
   })
 
   it('rejects nothing the base harness rejects (compatibility smoke)', async () => {

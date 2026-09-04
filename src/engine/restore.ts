@@ -18,6 +18,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import type { CompactionId } from '@deepseek-ai/dsh-compaction'
 import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
+import { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { DecompressTarget, ResolvedConfig } from '../types.ts'
 import { checkpointViews, eventForSeq } from '../policy/protected.ts'
@@ -144,8 +145,8 @@ export function resolveRestoreTargets(
 
   if (range !== undefined) {
     const nodes = session.surface.nodes
-    const startIdx = nodes.indexOf(range.startSeq)
-    const endIdx = nodes.indexOf(range.endSeq)
+    const startIdx = nodes.indexOf(SessionSeq(range.startSeq))
+    const endIdx = nodes.indexOf(SessionSeq(range.endSeq))
     if (startIdx === -1 || endIdx === -1 || startIdx > endIdx) {
       throw new Error(
         `range ${range.startSeq}..${range.endSeq} is not a valid surface span `
@@ -154,7 +155,7 @@ export function resolveRestoreTargets(
     }
     const targets: RestoreTarget[] = []
     for (const view of views) {
-      const nodeIdx = nodes.indexOf(view.seq)
+      const nodeIdx = nodes.indexOf(SessionSeq(view.seq))
       if (nodeIdx === -1 || nodeIdx < startIdx || nodeIdx > endIdx) continue
       targets.push({
         compactionId: view.compactionId,
@@ -187,7 +188,7 @@ export function expandRestoreSeqs(
   const tiers = tierSnapshot(session)
   const leaves: number[] = []
   const visit = (seq: number): void => {
-    const event = session.events[seq]
+    const event = session.snapshotEvents()[seq]
     const isCheckpoint = event?.type === 'user/message'
       && isCompactCheckpointSource(event.data.source)
     if (isCheckpoint && full) {
@@ -229,7 +230,7 @@ export function buildRestoredContent(
   message: ReturnType<typeof createUserMessage>
 } {
   const leaves = expandRestoreSeqs(session, target.shadowedSeqs, full)
-  const events = session.events
+  const events = session.snapshotEvents()
   const messages: Message[] = []
   for (const seq of leaves) {
     const message = session.deriveEventMessage(eventForSeq(events, seq))
@@ -297,14 +298,14 @@ export function restoreTargets(
     // Commit the restored transcript back into the surface at the
     // checkpoint's own position. The checkpoint node is shadowed by the
     // restored content, exactly as if the compression had been undone.
-    const checkpointIdx = session.surface.nodes.indexOf(target.checkpointSeq)
+    const checkpointIdx = session.surface.nodes.indexOf(SessionSeq(target.checkpointSeq))
     if (checkpointIdx === -1) {
       skipped.push(`${target.compactionId} (checkpoint seq ${target.checkpointSeq} is no longer on the surface)`)
       continue
     }
     session.append('user/message', message, {
-      surfaceOp: { op: 'replace', start: target.checkpointSeq, end: target.checkpointSeq },
-      sourceEventSeqs: [target.checkpointSeq, ...restoredSeqs],
+      surfaceOp: { op: 'replace', start: SessionSeq(target.checkpointSeq), end: SessionSeq(target.checkpointSeq) },
+      sourceEventSeqs: [SessionSeq(target.checkpointSeq), ...restoredSeqs.map(SessionSeq)],
     })
     restored.push({
       compactionId: target.compactionId,

@@ -23,7 +23,8 @@ import type {
   CompactionTrigger,
   ManualCompactAgentContext,
 } from '@deepseek-ai/dsh-compaction'
-import { assertNever, CONTEXT_WINDOW_EXCEEDED_CODE, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { CONTEXT_WINDOW_EXCEEDED_CODE, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import { CompactionId, isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import type { Agent, PreStepDecision, RequestErrorAction } from '@deepseek-ai/dsh-agent'
@@ -741,7 +742,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
   }>> {
     const session = agent.session
     const summaryByCompactionId = new Map<string, SessionEvent<'compaction/summary'>>()
-    for (const event of session.events) {
+    for (const event of session.snapshotEvents()) {
       if (event.type === 'compaction/summary') {
         summaryByCompactionId.set(event.data.compactionId, event)
       }
@@ -789,7 +790,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
     // them from the full log instead of only the current surface.
     const tiers = tierSnapshot(session)
     const byCompactionId = new Map<string, number>()
-    for (const event of session.events) {
+    for (const event of session.snapshotEvents()) {
       if (event.type !== 'user/message') continue
       const source = event.data.source as MessageSource & { compactionId?: string }
       // Restored transcripts also carry compactionId; only checkpoint
@@ -841,7 +842,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
 
     const summaryByCompactionId = new Map<string, SessionEvent<'compaction/summary'>>()
     const summarySeqs: Array<{ compactionId: string; seq: number; author: 'model' | 'fallback' }> = []
-    for (const event of session.events) {
+    for (const event of session.snapshotEvents()) {
       if (event.type === 'compaction/summary') {
         summaryByCompactionId.set(event.data.compactionId, event)
         // The upstream flag marks a call through the LLM seam: model-written
@@ -1214,7 +1215,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
   ): SurfaceNodePreview {
     const kind = nodeKindOf(session, seq)
     const node = measurement.nodes.find(candidate => candidate.seq === seq)
-    const event = session.events[seq]
+    const event = session.snapshotEvents()[seq]
     let preview = ''
     if (event !== undefined) {
       const message = session.deriveEventMessage(event)

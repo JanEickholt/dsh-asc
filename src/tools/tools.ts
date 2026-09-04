@@ -15,7 +15,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import { defineTool, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
-import type { JsonValue, SessionId } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEventSearchRequest, SessionEventSurface, SessionSearchRequest } from '@deepseek-ai/dsh-session-query'
 import type { AgenticCompactionEngine } from '../engine/engine.ts'
 import { tierSnapshot } from '../engine/tier.ts'
@@ -557,7 +558,7 @@ async function searchContext(
     if (session !== undefined) {
       const owners = new Map<number, string>()
       for (const [checkpointSeq, shadowed] of tierSnapshot(session).shadowedBySeq) {
-        const event = session.events[checkpointSeq]
+        const event = session.snapshotEvents()[checkpointSeq]
         const source = event?.type === 'user/message'
           ? event.data.source as MessageSource & { compactionId?: string }
           : undefined

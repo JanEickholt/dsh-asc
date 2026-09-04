@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createUserMessage, createAssistantMessage } from '@deepseek-ai/dsh-llm'
+import { SessionSeq } from '@deepseek-ai/dsh-session'
 import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import {
   commitSurfaceCompaction,
@@ -108,8 +109,8 @@ describe('tierSnapshot', () => {
       content: [{ type: 'text', text: 'the original transcript is back' }],
       source: { kind: 'plugin', plugin: 'dsh-asc', op: 'decompress', compactionId: compacted.compactionId },
     }), {
-      surfaceOp: { op: 'replace', start: checkpointSeq, end: checkpointSeq },
-      sourceEventSeqs: [checkpointSeq, ...compacted.shadowedSeqs],
+      surfaceOp: { op: 'replace', start: SessionSeq(checkpointSeq), end: SessionSeq(checkpointSeq) },
+      sourceEventSeqs: [SessionSeq(checkpointSeq), ...compacted.shadowedSeqs],
     })
     const snapshot = tierSnapshot(session)
     expect(snapshot.tierBySeq.get(restored.seq)).toBe(0)

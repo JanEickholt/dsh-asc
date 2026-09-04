@@ -51,7 +51,7 @@ describe('resolveRestoreTargets', () => {
     const session = conversationSession(4)
     const result = await commitT1(session, ctx.tokenMeter)
     const nodes = session.surface.nodes
-    const checkpointIdx = nodes.findIndex(seq => session.events[seq]?.type === 'user/message')
+    const checkpointIdx = nodes.findIndex(seq => session.snapshotEvents()[seq]?.type === 'user/message')
     const { targets } = resolveRestoreTargets(session, undefined, {
       startSeq: nodes[checkpointIdx]!,
       endSeq: nodes[nodes.length - 1]!,
@@ -143,12 +143,12 @@ describe('buildRestoredContent and restoreTargets', () => {
     // the restored transcript, which carries the restored source marker.
     expect(session.surface.nodes).not.toContain(checkpointSeq)
     const restoredSeq = session.surface.nodes.find(seq => {
-      const event = session.events[seq]
+      const event = session.snapshotEvents()[seq]
       return event?.type === 'user/message'
         && (event.data.source as { op?: string }).op === 'decompress'
     })
     expect(restoredSeq).toBeDefined()
-    const restoredEvent = session.events[restoredSeq!]
+    const restoredEvent = session.snapshotEvents()[restoredSeq!]
     const text = (restoredEvent as { data: { content: Array<{ text: string }> } }).data.content
       .map(block => block.text).join('')
     expect(text).toContain('user 1')
@@ -181,7 +181,7 @@ describe('buildRestoredContent and restoreTargets', () => {
     expect(restored).toHaveLength(1)
     expect(restored[0]!.restoredSeqs).toEqual([...second.shadowedSeqs])
     expect(session.surface.nodes).not.toContain(checkpointSeq)
-    const restoredEvent = session.surface.nodes.map(seq => session.events[seq]).find(event =>
+    const restoredEvent = session.surface.nodes.map(seq => session.snapshotEvents()[seq]).find(event =>
       event?.type === 'user/message'
       && (event.data.source as { op?: string }).op === 'decompress')
     expect(restoredEvent).toBeDefined()

@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Releases are consolidated: tags are only created for meaningful, coherent
 releases, not for every commit.
 
+## [0.2.1] - 2026-09-04
+
+Port to harness core `@deepseek-ai/dsh-*` `0.1.2-rc.1`. Upstream `0.2.0`
+compiles against `0.1.0-rc.6` and every context tool crashes at runtime on
+a newer core with `Cannot read properties of undefined (reading 'entries')`.
+
+### Fixed
+
+- `Session.events` no longer exists; all reads go through
+  `session.snapshotEvents()`.
+- Plain seq numbers are branded with `SessionSeq(...)` where the new API
+  requires it: surface reads, `toolPairingBalanced*` calls,
+  `compaction/summary` payloads, `surfaceOp: replace` appends, and
+  `sourceEventSeqs`.
+- `deepFreeze` and `assertNever` now come from `@deepseek-ai/dsh-util-values`
+  (moved out of `dsh-llm`); the test `CallId` brand is renamed `ToolCallId`.
+
+### Changed
+
+- Peer/dev dependencies and the workspace override pin `0.1.2-rc.1`.
+- `TokenMeter` requires the `sessionProjections` service, so test fixtures
+  and the loader-composition test mount `@deepseek-ai/dsh-session-projection`
+  first.
+
 ## [0.2.0] - 2026-08-15
 
 First audited release after the initial `0.1.0` package.

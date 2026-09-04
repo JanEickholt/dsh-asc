@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { compactCheckpointSource, CompactionId, ManualCompactionError, isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import {
   commitSurfaceCompaction,
@@ -7,6 +7,7 @@ import {
   selectCompactableRange,
   SummaryNotSmallerError,
 } from '../src/engine/region.ts'
+import { SessionSeq } from '@deepseek-ai/dsh-session'
 import { isProtectedNode, toolNameIndex, validateSurfaceRange, rangeIneligibility } from '../src/policy/protected.ts'
 import { resolveConfig } from '../src/config.ts'
 import { createContext, conversationSession, closedSession, eventOf, MODEL } from './helpers.ts'
@@ -38,7 +39,7 @@ describe('commitSurfaceCompaction', () => {
     expect(result.shadowedTokenCount).toBeGreaterThan(0)
     expect(result.summaryTokenCount).toBeLessThan(result.shadowedTokenCount)
 
-    const events = session.events
+    const events = session.snapshotEvents()
     const start = eventOf(events, result.startSeq, 'compaction/start')
     const summary = eventOf(events, result.summarySeq, 'compaction/summary')
     const end = eventOf(events, result.endSeq, 'compaction/end')
@@ -83,7 +84,7 @@ describe('commitSurfaceCompaction', () => {
       { owner: 'current-turn', stability: 'whole-surface' },
     )).rejects.toThrow(SummaryNotSmallerError)
     // The failed attempt closed its bracket with an error record.
-    const events = session.events
+    const events = session.snapshotEvents()
     expect(events.at(-1)!.type).toBe('compaction/end')
     expect((events.at(-1)! as { data: { error?: string } }).data.error).toBeDefined()
   })
@@ -92,7 +93,7 @@ describe('commitSurfaceCompaction', () => {
     const ctx = createContext()
     const session = conversationSession(1)
     // Build one step with a tool call and result.
-    const callId = CallId('call-1')
+    const callId = ToolCallId('call-1')
     session.append('step/start', { turn: 1, step: 2 })
     session.append('assistant/message', {
       turn: 1,
@@ -164,7 +165,7 @@ describe('commitSurfaceCompaction', () => {
       controller.signal,
     )).rejects.toThrow()
     // Nothing was appended for the aborted request.
-    expect(session.events.at(-1)!.type).not.toBe('compaction/start')
+    expect(session.snapshotEvents().at(-1)!.type).not.toBe('compaction/start')
   })
 
   it('rejects standalone compaction while a turn is open', async () => {
@@ -184,9 +185,9 @@ describe('commitSurfaceCompaction', () => {
   it('treats a turn opened before the latest end-seed as closed', () => {
     const session = conversationSession(4)
     session.append('session/end-seed', {})
-    const state = inspectCompactionEntryState(session.events)
+    const state = inspectCompactionEntryState(session.snapshotEvents())
     expect(state.openTurn).toBeNull()
-    expect(state.latestEndSeedSeq).toBe(session.events.at(-1)!.seq)
+    expect(state.latestEndSeedSeq).toBe(session.snapshotEvents().at(-1)!.seq)
   })
 
   it('rejects in-turn compaction without an open turn', async () => {
@@ -223,7 +224,7 @@ describe('commitSurfaceCompaction', () => {
     )
     // The quality outcome is carried in the returned result, not a log
     // record (no custom event vocabulary).
-    const record = eventOf(session.events, result.summarySeq + 2, 'compaction/end')
+    const record = eventOf(session.snapshotEvents(), result.summarySeq + 2, 'compaction/end')
     expect(record.seq).toBe(result.endSeq)
   })
 })
@@ -253,7 +254,7 @@ describe('selectCompactableRange', () => {
     const range = selectCompactableRange(session, ctx.tokenMeter.measure(session), 0, new Set([nodes[0]!]))
     expect(range).not.toBeNull()
     expect(range!.start).toBe(nodes[1]!)
-    expect(nodes.indexOf(range!.start)).toBe(1)
+    expect(nodes.indexOf(SessionSeq(range!.start))).toBe(1)
   })
 })
 
@@ -262,7 +263,7 @@ describe('toolNameIndex cache', () => {
     const session = conversationSession(2)
     // Populate the cache BEFORE the tool turn arrives.
     void toolNameIndex(session)
-    const callId = CallId('late-call')
+    const callId = ToolCallId('late-call')
     const turn = 3
     session.append('turn/start', { turn })
     session.append('user/message', createUserMessage({

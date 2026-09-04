@@ -21,6 +21,7 @@
  */
 
 import { toolPairingBalancedAfter } from '@deepseek-ai/dsh-compaction'
+import { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
 import type { ResolvedConfig, RecommendedRange } from '../types.ts'
@@ -243,7 +244,7 @@ export function nodesSinceLastUser(session: Session): number {
   let lastUserIdx = -1
   for (let index = nodes.length - 1; index >= 0; index -= 1) {
     // oxlint-disable-next-line typescript/no-non-null-assertion -- index is in bounds
-    const event = session.events[nodes[index]!]
+    const event = session.snapshotEvents()[nodes[index]!]
     if (event?.type === 'user/message'
       && (event.data.source as { kind: string }).kind === 'user') {
       lastUserIdx = index
@@ -324,8 +325,8 @@ function commitReadyRange(
   if (rangeIneligibility(session, expandedSelection, config) !== undefined) {
     return null
   }
-  const startPosition = nodes.indexOf(expanded.start)
-  const endPosition = nodes.indexOf(expanded.end)
+  const startPosition = nodes.indexOf(SessionSeq(expanded.start))
+  const endPosition = nodes.indexOf(SessionSeq(expanded.end))
   if (startPosition === -1 || endPosition === -1) return null
   // Price exactly the extended span: from the expanded start node through
   // the expanded end node, NOT from the surface head — accumulating from

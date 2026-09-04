@@ -9,6 +9,7 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { InvariantRegistry } from '@deepseek-ai/dsh-invariants'
@@ -39,6 +40,7 @@ async function loadYaml(lines: readonly string[]): Promise<Context> {
   const modules = new Map<string, unknown>([
     ['@deepseek-ai/dsh-llm', LlmRuntime],
     ['@deepseek-ai/dsh-session', SessionStore],
+    ['@deepseek-ai/dsh-session-projection', SessionProjectionRegistry],
     ['@deepseek-ai/dsh-token-meter', TokenMeter],
     ['@deepseek-ai/dsh-system-prompt', SystemPrompt],
     ['@deepseek-ai/dsh-tools', ToolRuntime],
@@ -67,6 +69,7 @@ describe('real Loader composition', () => {
     const loaded = await loadYaml([
       "- name: '@deepseek-ai/dsh-llm'",
       "- name: '@deepseek-ai/dsh-session'",
+      "- name: '@deepseek-ai/dsh-session-projection'",
       "- name: '@deepseek-ai/dsh-token-meter'",
       "- name: '@deepseek-ai/dsh-system-prompt'",
       "- name: '@deepseek-ai/dsh-tools'",
@@ -119,6 +122,7 @@ describe('real Loader composition', () => {
     context = new Context()
     await context.plugin(LlmRuntime)
     await context.plugin(SessionStore)
+    await context.plugin(SessionProjectionRegistry)
     await context.plugin(TokenMeter)
     await context.plugin(SystemPrompt)
     await context.plugin(ToolRuntime)
@@ -132,6 +136,7 @@ describe('real Loader composition', () => {
     const loaded = await loadYaml([
       "- name: '@deepseek-ai/dsh-llm'",
       "- name: '@deepseek-ai/dsh-session'",
+      "- name: '@deepseek-ai/dsh-session-projection'",
       "- name: '@deepseek-ai/dsh-token-meter'",
       "- name: '@deepseek-ai/dsh-system-prompt'",
       "- name: '@deepseek-ai/dsh-tools'",
@@ -152,6 +157,7 @@ describe('real Loader composition', () => {
     const loaded = await loadYaml([
       "- name: '@deepseek-ai/dsh-llm'",
       "- name: '@deepseek-ai/dsh-session'",
+      "- name: '@deepseek-ai/dsh-session-projection'",
       "- name: '@deepseek-ai/dsh-token-meter'",
       "- name: '@deepseek-ai/dsh-system-prompt'",
       "- name: '@deepseek-ai/dsh-tools'",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import {
   commitSurfaceCompaction,
 } from '../src/engine/region.ts'
@@ -388,7 +388,7 @@ describe('recommendRanges', () => {
 function toolSession(): ReturnType<typeof conversationSession> {
   const session = conversationSession(2)
   const turn = 3
-  const callId = CallId('call-0')
+  const callId = ToolCallId('call-0')
   session.append('turn/start', { turn })
   session.append('user/message', createUserMessage({
     content: [{ type: 'text', text: 'inspect' }],

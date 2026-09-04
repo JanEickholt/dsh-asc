@@ -25,6 +25,7 @@ import {
   toolPairingBalancedBefore,
 } from '@deepseek-ai/dsh-compaction'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
+import { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ResolvedConfig } from '../types.ts'
@@ -81,7 +82,7 @@ export function toolNameIndex(session: Session): ToolNameIndex {
   const byCallId = new Map<string, string>()
   const callSeqByCallId = new Map<string, number>()
   for (const seq of session.surface.nodes) {
-    const event = session.events[seq]
+    const event = session.snapshotEvents()[seq]
     if (event?.type !== 'assistant/message') continue
     for (const call of toolCallsOf(event.data.message.content)) {
       byCallId.set(call.callId, call.name)
@@ -104,7 +105,7 @@ export function isProtectedNode(
   seq: number,
   config: ResolvedConfig,
 ): boolean {
-  const event = session.events[seq]
+  const event = session.snapshotEvents()[seq]
   if (event === undefined) return true
   switch (event.type) {
     case 'user/message': {
@@ -152,7 +153,7 @@ export function firstUserMessageSeq(session: Session): number | undefined {
   }
   let seq: number | undefined
   for (const candidate of session.surface.nodes) {
-    const event = session.events[candidate]
+    const event = session.snapshotEvents()[candidate]
     if (event?.type === 'user/message'
       && (event.data.source as { kind: string }).kind === 'user') {
       seq = candidate
@@ -175,8 +176,8 @@ export interface ValidatedRange {
 /** Validate one inclusive surface-position span without committing anything. */
 export function validateSurfaceRange(session: Session, start: number, end: number): ValidatedRange {
   const nodes = session.surface.nodes
-  const startIdx = nodes.indexOf(start)
-  const endIdx = nodes.indexOf(end)
+  const startIdx = nodes.indexOf(SessionSeq(start))
+  const endIdx = nodes.indexOf(SessionSeq(end))
   if (startIdx === -1) throw new Error(`start seq ${start} is not on the current surface`)
   if (endIdx === -1) throw new Error(`end seq ${end} is not on the current surface`)
   if (startIdx > endIdx) {
@@ -214,8 +215,8 @@ export function nearestBalancedRange(
   end: number,
 ): { start: number; end: number } | null {
   const nodes = session.surface.nodes
-  let startIdx = nodes.indexOf(start)
-  let endIdx = nodes.indexOf(end)
+  let startIdx = nodes.indexOf(SessionSeq(start))
+  let endIdx = nodes.indexOf(SessionSeq(end))
   if (startIdx === -1 || endIdx === -1 || startIdx > endIdx) return null
 
   // Walk outward until both edges sit on balanced cuts. Each step moves one
@@ -297,7 +298,7 @@ export function checkpointViews(session: Session): Array<{
   }> = []
   for (const seq of session.surface.nodes) {
     if (tiers.kindBySeq.get(seq) !== 'checkpoint') continue
-    const event = session.events[seq]
+    const event = session.snapshotEvents()[seq]
     if (event?.type !== 'user/message') continue
     const source = event.data.source as MessageSource & { compactionId?: string }
     if (source.compactionId === undefined || !isCompactCheckpointSource(source)) continue
