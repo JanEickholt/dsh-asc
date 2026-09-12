@@ -545,62 +545,83 @@ async function searchContext(
   const eventFilters = surface === undefined
     ? undefined
     : [{ kind: 'surface', values: [surface] }] as const
-  if (scope === 'session') {
-    const request: SessionEventSearchRequest = {
-      sessionId,
+  // The query service's stable-observation pass loads every persisted sibling
+  // log, so one corrupt or legacy-format session fails ALL scopes with
+  // SESSION_QUERY_PERSISTENCE_FAILED (e.g. a legacy log whose plugin source
+  // member the v0→v1 migration stage refuses). Degrade to an empty result
+  // with the diagnostic instead of a thrown tool error: the search itself is
+  // fine, and the model can report the offending log to the user.
+  try {
+    if (scope === 'session') {
+      const request: SessionEventSearchRequest = {
+        sessionId,
+        query,
+        limit,
+        ...eventFilters === undefined ? {} : { filters: eventFilters },
+      }
+      const page = await sessionQuery.searchEvents(request, { signal: exec.signal })
+      const session = ctx.sessions.get(sessionId)
+      let ownerBySeq: ReadonlyMap<number, string> | undefined
+      if (session !== undefined) {
+        const owners = new Map<number, string>()
+        for (const [checkpointSeq, shadowed] of tierSnapshot(session).shadowedBySeq) {
+          const event = session.snapshotEvents()[checkpointSeq]
+          const source = event?.type === 'user/message'
+            ? event.data.source as MessageSource & { compactionId?: string }
+            : undefined
+          if (source === undefined
+            || source.compactionId === undefined
+            || !isCompactCheckpointSource(source)) continue
+          for (const seq of shadowed) owners.set(seq, source.compactionId)
+        }
+        ownerBySeq = owners
+      }
+      return {
+        scope: 'session',
+        query,
+        hits: page.items.map((item) => {
+          const checkpointId = ownerBySeq?.get(item.seq)
+          return {
+            seq: item.seq,
+            type: item.type,
+            surface: item.surface,
+            snippet: item.snippet,
+            ...item.surface === 'shadowed' && checkpointId !== undefined
+              ? { checkpointId }
+              : {},
+          }
+        }),
+      }
+    }
+    const request: SessionSearchRequest = {
       query,
       limit,
-      ...eventFilters === undefined ? {} : { filters: eventFilters },
+      ...eventFilters === undefined ? {} : { eventFilters },
     }
-    const page = await sessionQuery.searchEvents(request, { signal: exec.signal })
-    const session = ctx.sessions.get(sessionId)
-    let ownerBySeq: ReadonlyMap<number, string> | undefined
-    if (session !== undefined) {
-      const owners = new Map<number, string>()
-      for (const [checkpointSeq, shadowed] of tierSnapshot(session).shadowedBySeq) {
-        const event = session.snapshotEvents()[checkpointSeq]
-        const source = event?.type === 'user/message'
-          ? event.data.source as MessageSource & { compactionId?: string }
-          : undefined
-        if (source === undefined
-          || source.compactionId === undefined
-          || !isCompactCheckpointSource(source)) continue
-        for (const seq of shadowed) owners.set(seq, source.compactionId)
-      }
-      ownerBySeq = owners
-    }
+    const page = await sessionQuery.searchSessions(request, { signal: exec.signal })
     return {
-      scope: 'session',
+      scope: 'workspace',
       query,
-      hits: page.items.map((item) => {
-        const checkpointId = ownerBySeq?.get(item.seq)
-        return {
-          seq: item.seq,
-          type: item.type,
-          surface: item.surface,
-          snippet: item.snippet,
-          ...item.surface === 'shadowed' && checkpointId !== undefined
-            ? { checkpointId }
-            : {},
-        }
-      }),
+      hits: page.items.map(item => ({
+        sessionId: item.header.id,
+        seq: item.bestMatch.seq,
+        type: item.bestMatch.type,
+        surface: item.bestMatch.surface,
+        snippet: item.bestMatch.snippet,
+      })),
     }
-  }
-  const request: SessionSearchRequest = {
-    query,
-    limit,
-    ...eventFilters === undefined ? {} : { eventFilters },
-  }
-  const page = await sessionQuery.searchSessions(request, { signal: exec.signal })
-  return {
-    scope: 'workspace',
-    query,
-    hits: page.items.map(item => ({
-      sessionId: item.header.id,
-      seq: item.bestMatch.seq,
-      type: item.bestMatch.type,
-      surface: item.bestMatch.surface,
-      snippet: item.bestMatch.snippet,
-    })),
+  } catch (error) {
+    if ((error as { code?: string }).code !== 'SESSION_QUERY_PERSISTENCE_FAILED') throw error
+    const cause = (error as { cause?: unknown }).cause
+    const detail = cause instanceof Error ? `: ${cause.message}` : ''
+    return {
+      scope,
+      query,
+      hits: [],
+      degraded: true,
+      error: `session-query persistence observation failed${detail}`
+        + ' — one stored session log is unreadable (corrupt or legacy format);'
+        + ' report it to the user so the log can be moved or repaired.',
+    }
   }
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { AgenticCompactionEngine } from '../src/engine/engine.ts'
 import { registerContextTools } from '../src/tools/tools.ts'
-import { createContext } from './helpers.ts'
+import { createContext, conversationSession } from './helpers.ts'
 
 interface RecordedTool {
   readonly name: string
@@ -23,11 +23,16 @@ interface RecordedTool {
 }
 
 /** A recording registry that captures registrations and honors disposal. */
-function recordingRegistry(ctx: Context): { tools: RecordedTool[]; disposeAll(): void } {
+function recordingRegistry(ctx: Context): {
+  tools: RecordedTool[]
+  disposeAll(): void
+  execute(name: string): ((args: unknown, exec: unknown) => Promise<unknown>) | undefined
+} {
   const tools: RecordedTool[] = []
+  const handlers = new Map<string, (args: unknown, exec: unknown) => Promise<unknown>>()
   const disposers: Array<() => void> = []
   ctx.provide('tools', {
-    register: (tool: RecordedTool & { output: { render?: (args: unknown, value: unknown) => unknown[] } }) => {
+    register: (tool: RecordedTool & { output: { render?: (args: unknown, value: unknown) => unknown[] }; execute?: (args: unknown, exec: unknown) => Promise<unknown> }) => {
       const recorded: RecordedTool = {
         name: tool.name,
         description: tool.description,
@@ -35,6 +40,7 @@ function recordingRegistry(ctx: Context): { tools: RecordedTool[]; disposeAll():
         output: tool.output as RecordedTool['output'],
       }
       tools.push(recorded)
+      if (tool.execute !== undefined) handlers.set(tool.name, tool.execute)
       const dispose = (): void => {
         const index = tools.indexOf(recorded)
         if (index !== -1) tools.splice(index, 1)
@@ -46,6 +52,7 @@ function recordingRegistry(ctx: Context): { tools: RecordedTool[]; disposeAll():
   return {
     tools,
     disposeAll: () => { for (const dispose of disposers) dispose() },
+    execute: name => handlers.get(name),
   }
 }
 
@@ -107,6 +114,40 @@ describe('registerContextTools', () => {
     expect(text).not.toContain('"scope":"workspace"')
     void status
     void engine
+  })
+
+  it('degrades context_search when one persisted sibling log is unreadable', async () => {
+    const ctx = createContext()
+    const registry = recordingRegistry(ctx)
+    const engine = new AgenticCompactionEngine(ctx, { auto: false })
+    registerContextTools(ctx, engine)
+    // The query service's stable-observation pass loads every persisted
+    // sibling log; one legacy-format log (a refused v0→v1 migration) fails
+    // the whole observation with SESSION_QUERY_PERSISTENCE_FAILED.
+    const persistenceError = Object.assign(new Error(
+      'session-search persistence observation failed: v0-to-v1 refuses this format v0 Session',
+    ), {
+      code: 'SESSION_QUERY_PERSISTENCE_FAILED',
+      cause: new Error('user/message 18557 source has unexpected member "purpose"'),
+    })
+    let queryFailure: Error = persistenceError
+    ctx.provide('sessionQuery', {
+      searchEvents: async () => { throw queryFailure },
+      searchSessions: async () => { throw queryFailure },
+    } as never)
+    const session = conversationSession(1)
+    const search = registry.execute('context_search')!
+    const degraded = await search({ query: 'needle' }, { agent: { session } }) as {
+      degraded?: boolean
+      hits: unknown[]
+      error?: string
+    }
+    expect(degraded.degraded).toBe(true)
+    expect(degraded.hits).toEqual([])
+    expect(degraded.error).toContain('user/message 18557 source has unexpected member')
+    // Any other failure class still surfaces as a thrown tool error.
+    queryFailure = new Error('database exploded')
+    await expect(search({ query: 'needle' }, { agent: { session } })).rejects.toThrow('database exploded')
   })
 
   it('renders context_status with recent nodes first and one line per node', () => {

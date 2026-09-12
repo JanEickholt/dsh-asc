@@ -28,6 +28,12 @@ surface-eligible and cannot carry surfaceOp`.
   of the protected first user message), and core rejects any user checkpoint
   replacing it — so a 310k-token session compressed by ~10k instead of the
   full-history drop.
+- `context_search` degrades instead of dying when the query service's
+  persistence observation fails (`SESSION_QUERY_PERSISTENCE_FAILED`): one
+  corrupt or legacy-format sibling log previously killed search in every
+  scope, because the observation loads all persisted logs. The tool now
+  returns an empty hit list with the diagnostic so the offending log can be
+  identified and moved.
 
 ### Changed
 
