@@ -107,6 +107,10 @@ export function isProtectedNode(
 ): boolean {
   const event = session.snapshotEvents()[seq]
   if (event === undefined) return true
+  // The surface head holds the durable system prompt: core allows it to be
+  // rewritten only by a `system/message` over exactly that node, so a user
+  // checkpoint must never replace it.
+  if (event.type === 'system/message' && session.surface.nodes[0] === seq) return true
   switch (event.type) {
     case 'user/message': {
       const source = event.data.source as { kind: string; plugin?: string }

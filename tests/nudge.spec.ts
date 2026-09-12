@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { ToolCallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createAssistantMessage, createSystemMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { SessionSeq } from '@deepseek-ai/dsh-session'
 import {
   commitSurfaceCompaction,
 } from '../src/engine/region.ts'
@@ -304,6 +305,33 @@ describe('buildNudgeText', () => {
 })
 
 describe('recommendRanges', () => {
+  it('never recommends the head system-prompt node (0.1.5 surface contract)', () => {
+    const ctx = createContext()
+    const session = conversationSession(5)
+    // Core 0.1.5 makes the system prompt the surface head node. Mirror that:
+    // rewrite node 0 with a system/message and protect the first user message
+    // right behind it — the regression collapsed the head range to [node 0]
+    // alone, which core rejects at commit time.
+    const head = session.surface.nodes[0]!
+    session.append('system/message', {
+      turn: 1,
+      step: 1,
+      message: createSystemMessage('doctrine', 'test-system-prompt'),
+    }, {
+      surfaceOp: { op: 'replace', startSeq: SessionSeq(head), endSeq: SessionSeq(head) },
+      sourceEventSeqs: [SessionSeq(head)],
+    })
+    const config = resolveConfig({
+      protection: { retainRecentMessages: 0, protectFirstUserMessage: true },
+    })
+    const ranges = recommendRanges(session, ctx.tokenMeter.measure(session), config)
+    expect(ranges.length).toBeGreaterThan(0)
+    for (const range of ranges) {
+      expect(range.startSeq).toBeGreaterThan(head)
+      expect(range.endSeq).toBeGreaterThan(head)
+    }
+  })
+
   it('recommends a head range bounded by the recent tail', () => {
     const ctx = createContext()
     const session = conversationSession(5)

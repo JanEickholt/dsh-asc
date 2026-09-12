@@ -23,6 +23,11 @@ surface-eligible and cannot carry surfaceOp`.
   `EpochHeader` no longer carries a `system` field.
 - Rename the replace `surfaceOp` bounds to `startSeq`/`endSeq` in the commit
   and restore paths, matching the `0.1.5` surface contract.
+- Protect the surface head system-prompt node. The head-history
+  recommendation collapsed to that single node (it sat unprotected in front
+  of the protected first user message), and core rejects any user checkpoint
+  replacing it — so a 310k-token session compressed by ~10k instead of the
+  full-history drop.
 
 ### Changed
 
