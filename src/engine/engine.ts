@@ -40,6 +40,7 @@ import {
   frameSummary,
   regionMessages,
   selectCompactableRange,
+  sessionSystemPrompt,
   type CommitResult,
 } from './region.ts'
 import { summarizeWithLlm } from './fallback.ts'
@@ -1025,8 +1026,9 @@ export class AgenticCompactionEngine extends CompactionEngine {
       throw new Error(rangeIneligibilityMessage(ineligibility))
     }
     const header = session.requestHeader()
+    const system = sessionSystemPrompt(session, start)
     const input = {
-      ...header?.system === undefined ? {} : { system: header.system },
+      ...system === undefined ? {} : { system },
       ...header?.tools === undefined ? {} : { tools: header.tools },
       messages: regionMessages(session, selection.shadowedSeqs),
     }

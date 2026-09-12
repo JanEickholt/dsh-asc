@@ -304,7 +304,7 @@ export function restoreTargets(
       continue
     }
     session.append('user/message', message, {
-      surfaceOp: { op: 'replace', start: SessionSeq(target.checkpointSeq), end: SessionSeq(target.checkpointSeq) },
+      surfaceOp: { op: 'replace', startSeq: SessionSeq(target.checkpointSeq), endSeq: SessionSeq(target.checkpointSeq) },
       sourceEventSeqs: [SessionSeq(target.checkpointSeq), ...restoredSeqs.map(SessionSeq)],
     })
     restored.push({

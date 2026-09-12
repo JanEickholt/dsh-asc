@@ -33,6 +33,7 @@ import { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { QualityReport, ResolvedConfig } from '../types.ts'
 import { eventForSeq, rangeIneligibility, validateSurfaceRange } from '../policy/protected.ts'
+import { blockText } from '../utils/text.ts'
 import { tierSnapshot } from './tier.ts'
 
 /** Tag wrapping the structured summary inside the landed checkpoint node. */
@@ -467,7 +468,7 @@ function commitBody(
     ...source.kind === 'llm' && source.usage !== undefined ? { usage: source.usage } : {},
   })
   session.append('user/message', checkpointMessage, {
-    surfaceOp: { op: 'replace', start: SessionSeq(start), end: SessionSeq(end) },
+    surfaceOp: { op: 'replace', startSeq: SessionSeq(start), endSeq: SessionSeq(end) },
     sourceEventSeqs: [startEvent.seq, summaryEvent.seq, ...shadowedSeqs.map(SessionSeq)],
   })
 
@@ -577,4 +578,21 @@ export function regionMessages(session: Session, shadowedSeqs: readonly number[]
   return shadowedSeqs
     .map(seq => session.deriveEventMessage(eventForSeq(events, seq)))
     .filter((message): message is Message => message !== null)
+}
+
+/**
+ * The system prompt in force before `beforeSeq`: the latest non-empty
+ * `system/message` event below that seq (empty later nodes are dormant per
+ * the surface contract, and the head node may only be rewritten by another
+ * `system/message`). Replayed from the log — the durable source of truth —
+ * because `EpochHeader` no longer carries the prompt as of core `0.1.5`.
+ */
+export function sessionSystemPrompt(session: Session, beforeSeq?: number): string | undefined {
+  let prompt: string | undefined
+  for (const event of session.snapshotEvents()) {
+    if (beforeSeq !== undefined && event.seq >= beforeSeq) break
+    if (event.type !== 'system/message' || event.data.message.content.length === 0) continue
+    prompt = event.data.message.content.map(blockText).join('\n')
+  }
+  return prompt
 }

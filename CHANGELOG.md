@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Releases are consolidated: tags are only created for meaningful, coherent
 releases, not for every commit.
 
+## [0.2.2] - 2026-09-12
+
+Port to harness core `@deepseek-ai/dsh-*` `0.1.5-rc.2`. On a `0.1.5` core the
+surface fold rejected the agent loop's durable `system/message` events — core
+made the system prompt a surface-eligible event — so every context tool
+(`context_status` included) failed with `session event "system/message" is not
+surface-eligible and cannot carry surfaceOp`.
+
+### Fixed
+
+- Read the fallback summarizer's `system` from the log's latest non-empty
+  `system/message` event (new `sessionSystemPrompt` in `region.ts`);
+  `EpochHeader` no longer carries a `system` field.
+- Rename the replace `surfaceOp` bounds to `startSeq`/`endSeq` in the commit
+  and restore paths, matching the `0.1.5` surface contract.
+
+### Changed
+
+- Peer/dev dependencies and the workspace override range now admit
+  `^0.1.5-rc.2` (semver excludes prereleases whose `major.minor.patch` tuple
+  differs from the range floor, so the old `^0.1.2-rc.1` never matched
+  `0.1.5-rc.2`).
+- Test fixtures embed the now-required empty assistant `stream` array.
+
 ## [0.2.1] - 2026-09-04
 
 Port to harness core `@deepseek-ai/dsh-*` `0.1.2-rc.1`. Upstream `0.2.0`

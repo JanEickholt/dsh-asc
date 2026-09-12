@@ -54,7 +54,7 @@ describe('commitSurfaceCompaction', () => {
     const replacement = eventOf(events, result.summarySeq + 1, 'user/message')
     expect(isCompactCheckpointSource(replacement.data.source)).toBe(true)
     expect(replacement.data.source).toMatchObject({ compactionId: result.compactionId })
-    expect(replacement.surfaceOp).toEqual({ op: 'replace', start: selection.start, end: selection.end })
+    expect(replacement.surfaceOp).toEqual({ op: 'replace', startSeq: SessionSeq(selection.start), endSeq: SessionSeq(selection.end) })
     expect(replacement.sourceEventSeqs).toEqual([
       result.startSeq,
       result.summarySeq,
@@ -96,6 +96,7 @@ describe('commitSurfaceCompaction', () => {
     const callId = ToolCallId('call-1')
     session.append('step/start', { turn: 1, step: 2 })
     session.append('assistant/message', {
+      stream: [],
       turn: 1,
       step: 2,
       message: createAssistantMessage({
@@ -272,6 +273,7 @@ describe('toolNameIndex cache', () => {
     }), { surfaceOp: 'append' })
     session.append('step/start', { turn, step: 1 })
     const callSeq = session.append('assistant/message', {
+      stream: [],
       turn,
       step: 1,
       message: createAssistantMessage({

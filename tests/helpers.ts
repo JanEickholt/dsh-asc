@@ -79,6 +79,7 @@ export function conversationSession(
       session.append('request/context', { provider: MODEL, model: MODEL, contextWindow: 100_000 })
     }
     session.append('assistant/message', {
+      stream: [],
       turn,
       step: 1,
       message: createAssistantMessage({
@@ -111,6 +112,7 @@ export function closedSession(turns = 3, text = 'fixture content '.repeat(30).tr
       })
     }
     session.append('assistant/message', {
+      stream: [],
       turn,
       step: 1,
       message: createAssistantMessage({

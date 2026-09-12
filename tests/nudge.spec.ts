@@ -396,6 +396,7 @@ function toolSession(): ReturnType<typeof conversationSession> {
   }), { surfaceOp: 'append' })
   session.append('step/start', { turn, step: 1 })
   session.append('assistant/message', {
+    stream: [],
     turn,
     step: 1,
     message: createAssistantMessage({

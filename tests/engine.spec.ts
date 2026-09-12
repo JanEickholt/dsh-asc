@@ -399,6 +399,7 @@ function toolTurnSession(results = 1): Session {
   session.append('step/start', { turn, step: 1 })
   const calls = Array.from({ length: results }, (_, index) => ToolCallId(`call-${index}`))
   session.append('assistant/message', {
+    stream: [],
     turn,
     step: 1,
     message: createAssistantMessage({

@@ -109,7 +109,7 @@ describe('tierSnapshot', () => {
       content: [{ type: 'text', text: 'the original transcript is back' }],
       source: { kind: 'plugin', plugin: 'dsh-asc', op: 'decompress', compactionId: compacted.compactionId },
     }), {
-      surfaceOp: { op: 'replace', start: SessionSeq(checkpointSeq), end: SessionSeq(checkpointSeq) },
+      surfaceOp: { op: 'replace', startSeq: SessionSeq(checkpointSeq), endSeq: SessionSeq(checkpointSeq) },
       sourceEventSeqs: [SessionSeq(checkpointSeq), ...compacted.shadowedSeqs],
     })
     const snapshot = tierSnapshot(session)
@@ -121,6 +121,7 @@ describe('tierSnapshot', () => {
     const session = conversationSession(2)
     void tierSnapshot(session)
     const appended = session.append('assistant/message', {
+      stream: [],
       turn: 2,
       step: 1,
       message: createAssistantMessage({
