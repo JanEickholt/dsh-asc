@@ -181,6 +181,13 @@ All fields are optional; every unknown key fails plugin load.
 | `maxTokens` | `60000` | Combined restored-token budget per call; over-budget targets are skipped and reported. |
 | `maxBlocks` | `8` | Maximum checkpoints restored per call; exceeding it is a hard error. |
 
+### `projection`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | `true` | Mount the reversible tool-result projection service (independent of `ctx.compaction`; `false` never disables compaction or the overflow pruner). |
+| `thresholdTokens` | `1000` | Per text-block token budget, priced with the real token meter. Blocks over budget are compressed before they enter the context; the original stays byte-exact in the session log and is recoverable with `context_retrieve`. |
+
 `context_decompress` restores in place: the restored transcript is
 committed back into the surface at the checkpoint's own position (the
 checkpoint node is shadowed by a `user/message` carrying the original
@@ -197,7 +204,7 @@ path.
 The plugin injects a pinned compression-philosophy section into the system
 prompt (`tool:dsh-asc`, order 114): the two failure modes, the
 single test ("is this content still needed by the current task step?"),
-proactive frugality, reversibility, and the five-tool workflow. The
+proactive frugality, reversibility, and the six-tool workflow. The
 doctrine also encodes the tier operating model explicitly: capture raw
 spans into tier 1, distill settled tier-1 piles into tier 2 with the
 TIER 2 DISTILLATION rules, condense settled tier-2 piles into tier 3 with

@@ -1,12 +1,13 @@
 /**
- * The five model-facing context tools.
+ * The six model-facing context tools.
  *
  * `context_compress` commits model-chosen ranges with model-written
  * summaries; `context_decompress` restores compressed content by replaying
  * the log; `context_recap` re-reads checkpoint summaries; `context_status`
  * reports usage, checkpoints, tiers, and recommendations; `context_search`
  * runs full-text search over the complete session log — including shadowed
- * (compressed) events.
+ * (compressed) events; `context_retrieve` returns the byte-exact original of
+ * a projected or pruner-truncated tool result by hash or seq.
  *
  * @module dsh-asc/tools
  */
@@ -14,11 +15,13 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import { defineTool, type ToolRunContext } from '@deepseek-ai/dsh-tools'
-import type { MessageSource } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEventSearchRequest, SessionEventSurface, SessionSearchRequest } from '@deepseek-ai/dsh-session-query'
 import type { AgenticCompactionEngine } from '../engine/engine.ts'
+import { contentHash } from '../projection/projection.ts'
 import { tierSnapshot } from '../engine/tier.ts'
 import { textPreview } from '../utils/text.ts'
 
@@ -103,7 +106,7 @@ function requireAgent(exec: ToolRunContext): NonNullable<ToolRunContext['agent']
   return exec.agent
 }
 
-/** Register the five context tools on a context. */
+/** Register the six context tools on a context. */
 export function registerContextTools(ctx: Context, engine: AgenticCompactionEngine): () => void {
   const disposers: Array<() => void> = []
   try {
@@ -470,6 +473,64 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
         return searchContext(ctx, agent.session.id, exec, args) as unknown as JsonValue
       },
     })));
+
+    disposers.push(ctx.tools.register(defineTool({
+      name: 'context_retrieve',
+      description: [
+        'Return the full byte-exact original of a projected tool result.',
+        'Oversized tool results are compressed into compact text before they enter context; a marker inside the compressed text names the original: `context_retrieve(hash="...")` plus the original event seq. The original stays in the session log, so retrieval works after restarts — nothing expires.',
+        'Args (exactly one required): hash — the 24-hex key from a projection marker, looked up over this session log; seq — a tool-result event seq read directly (this also recovers a pruner-truncated original whose marker carries no hash). When both are given, seq wins and hash must match the stored original.',
+        'Unknown or mismatched hash, or a seq that is not a tool result, returns a diagnostic string — content is never fabricated.',
+      ].join('\n'),
+      parameters: {
+        hash: {
+          type: 'string',
+          description: '24-hex retrieval key from a projection marker: context_retrieve(hash="abc...").',
+        },
+        seq: {
+          type: 'number',
+          description: 'Tool-result event seq to read the original from, e.g. the seq named in a projection marker.',
+        },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            found: { type: 'boolean', required: true },
+            hash: { type: 'string' },
+            originalSeq: { type: 'number' },
+            shadowed: { type: 'boolean', description: 'True when the original is off the live surface (projected or pruned).' },
+            diagnostic: { type: 'string', description: 'Why nothing was found; present only when found is false.' },
+            content: {
+              type: 'array',
+              items: { type: 'object', additionalProperties: true },
+              description: 'The stored original content blocks, byte-exact; present only when found is true.',
+            },
+          },
+        },
+        render: (args, value) => {
+          // Byte-exact contract: found results replay the stored content
+          // blocks verbatim, with no added framing text. The schema-typed
+          // value re-enters the ContentBlock seam here (lossless JSON).
+          if (value.found === true) {
+            const content = (value.content ?? []) as unknown as ContentBlock[]
+            if (content.length > 0) return content.map(block => ({ ...block }))
+            return [{ type: 'text', text: '(original stored with empty content)' }]
+          }
+          const parts = [
+            value.diagnostic === undefined ? 'no stored original found' : String(value.diagnostic),
+          ]
+          if (typeof args.hash === 'string') parts.push(`requested hash: ${args.hash}`)
+          if (typeof args.seq === 'number') parts.push(`requested seq: ${args.seq}`)
+          return [{ type: 'text', text: parts.join(' — ') }]
+        },
+      },
+      async execute(args, exec: ToolRunContext) {
+        const agent = requireAgent(exec)
+        return retrieveOriginal(agent.session, args)
+      },
+    })));
   } catch (error: unknown) {
     for (const dispose of disposers) dispose()
     throw error
@@ -624,4 +685,129 @@ async function searchContext(
         + ' report it to the user so the log can be moved or repaired.',
     }
   }
+}
+
+/** Bounded accelerator cache: hash → original seq, verified on every hit. */
+const HASH_INDEX_MAX_ENTRIES = 1024
+/** Hashes resolved for one session, dying with the session object. */
+const hashIndexes = new WeakMap<Session, Map<string, number>>()
+
+/** Result shape of `context_retrieve`, mirroring its declared output schema. */
+type RetrieveResult = {
+  found: boolean
+  hash?: string
+  originalSeq?: number
+  shadowed?: boolean
+  diagnostic?: string
+  content?: Record<string, JsonValue>[]
+}
+
+/**
+ * Read one tool-result original from the session's durable log.
+ *
+ * No side store exists: the original is the shadowed `tool/result` event the
+ * projection (or the overflow pruner) left in the log, so a lookup always
+ * re-reads and re-verifies the event content — a stale cache entry can never
+ * fabricate content.
+ */
+function retrieveOriginal(
+  session: Session,
+  args: { hash?: string; seq?: number },
+): RetrieveResult {
+  if (typeof args.hash === 'string' && args.hash.length > 0 && args.seq !== undefined) {
+    const direct = readSeqOriginal(session, args.seq)
+    if (direct.found === true && direct.hash !== args.hash) {
+      return {
+        found: false,
+        hash: args.hash,
+        originalSeq: args.seq,
+        diagnostic: `stored original at seq ${args.seq} hashes to ${String(direct.hash)}, not ${args.hash}`,
+      }
+    }
+    return direct
+  }
+  if (typeof args.hash === 'string' && args.hash.length > 0) {
+    return readHashOriginal(session, args.hash)
+  }
+  if (typeof args.hash === 'string') {
+    throw new Error('context_retrieve requires a non-empty hash')
+  }
+  if (args.seq !== undefined) return readSeqOriginal(session, args.seq)
+  throw new Error('context_retrieve requires hash or seq')
+}
+
+/** Read one tool-result original by log seq, verifying the content shape. */
+function readSeqOriginal(
+  session: Session,
+  seq: number,
+): RetrieveResult {
+  if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 0) {
+    throw new Error(`context_retrieve seq must be a non-negative integer, got ${String(seq)}`)
+  }
+  const event = session.snapshotEvents()[seq]
+  if (event === undefined) {
+    return { found: false, originalSeq: seq, diagnostic: `no event at seq ${seq} in this session log` }
+  }
+  if (event.type !== 'tool/result') {
+    return {
+      found: false,
+      originalSeq: seq,
+      diagnostic: `seq ${seq} is a ${event.type} event, not a tool result`,
+    }
+  }
+  const inner = event.data.message.content[0]?.content
+  if (!Array.isArray(inner)) {
+    return { found: false, originalSeq: seq, diagnostic: `seq ${seq} carries no stored result content` }
+  }
+  // The lossless JSON blocks re-enter the JsonValue seam here.
+  return {
+    found: true,
+    hash: contentHash(inner as unknown as ContentBlock[]),
+    originalSeq: seq,
+    shadowed: !session.surface.nodes.includes(SessionSeq(seq)),
+    content: inner as unknown as Record<string, JsonValue>[],
+  }
+}
+
+/** Read one tool-result original by its content hash, scanning on miss. */
+function readHashOriginal(session: Session, hash: string): RetrieveResult {
+  let index = hashIndexes.get(session)
+  if (index === undefined) {
+    index = new Map()
+    hashIndexes.set(session, index)
+  }
+  const cached = index.get(hash)
+  if (cached !== undefined) {
+    const direct = readSeqOriginal(session, cached)
+    // The cache only accelerates: a stale or wrong entry is re-verified and
+    // dropped, so a hit can never fabricate content.
+    if (direct.found === true && direct.hash === hash) return direct
+    index.delete(hash)
+  }
+  for (const event of session.snapshotEvents()) {
+    if (event.type !== 'tool/result') continue
+    const inner = event.data.message.content[0]?.content
+    if (!Array.isArray(inner)) continue
+    const eventHash = contentHash(inner as unknown as ContentBlock[])
+    if (eventHash !== hash) continue
+    rememberHash(index, hash, event.seq)
+    return readSeqOriginal(session, event.seq)
+  }
+  return {
+    found: false,
+    hash,
+    diagnostic: 'no stored original matches hash "' + hash + '" in this session log — '
+      + 'the hash must come from a projection marker of this session',
+  }
+}
+
+/** Bounded LRU insert: re-hits refresh recency; evictions only cost a rescan. */
+function rememberHash(index: Map<string, number>, hash: string, seq: number): void {
+  index.delete(hash)
+  while (index.size >= HASH_INDEX_MAX_ENTRIES) {
+    const oldest = index.keys().next()
+    if (oldest.done) break
+    index.delete(oldest.value)
+  }
+  index.set(hash, seq)
 }

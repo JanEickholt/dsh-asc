@@ -8,6 +8,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Releases are consolidated: tags are only created for meaningful, coherent
 releases, not for every commit.
 
+## [0.3.0] - 2026-09-14
+
+Feature release: post-execute **reversible tool-result projection** and the
+`context_retrieve` tool, adapted from the MIT-licensed flowctx-dsh port of
+flowctx (see `NOTICE` for the full attribution chain).
+
+Oversized tool results used to enter the context verbatim and were only
+trimmed later by the overflow-triggered tool-result pruner — blind, lossy,
+and only when something else already failed. The projection service now
+compresses oversized tool results BEFORE they enter the context, content-
+aware and reversible: the original stays byte-exact in the session log
+(single source of truth — no side store), and the replacement carries a
+retrieval marker naming the original's hash and seq.
+
+### Added
+
+- `toolResultProjection`, a separate optional cordis service (independent of
+  `ctx.compaction`; the pruner stays mounted as the overflow fallback):
+  - listens on the `tools/post-execute` waterfall and measures each
+    candidate's text blocks with the real `ctx.tokenMeter` service —
+    thresholds are token-based, no char heuristics;
+  - returns every waterfall decision UNCHANGED, so the original event still
+    lands in the log first; the reversible commit then shadows the original
+    (compaction/prune) and appends the replacement, exactly like the
+    tool-result pruner's shadow+replace pattern;
+  - reducers: structured explorers for JSON/YAML/XML/delimited/code,
+    git-diff hunk compaction, search-result clipping, and CLI rule
+    reduction; a meter-priced head/tail slice as the final fallback;
+  - markers are emitted ONLY when the original is durably stored in the log,
+    so a marker never dangles; if the materialized result shrinks or the
+    plan cannot beat the threshold, nothing is committed;
+  - store/persistence failures during a commit are logged loudly — the
+    original remains byte-exact in the log.
+- `context_retrieve`, the sixth context tool: returns a stored original
+  byte-exact by 24-hex sha-256 hash or by seq, from the shadowed log event;
+  unknown or expired keys return a diagnostic string, never fabricated
+  content. Originals survive restarts because they are session-log events.
+- Config block `projection` with `enabled` (default `true`) and
+  `thresholdTokens` (default `1000`).
+
 ## [0.2.2] - 2026-09-12
 
 Port to harness core `@deepseek-ai/dsh-*` `0.1.5-rc.2`. On a `0.1.5` core the

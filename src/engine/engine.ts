@@ -184,6 +184,10 @@ function engineConfigSchema(): z<AgenticCompactionConfig> {
       maxTokens: maxTokensSchema,
       maxBlocks: maxTokensSchema,
     }),
+    projection: z.object({
+      enabled: z.boolean(),
+      thresholdTokens: maxTokensSchema,
+    }),
   })
 }
 

@@ -57,7 +57,7 @@ function recordingRegistry(ctx: Context): {
 }
 
 describe('registerContextTools', () => {
-  it('registers the five context tools with model-facing schemas', () => {
+  it('registers the six context tools with model-facing schemas', () => {
     const ctx = createContext()
     const registry = recordingRegistry(ctx)
     const engine = new AgenticCompactionEngine(ctx, { auto: false })
@@ -67,6 +67,7 @@ describe('registerContextTools', () => {
       'context_compress',
       'context_decompress',
       'context_recap',
+      'context_retrieve',
       'context_search',
       'context_status',
     ])
@@ -89,7 +90,7 @@ describe('registerContextTools', () => {
     const registry = recordingRegistry(ctx)
     const engine = new AgenticCompactionEngine(ctx, { auto: false })
     const dispose = registerContextTools(ctx, engine)
-    expect(registry.tools).toHaveLength(5)
+    expect(registry.tools).toHaveLength(6)
     dispose()
     expect(registry.tools).toHaveLength(0)
     dispose()

@@ -26,8 +26,9 @@ src/           plugin entry + public API surface
   policy/      policy and gating
     protected.ts protected-node policy
     nudge.ts   nudge state machine (pure fold + decision)
-  tools/       the five model tools
-    tools.ts   context_status/compress/decompress/recap/search
+  tools/       the six model tools
+    tools.ts   context_status/compress/decompress/recap/search/retrieve
+  projection/  reversible tool-result projection (service + reducers)
   utils/       shared helpers
     text.ts    text serialization and preview helpers
 tests/         vitest suites

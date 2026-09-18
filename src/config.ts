@@ -54,6 +54,7 @@ const AGENTIC_CONFIG_KEYS: ReadonlySet<string> = new Set([
   'fallback',
   'protection',
   'decompress',
+  'projection',
 ])
 
 const COMPRESS_KEYS: ReadonlySet<string> = new Set(['autoExpandToolPairs'])
@@ -99,6 +100,8 @@ const PROTECTION_KEYS: ReadonlySet<string> = new Set([
 ])
 
 const DECOMPRESS_KEYS: ReadonlySet<string> = new Set(['maxTokens', 'maxBlocks'])
+
+const PROJECTION_KEYS: ReadonlySet<string> = new Set(['enabled', 'thresholdTokens'])
 
 /**
  * Resolve and validate the full agentic compaction configuration.
@@ -250,6 +253,18 @@ export function resolveConfig(config: AgenticCompactionConfig = {}): ResolvedCon
     }
   })
 
+  const projection = resolveGroup(config.projection, PROJECTION_KEYS, 'AgenticCompactionConfig.projection', {
+    enabled: true,
+    thresholdTokens: 1000,
+  } as const, (group, name) => {
+    if (group.enabled !== undefined && typeof group.enabled !== 'boolean') {
+      throw new Error(`${name}.enabled must be a boolean`)
+    }
+    if (group.thresholdTokens !== undefined) {
+      assertPositiveInteger(`${name}.thresholdTokens`, group.thresholdTokens)
+    }
+  })
+
   const compress = resolveGroup(config.compress, COMPRESS_KEYS, 'AgenticCompactionConfig.compress', {
     autoExpandToolPairs: true,
   } as const, (group, name) => {
@@ -284,6 +299,7 @@ export function resolveConfig(config: AgenticCompactionConfig = {}): ResolvedCon
     fallback,
     protection,
     decompress,
+    projection,
   })
 }
 

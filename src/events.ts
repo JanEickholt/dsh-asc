@@ -19,7 +19,13 @@
  *   op: 'decompress', compactionId }` carrying the replayed transcript.
  * - fallback compactions (overflow recovery or manual compaction)
  *   announce themselves with a `user/message` whose source purpose is
- *   `overflow-notice`.
+ *   `overflow-notice`;
+ * - reversible tool-result projection uses the tool-result pruner's
+ *   shadow+replace pair: a `compaction/prune` shadow price, then a
+ *   replacement `tool/result` whose content embeds the retrieval marker
+ *   naming the original's 24-hex sha-256 hash and seq. The projected
+ *   original is the shadowed log event itself — no custom event type, no
+ *   side store.
  *
  * Nudge cadence and tier baselines are transient in-memory state (a fresh
  * process re-establishes the baseline before nudging again), documented in

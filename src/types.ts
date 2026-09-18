@@ -133,6 +133,20 @@ export interface CompressToolConfig {
   autoExpandToolPairs?: boolean
 }
 
+/**
+ * Post-execute reversible tool-result projection: oversized tool results are
+ * compressed content-aware BEFORE they enter a model request, while the
+ * original stays durable as a shadowed session-log event retrievable through
+ * `context_retrieve`. A separate optional service — never part of
+ * `ctx.compaction`; the overflow-only pruner remains the fallback.
+ */
+export interface ProjectionConfig {
+  /** Master switch; `false` never mounts the projection service. Defaults to `true`. */
+  enabled?: boolean
+  /** Metered token ceiling per text block; blocks above it are projected. Defaults to `1000`. */
+  thresholdTokens?: number
+}
+
 /** Complete agentic compaction configuration. */
 export interface AgenticCompactionConfig extends CompactionPolicyFields {
   /** Exact provider/model overrides; duplicate targets fail plugin load. */
@@ -153,6 +167,8 @@ export interface AgenticCompactionConfig extends CompactionPolicyFields {
   protection?: ProtectionConfig
   /** Decompression budget. */
   decompress?: DecompressConfig
+  /** Post-execute reversible tool-result projection. */
+  projection?: ProjectionConfig
 }
 
 /** Exactly one validated retention form. */
@@ -175,6 +191,7 @@ export interface ResolvedConfig {
   readonly fallback: Required<FallbackConfig>
   readonly protection: Required<ProtectionConfig>
   readonly decompress: Required<DecompressConfig>
+  readonly projection: Required<ProjectionConfig>
 }
 
 /** One model-chosen compression range with its model-written summary. */

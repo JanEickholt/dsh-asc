@@ -70,7 +70,7 @@ dsh plugin --profile <name> add "link:$(pwd)"
 - 在上下文偏高时按需注入 **nudge 提示**（节奏门控；迭代类 nudge 还要求真实 token 增长，不会每轮打扰）；
 - 在溢出或手动压缩时走**确定性降级**（LLM 摘要；挂载可选的上游工具结果修剪器时先修剪），无需模型配合。
 
-插件提供五个模型工具：
+插件提供六个模型工具：
 
 | 工具 | 作用 |
 |---|---|
@@ -79,8 +79,32 @@ dsh plugin --profile <name> add "link:$(pwd)"
 | `context_decompress` | 撤销压缩：原文回到表面中检查点原位置（层级感知，`full: true` 到原始内容） |
 | `context_recap` | 重新读取检查点摘要，不解压原文 |
 | `context_search` | 全量日志全文检索（含已压缩内容） |
+| `context_retrieve` | 按 24 位十六进制 sha-256 哈希或 seq 字节级原样返回被投影的工具结果原文 |
 
 压缩后的内容永不丢失：原文保留在会话日志里，随时可解压或检索。
+
+### 可逆的工具结果投影
+
+与模型驱动的压缩分开，一个可选的投影服务在超大工具结果进入上下文**之前**
+就压缩它们。它监听 `tools/post-execute` waterfall，用真实的 token 计量服务
+测每个候选文本块，并且原样返回 waterfall 决策——原始事件先落日志。随后一
+次可逆提交 shadow 原文并追加替换内容，替换内容里嵌有检索标记：
+
+```
+[dsh-asc projection: structured:json compressed 4200→312 tokens. Full
+original (seq 57, stored in this session log): context_retrieve(hash="…").]
+```
+
+- 原文按字节原样留在会话日志里（单一事实来源，无侧面存储），重启后仍在；
+  只有原文已持久落日志时才发出标记——标记永不悬空。
+- 压缩器按内容分派：JSON/YAML/XML/分隔文本/代码的结构化探索器、git diff
+  hunk 压缩、搜索结果裁剪、CLI 规则压缩，最后的兜底是按计量定价的首尾切片。
+  `context_retrieve` 按哈希或 seq 返回字节级原文；未知键返回诊断字符串，
+  绝不编造内容。
+- 投影挂载为独立的 cordis 服务行，与 `ctx.compaction` 无关——关闭投影
+  不会关闭压缩，溢出触发的工具结果修剪器仍作为兜底保留。
+- 配置：`projection.enabled`（默认 `true`）、`projection.thresholdTokens`
+  （默认 `1000`）。
 
 系统提示词把这些工具串成一条操作闭环：把已经消费的原始工作压成 T1
 检查点，把稳定下来的 T1 堆蒸馏成 T2 决策、再把 T2 堆凝结成 T3 事实索引。
@@ -99,14 +123,15 @@ dsh plugin --profile <name> add "link:$(pwd)"
 
 ```
 src/
-  index.ts      插件入口：注册 ctx.compaction 与五个工具
+  index.ts      插件入口：注册 ctx.compaction 与六个工具
   config.ts     严格配置校验
   types.ts      共享配置与结果类型
   events.ts     会话事件词汇说明（不声明自定义成员）
   invariant.ts  运行时不变式伴生（子路径导出）
   engine/       压缩引擎核心（engine、region、tier、quality-gate、fallback、prompt、restore）
   policy/       受保护节点策略与 nudge 状态机
-  tools/        五个模型工具
+  tools/        六个模型工具
+  projection/   可逆工具结果投影服务与压缩器
   utils/        共享文本工具
 tests/          vitest 测试套件
 docs/           usage、design、analysis、e2e-validation
@@ -122,4 +147,4 @@ docs/           usage、design、analysis、e2e-validation
 
 ## License
 
-MIT。算法借鉴 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（MIT），仅借鉴 [opencode-acp](https://github.com/ranxianglei/opencode-acp)（AGPL）的思想，无源码。见 [NOTICE](NOTICE)。
+MIT。算法借鉴 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（MIT），仅借鉴 [opencode-acp](https://github.com/ranxianglei/opencode-acp)（AGPL）的思想，无源码。工具结果投影改编自 MIT 许可的 flowctx-dsh（flowctx 的 DSH 移植）。见 [NOTICE](NOTICE)。

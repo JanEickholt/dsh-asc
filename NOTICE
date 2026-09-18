@@ -24,5 +24,18 @@ This project builds on and adapts concepts from:
      code from opencode-acp or its dependencies is copied into this
      repository; all implementations here are original.
 
-This repository is MIT licensed. It is not affiliated with DeepSeek or
-opencode-acp.
+3. flowctx-dsh, MIT License, Copyright (c) 2026 flowctx-dsh contributors
+   (a DeepSeek Harness port of flowctx, https://github.com/Ayou-Claw/flowctx).
+   - The post-execute reversible projection design and the
+     `context_retrieve` seam are adapted from flowctx-dsh's MIT-licensed
+     sources. flowctx-dsh itself vendors the following, which this
+     repository's `src/projection/vendor/` adapts in turn:
+     - opensquilla (Apache-2.0): the CLI tool-result rule engine
+       (`cli-rules.ts`), itself derived from tokenjuice (MIT).
+     - tokenjuice (MIT): the deterministic JSON/diff/log reducers
+       (`json-compress.ts`).
+     - lossless-claw (MIT): the structured/code explorers
+       (`structural-explorers.ts`).
+
+This repository is MIT licensed. It is not affiliated with DeepSeek,
+opencode-acp, or flowctx-dsh.

@@ -93,7 +93,7 @@ and receives a fresh gate evaluation. An in-place `context_decompress` also
 resets the transient nudge baseline, so the model's own restore is not
 counted as unexpected growth on the next step.
 
-## 4. The five tools
+## 4. The six tools
 
 ### `context_compress`
 Compresses one or more surface ranges into model-written checkpoints.
@@ -185,6 +185,12 @@ session-scope shadowed hits also carry the owning `checkpointId`. Requires
 a session-query backend such as
 `@deepseek-ai/dsh-session-query-sqlite`.
 
+### `context_retrieve`
+Returns a projected tool-result original byte-exact by its 24-hex sha-256
+hash or by seq, read from the shadowed session-log event (single source of
+truth — no side store). Unknown or out-of-range keys return a diagnostic
+string; content is never fabricated.
+
 ## 5. Automatic behavior
 
 Registered only when `auto: true` (default):
@@ -210,6 +216,39 @@ Nudge baseline semantics: a nudge resets its own cadence; a compression
 resets the baseline of the tier it *consumed* (a tier-2 checkpoint resets
 the tier-1 pile; a tier-1 capture only grows it). This is what lets
 distillation accumulate growth across captures.
+
+## 5b. Reversible tool-result projection
+
+A separate optional cordis service (`toolResultProjection`), independent of
+`ctx.compaction` — mounting or disabling it never disables compaction, and
+the overflow-triggered tool-result pruner stays mounted as the fallback.
+
+Pipeline, in loop order:
+
+1. `tools/post-execute` waterfall (pass-through): measure the decision's
+   text blocks with the real `ctx.tokenMeter` service and park an
+   oversized candidate in a small in-memory pending map. The waterfall
+   decision is returned UNCHANGED — replacing content here would erase the
+   original from the log and dangle the marker.
+2. The agent loop materializes the settled `tool/result` event (surface
+   append). The `session/event` firehose matches it against the pending
+   map and defers a commit microtask (appends cannot reenter an observer).
+3. The commit re-verifies (a shrunk materialization commits nothing), plans
+   the reduction per text block — structured explorers for
+   JSON/YAML/XML/delimited/code, git-diff hunk compaction, search-result
+   clipping, CLI rule reduction, then a meter-priced head/tail slice —
+   and only commits when the plan beats `projection.thresholdTokens`.
+4. The commit appends the tool-result pruner's shadow+replace pair: a
+   `compaction/prune` shadow price, then a replacement `tool/result` whose
+   content embeds the retrieval marker
+   `[dsh-asc projection: <kind> compressed X→Y tokens. Full original (seq N,
+   stored in this session log): context_retrieve(hash="…").]`.
+
+A marker is emitted ONLY when the original is durably stored in the log, so
+a marker never dangles. The pending map is bounded; commit failures (append
+target errors) are logged loudly and leave the original byte-exact in the
+log. Originals survive restarts because they are ordinary session-log
+events.
 
 ## 6. Deterministic fallback
 

@@ -40,3 +40,10 @@
         decompress:
           maxTokens: 60000
           maxBlocks: 8
+        # Reversible tool-result projection (optional service, independent
+        # of ctx.compaction; disable without touching compaction):
+        #   projection: { enabled: false }  — service not mounted
+        #   projection: { thresholdTokens: 1000 } — per-block token budget
+        projection:
+          enabled: true
+          thresholdTokens: 1000

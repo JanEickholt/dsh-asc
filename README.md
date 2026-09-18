@@ -95,7 +95,7 @@ After installing and restarting, no configuration is required — the plugin:
   pruning when the optional upstream pruner is mounted) on overflow or
   manual compaction, without requiring model cooperation.
 
-The plugin provides five model tools:
+The plugin provides six model tools:
 
 | Tool | Purpose |
 |---|---|
@@ -104,9 +104,39 @@ The plugin provides five model tools:
 | `context_decompress` | undo a compaction: the original text returns to the surface at the checkpoint's own position (tier-aware; `full: true` reaches raw content) |
 | `context_recap` | re-read checkpoint summaries without decompressing the originals |
 | `context_search` | full-text search over the whole log (including compacted content) |
+| `context_retrieve` | return a projected tool-result original byte-exact by its 24-hex sha-256 hash or seq |
 
 Compacted content is never lost: the originals stay in the session log and
 can be decompressed or searched at any time.
+
+### Reversible tool-result projection
+
+Separately from model-driven compaction, an optional projection service
+compresses oversized tool results BEFORE they enter the context. It listens
+on the `tools/post-execute` waterfall, measures every candidate's text
+blocks with the real token meter, and returns every decision unchanged so
+the original event still lands in the log first. A reversible commit then
+shadows the original and appends a replacement whose content embeds a
+retrieval marker:
+
+```
+[dsh-asc projection: structured:json compressed 4200→312 tokens. Full
+original (seq 57, stored in this session log): context_retrieve(hash="…").]
+```
+
+- The original stays byte-exact in the session log (single source of truth;
+  no side store), so it survives restarts; a marker is emitted only when the
+  original is durably stored — a marker never dangles.
+- Reducers are content-aware: structured explorers for
+  JSON/YAML/XML/delimited/code, git-diff hunk compaction, search-result
+  clipping, CLI rule reduction, and a meter-priced head/tail slice as the
+  last fallback. `context_retrieve` returns the stored original byte-exact
+  by hash or seq; unknown keys get a diagnostic, never fabricated content.
+- The projection mounts as its own cordis service row, independent of
+  `ctx.compaction` — disabling it never disables compaction, and the
+  overflow-triggered tool-result pruner stays mounted as the fallback.
+- Config: `projection.enabled` (default `true`),
+  `projection.thresholdTokens` (default `1000`).
 
 The system prompt ties the tools into one operating loop: capture consumed
 raw work into tier-1 checkpoints, distill settled tier-1 piles into tier-2
@@ -133,7 +163,7 @@ lives, and decompression always proceeds one tier at a time.
 
 ```
 src/
-  index.ts      plugin entry: registers ctx.compaction + the five tools
+  index.ts      plugin entry: registers ctx.compaction + the six tools
   config.ts     strict config validation
   types.ts      shared config and result types
   events.ts     session-event vocabulary documentation (no custom members)
@@ -141,7 +171,8 @@ src/
   engine/       the compaction engine core (engine, region, tier,
                 quality gate, fallback, prompt, restore)
   policy/       protected-node policy and the nudge state machine
-  tools/        the five model tools
+  tools/        the six model tools
+  projection/   reversible tool-result projection service + reducers
   utils/        shared text helpers
 tests/          vitest suites
 docs/           usage, design, analysis, e2e-validation
@@ -160,4 +191,5 @@ docs/           usage, design, analysis, e2e-validation
 MIT. Algorithmic inspiration from
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT);
 only the ideas of [opencode-acp](https://github.com/ranxianglei/opencode-acp)
-(AGPL) are used, no source code. See [NOTICE](NOTICE).
+(AGPL) are used, no source code. The tool-result projection is adapted from
+the MIT-licensed flowctx-dsh port of flowctx. See [NOTICE](NOTICE).
