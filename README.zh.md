@@ -137,6 +137,27 @@ tests/          vitest 测试套件
 docs/           usage、design、analysis、e2e-validation
 ```
 
+## 搭配官方 tool-result pruner 使用
+
+dsh-asc 的目标是执行后**可逆**的工具结果压缩：每次投影保留 `context_retrieve`
+查找表，原始内容随时可恢复。官方的
+[`@deepseek-ai/dsh-compaction-tool-result-pruner`](https://github.com/deepseek-ai/deepseek-harness)
+（dsh-compaction 补丁集里的工具剪裁补丁）则作为最后一道溢出防线：请求仍
+溢出上下文窗口时，它把过大的工具结果截断为 head + tail，让本轮对话存活。
+
+建议两者都安装：
+
+- **dsh-asc 投影** — 主路径：可逆的执行后上下文管理。
+- **tool-result pruner** — 溢出保险：仅在请求真正溢出失败后，才把结果截为
+  head 4096 + tail 1024 字符。
+
+注意：pruner 截断不可逆，且只在溢出时触发——工具执行完成到请求失败之间
+没有任何干预，过大的结果会以完整长度滞留在本轮上下文里。以投影为主，
+pruner 是安全网而非标准路径。
+
+两者可以干净地组合：`pruneSession()` 幂等，投影维护自己的检索索引，
+任意先后顺序都安全。
+
 ## 文档
 
 | 文档 | 内容 |
