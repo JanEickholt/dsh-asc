@@ -1,8 +1,8 @@
 # dsh-asc
 
-[![npm](https://img.shields.io/npm/v/dsh-asc.svg)](https://www.npmjs.com/package/dsh-asc)
-[![GitHub tag](https://img.shields.io/github/v/tag/lmst2/dsh-asc)](https://github.com/lmst2/dsh-asc/releases)
-[![license](https://img.shields.io/github/license/lmst2/dsh-asc.svg)](LICENSE)
+[![npm](https://img.shields.io/npm/v/@internetnutzer/dsh-asc.svg)](https://www.npmjs.com/package/@internetnutzer/dsh-asc)
+[![GitHub tag](https://img.shields.io/github/v/tag/JanEickholt/dsh-asc)](https://github.com/JanEickholt/dsh-asc/releases)
+[![license](https://img.shields.io/github/license/JanEickholt/dsh-asc.svg)](LICENSE)
 
 [English](./README.md) | [中文](./README.zh.md)
 
@@ -35,13 +35,13 @@ than the release supports.
 **From npm** (recommended):
 
 ```sh
-dsh plugin --profile <name> add dsh-asc
+dsh plugin --profile <name> add @internetnutzer/dsh-asc
 ```
 
 **From GitHub** — to use a commit newer than the npm release:
 
 ```sh
-dsh plugin --profile <name> add github:lmst2/dsh-asc
+dsh plugin --profile <name> add github:JanEickholt/dsh-asc
 ```
 
 `dsh plugin` adds the plugin to the profile and enables it automatically
@@ -177,6 +177,31 @@ src/
 tests/          vitest suites
 docs/           usage, design, analysis, e2e-validation
 ```
+
+## Using dsh-asc alongside the official tool-result pruner
+
+dsh-asc aims at post-execute, **reversible** tool-result compression: every
+projection keeps a `context_retrieve` lookup so the full original can be
+restored at any time. The official
+[`@deepseek-ai/dsh-compaction-tool-result-pruner`](https://github.com/deepseek-ai/deepseek-harness)
+(the tool-pruning patch shipped by the dsh-compaction bundle) complements this
+as a last-resort overflow guard: when a request still overflows the context
+window, it truncates oversized tool results to head + tail so the turn
+survives.
+
+We recommend installing both:
+
+- **dsh-asc projection** — primary path: reversible post-execute management.
+- **tool-result pruner** — overflow insurance: caps results at head 4096 +
+  tail 1024 characters, but only after a request actually fails on overflow.
+
+Caveat: pruner truncation is irreversible and fires only on overflow —
+nothing intervenes between a tool's execution and the failed request, so
+oversized results sit at full length mid-turn. Rely on projection first; the
+pruner is the safety net, not the standard path.
+
+The two compose cleanly: `pruneSession()` is idempotent and projection keeps
+its own retrieval index, so either can run first.
 
 ## Documentation
 

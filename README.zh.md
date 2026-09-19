@@ -1,8 +1,8 @@
 # dsh-asc
 
-[![npm](https://img.shields.io/npm/v/dsh-asc.svg)](https://www.npmjs.com/package/dsh-asc)
-[![GitHub tag](https://img.shields.io/github/v/tag/lmst2/dsh-asc)](https://github.com/lmst2/dsh-asc/releases)
-[![license](https://img.shields.io/github/license/lmst2/dsh-asc.svg)](LICENSE)
+[![npm](https://img.shields.io/npm/v/@internetnutzer/dsh-asc.svg)](https://www.npmjs.com/package/@internetnutzer/dsh-asc)
+[![GitHub tag](https://img.shields.io/github/v/tag/JanEickholt/dsh-asc)](https://github.com/JanEickholt/dsh-asc/releases)
+[![license](https://img.shields.io/github/license/JanEickholt/dsh-asc.svg)](LICENSE)
 
 [English](./README.md) | [中文](./README.zh.md)
 
@@ -18,13 +18,13 @@
 **从 npm 安装**（推荐）：
 
 ```sh
-dsh plugin --profile <name> add dsh-asc
+dsh plugin --profile <name> add @internetnutzer/dsh-asc
 ```
 
 **从 GitHub 安装**——想用比 npm 版本更新的提交：
 
 ```sh
-dsh plugin --profile <name> add github:lmst2/dsh-asc
+dsh plugin --profile <name> add github:JanEickholt/dsh-asc
 ```
 
 `dsh plugin` 会把插件加入 profile，并根据包内的 `dsh.bundle` 声明自动启用它；工具和系统提示随该 profile 一起加载。
