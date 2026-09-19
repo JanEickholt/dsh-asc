@@ -250,6 +250,23 @@ target errors) are logged loudly and leave the original byte-exact in the
 log. Originals survive restarts because they are ordinary session-log
 events.
 
+### Prompt-cache cost
+
+Projection cuts are effectively cache-free, by timing rather than by extra
+machinery. The original `tool/result` event exists only in the log: the
+replacement commits in a deferred microtask, still before the next LLM
+request assembles the surface, so the full-size original is never part of
+any sent prompt and there is no cached prefix that the swap could
+invalidate. The replacement occupies the result's tail position — and the
+context tail is uncached on every request regardless, so the only cost is
+a smaller tail refill that would have happened anyway. The replacement
+text is deterministic and never rewritten afterwards, so the prefix from
+that point on stays byte-stable and keeps hitting the cache. This is the
+deliberate opposite of mid-history `context_compress` checkpoints, which
+rewrite the middle of the message list and re-prefill their suffix —
+acceptable there because compression is nudge-gated and rare, while
+projection is frequent and tail-only.
+
 ## 6. Deterministic fallback
 
 `compactIfNeeded('context-overflow')`, `compactNow`, and `compactRegion`
