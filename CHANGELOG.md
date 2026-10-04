@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Releases are consolidated: tags are only created for meaningful, coherent
 releases, not for every commit.
 
-## [Unreleased]
+## [0.3.1] - 2026-10-04
 
 Motivated by the field readings in
 [issue #1](https://github.com/JanEickholt/dsh-asc/issues/1) (recorded in
