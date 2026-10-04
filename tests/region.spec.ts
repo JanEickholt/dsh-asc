@@ -7,7 +7,7 @@ import {
   selectCompactableRange,
   SummaryNotSmallerError,
 } from '../src/engine/region.ts'
-import { SessionSeq } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, SessionSeq, snapshotSessionEvent, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { isProtectedNode, toolNameIndex, validateSurfaceRange, rangeIneligibility } from '../src/policy/protected.ts'
 import { resolveConfig } from '../src/config.ts'
 import { createContext, conversationSession, closedSession, eventOf, MODEL } from './helpers.ts'
@@ -248,6 +248,62 @@ describe('commitSurfaceCompaction', () => {
     const replacement = eventOf(events, result.summarySeq + 1, 'user/message')
     expect(isCompactCheckpointSource(replacement.data.source)).toBe(true)
     expect(replacement.data.source).toMatchObject({
+      kind: 'plugin',
+      plugin: 'compact',
+      compactionId: result.compactionId,
+      quality,
+    })
+  })
+
+  it('keeps the quality record across the persistence round trip', async () => {
+    const ctx = createContext()
+    const session = conversationSession(4)
+    const nodes = session.surface.nodes
+    const quality: import('../src/types.ts').QualityReport = {
+      gate: 'rouge-recall-v2',
+      passed: true,
+      blocking: true,
+      layer: 'pass',
+      metrics: {
+        summaryChars: 220,
+        retentionPct: 8,
+        rouge1F1: 0.42,
+        top20Recall: 0.9,
+        numericRecall: 0.75,
+        layer1MinChars: 200,
+        layer1MinRetentionPct: 1.0,
+        layer2MaxRougeF1: 0.05,
+        layer2MaxTop20Recall: 0.2,
+        layer2MaxNumericRecall: 0.2,
+      },
+    }
+    const result = await commitSurfaceCompaction(
+      { meter: ctx.tokenMeter },
+      session,
+      nodes[0]!,
+      nodes[1]!,
+      {
+        kind: 'model',
+        summary: SUMMARY,
+        provider: MODEL,
+        model: MODEL,
+        quality,
+      },
+      { owner: 'current-turn', stability: 'whole-surface' },
+    )
+    // Storage boundary: detach → JSONL line → parse → validated replay, the
+    // same path a restart or an offline log reader takes. If any layer strips
+    // the plugin provenance fields, the record is lost on disk.
+    const reloaded = Session.create(
+      SessionId('reloaded'),
+      session.snapshotEvents().map(
+        (event) => JSON.parse(JSON.stringify(snapshotSessionEvent(event))) as SessionEvent,
+      ),
+    )
+    const checkpoint = reloaded.deriveMessages()
+      .find((message) => isCompactCheckpointSource(message.source))
+    expect(checkpoint).toBeDefined()
+    expect(checkpoint!.source).toMatchObject({
       kind: 'plugin',
       plugin: 'compact',
       compactionId: result.compactionId,
