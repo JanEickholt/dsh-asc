@@ -326,3 +326,31 @@ Two consequences, one deliberate non-change, one change:
   derive the floor from it instead of inheriting one — is now executable
   against this plugin's own log: floors as deployment-derived constants is
   the transferable part; our 0.20 is only the catastrophic default.
+
+**Our own corpus, measured the same day.** The method needed no volunteer:
+`scripts/quality-scores.ts` recomputes the gate's three signals for every
+fold in the historical session logs — summary text against its own shadowed
+original, the gate's exact scoring shape (only `retentionPct` is skipped;
+it prices the framed checkpoint through the live token meter). One run
+covered 854 folds across 1909 sessions:
+
+| signal | min | p10 | median | p90 | max |
+|---|---|---|---|---|---|
+| rouge1F1 | 0.000 | 0.019 | 0.036 | 0.096 | 0.510 |
+| top20Recall | 0.000 | 0.500 | 0.800 | 0.950 | 1.000 |
+| numericRecall | 0.000 | 0.250 | 0.600 | 0.900 | 1.000 |
+
+- The AND conjunction fires on **8 of 854 folds (0.9%) — identically at
+  every numeric floor from 0.20 through 0.70**. Those eight folds sit at
+  `numericRecall` 0, so the floor choice is not what binds; the conjunction
+  is. The default 0.20 already catches every catastrophic fold a 0.70 would.
+- `numericRecall` alone below floor: 0.20 → 7.1%, 0.50 → 31.7%,
+  0.60 → 47.7%. The knee the reporter saw at 0.50–0.60 reproduces
+  qualitatively, but scored against the shadowed original (stricter than
+  adjacent-summary propagation) a drift-chasing numeric floor would reject
+  a third to half of all folds — the strongest confirmation yet that the
+  numeric signal must stay AND-combined, never gate alone.
+- `tests/region.spec.ts` proves the recorded report survives the storage
+  boundary (snapshot → JSONL line → validated `Session.create` replay),
+  so a future corpus run can cross-check the per-fold recorded metrics
+  against recomputation from the raw log.
