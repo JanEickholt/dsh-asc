@@ -13,7 +13,7 @@
  * @module dsh-asc/quality-gate
  */
 
-import type { QualityGateConfig, QualityReport } from '../types.ts'
+import type { QualityGateConfig, QualityMetrics, QualityReport } from '../types.ts'
 
 /** One word-level token. */
 type Token = string
@@ -174,12 +174,25 @@ export function evaluateQuality(
   const isNoise = uniqueRatio < config.noiseUniqueRatio
   const noteParts: string[] = []
 
-  // L2 signals are measured on every evaluation so L1 rejections report the
-  // real coverage values instead of fabricated zeros.
+  // L2 signals are measured on every evaluation and recorded on every
+  // report — passing ones included — so a deployment can read per-fold
+  // scores from its log and derive its own floors (issue #1 follow-up).
   const summaryTokensList = wordTokens(input.summaryText)
   const rouge = rouge1F1(originalTokensList, summaryTokensList)
   const recall = topKeywordRecall(originalTokensList, summaryTokensList)
   const numericRecall = topNumericRecall(originalTokensList, summaryTokensList)
+  const metrics: QualityMetrics = {
+    summaryChars,
+    retentionPct,
+    rouge1F1: rouge,
+    top20Recall: recall,
+    numericRecall,
+    layer1MinChars: config.layer1MinChars,
+    layer1MinRetentionPct: config.layer1MinRetentionPct,
+    layer2MaxRougeF1: config.layer2MaxRougeF1,
+    layer2MaxTop20Recall: config.layer2MaxTop20Recall,
+    layer2MaxNumericRecall: config.layer2MaxNumericRecall,
+  }
 
   if (summaryChars < config.layer1MinChars) {
     noteParts.push(`summary ${summaryChars} chars below the ${config.layer1MinChars}-char floor`)
@@ -197,18 +210,7 @@ export function evaluateQuality(
       blocking: config.blocking,
       layer: 1,
       note: noteParts.join('; '),
-      metrics: {
-        summaryChars,
-        retentionPct,
-        rouge1F1: rouge,
-        top20Recall: recall,
-        numericRecall,
-        layer1MinChars: config.layer1MinChars,
-        layer1MinRetentionPct: config.layer1MinRetentionPct,
-        layer2MaxRougeF1: config.layer2MaxRougeF1,
-        layer2MaxTop20Recall: config.layer2MaxTop20Recall,
-        layer2MaxNumericRecall: config.layer2MaxNumericRecall,
-      },
+      metrics,
     }
   }
 
@@ -222,19 +224,14 @@ export function evaluateQuality(
       layer: 2,
       note: `ROUGE-1 F1 ${rouge.toFixed(3)}, top-20 keyword recall ${recall.toFixed(2)}, `
         + `and top-20 numeric recall ${numericRecall.toFixed(2)} all below their floors`,
-      metrics: {
-        summaryChars,
-        retentionPct,
-        rouge1F1: rouge,
-        top20Recall: recall,
-        numericRecall,
-        layer1MinChars: config.layer1MinChars,
-        layer1MinRetentionPct: config.layer1MinRetentionPct,
-        layer2MaxRougeF1: config.layer2MaxRougeF1,
-        layer2MaxTop20Recall: config.layer2MaxTop20Recall,
-        layer2MaxNumericRecall: config.layer2MaxNumericRecall,
-      },
+      metrics,
     }
   }
-  return { gate: GATE_ID, passed: true, blocking: config.blocking, layer: 'pass' }
+  return {
+    gate: GATE_ID,
+    passed: true,
+    blocking: config.blocking,
+    layer: 'pass',
+    metrics,
+  }
 }

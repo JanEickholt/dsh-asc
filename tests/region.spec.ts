@@ -209,6 +209,24 @@ describe('commitSurfaceCompaction', () => {
     const ctx = createContext()
     const session = conversationSession(4)
     const nodes = session.surface.nodes
+    const quality: import('../src/types.ts').QualityReport = {
+      gate: 'rouge-recall-v2',
+      passed: true,
+      blocking: true,
+      layer: 'pass',
+      metrics: {
+        summaryChars: 220,
+        retentionPct: 8,
+        rouge1F1: 0.42,
+        top20Recall: 0.9,
+        numericRecall: 0.75,
+        layer1MinChars: 200,
+        layer1MinRetentionPct: 1.0,
+        layer2MaxRougeF1: 0.05,
+        layer2MaxTop20Recall: 0.2,
+        layer2MaxNumericRecall: 0.2,
+      },
+    }
     const result = await commitSurfaceCompaction(
       { meter: ctx.tokenMeter },
       session,
@@ -219,14 +237,22 @@ describe('commitSurfaceCompaction', () => {
         summary: SUMMARY,
         provider: MODEL,
         model: MODEL,
-        quality: { gate: 'rouge-recall-v2', passed: true, blocking: true, layer: 'pass' },
+        quality,
       },
       { owner: 'current-turn', stability: 'whole-surface' },
     )
-    // The quality outcome is carried in the returned result, not a log
-    // record (no custom event vocabulary).
-    const record = eventOf(session.snapshotEvents(), result.summarySeq + 2, 'compaction/end')
-    expect(record.seq).toBe(result.endSeq)
+    // The per-fold quality record rides the bracket's replacement event: no
+    // custom event vocabulary, just provenance fields on the checkpoint
+    // message source, durable in the session log.
+    const events = session.snapshotEvents()
+    const replacement = eventOf(events, result.summarySeq + 1, 'user/message')
+    expect(isCompactCheckpointSource(replacement.data.source)).toBe(true)
+    expect(replacement.data.source).toMatchObject({
+      kind: 'plugin',
+      plugin: 'compact',
+      compactionId: result.compactionId,
+      quality,
+    })
   })
 })
 

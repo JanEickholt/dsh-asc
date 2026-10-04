@@ -63,7 +63,12 @@ export type SummarySource =
     model: string
     /** Optional per-range topic label, persisted with the summary. */
     topic?: string
-    /** Quality-gate outcome, when the gate ran. */
+    /**
+     * Quality-gate outcome, when the gate ran. Persisted as extra provenance
+     * fields on the checkpoint message source (the bracket's replacement
+     * event) — the durable per-fold record a deployment reads its own
+     * per-signal scores from.
+     */
     quality?: QualityReport
   }
   | {
@@ -398,7 +403,17 @@ function frameCheckpoint(
   }
   const checkpointMessage = createUserMessage({
     content: frameSummary(summaryBlocks, compactionId),
-    source: compactCheckpointSource(compactionId, sourceCommandId),
+    // The gate report rides provenance fields on the checkpoint source: the
+    // `compaction/summary` payload is harness-owned and closed to plugin
+    // fields, while message sources are this repo's log channel (nudge,
+    // decompress). The replacement event inside the bracket is therefore
+    // the durable per-fold quality record.
+    source: source.kind === 'model' && source.quality !== undefined
+      ? Object.freeze({
+        ...compactCheckpointSource(compactionId, sourceCommandId),
+        quality: source.quality,
+      })
+      : compactCheckpointSource(compactionId, sourceCommandId),
   })
   const framedTokenCount = dependencies.meter.estimateMessage(checkpointMessage)
   if (framedTokenCount >= prepared.shadowedTokenCount) {

@@ -156,6 +156,16 @@ All fields are optional; every unknown key fails plugin load.
 | `distillationMinRetentionPct` | `0.5` | L1 retention floor for tier >= 2 summaries, as a percent of the shadowed checkpoint tokens. The L2 keyword-coverage layer is waived for distillation: tier 2/3 rules require dropping exactly the vocabulary L2 would measure. |
 | `noiseUniqueRatio` | `0.02` | Below this unique-token ratio the shadowed content is repetitive noise: the retention and ROUGE floors are waived, and a length-adequate summary passes. |
 
+Every evaluation — passing or rejected — records its per-signal metrics
+(`summaryChars`, `retentionPct`, `rouge1F1`, `top20Recall`,
+`numericRecall`, plus the floors in force). The report rides the compaction
+bracket's replacement `user/message` event as provenance fields on the
+checkpoint source, so the session log itself is the per-fold record. Read
+your own recall distribution there before tightening the floors: the
+defaults are a catastrophic-loss backstop, and a floor that rejects
+legitimate supersessions (an updated count, a replaced version) is worse
+than a silent fold.
+
 ### `fallback`
 
 | Key | Default | Meaning |

@@ -102,6 +102,11 @@ describe('evaluateQuality', () => {
     }, GATE)
     expect(report.passed).toBe(true)
     expect(report.layer).toBe('pass')
+    // The recorded scores show the same signals the gate measured.
+    expect(report.metrics!.rouge1F1).toBeGreaterThan(0)
+    expect(report.metrics!.top20Recall).toBeGreaterThan(0)
+    expect(report.metrics!.numericRecall).toBe(1)
+    expect(report.metrics!.layer2MaxNumericRecall).toBe(GATE.layer2MaxNumericRecall)
   })
 
   it('fails L1 when the summary is too short', () => {
@@ -171,15 +176,17 @@ describe('evaluateQuality', () => {
     // a summary that keeps the vocabulary but drops all exact numbers must
     // not be rejected on the numeric signal alone.
     const summary = `${'build failed at line error '.repeat(10)}${'c'.repeat(100)}`
-    // A passing report carries no metrics; the signal is verified directly.
-    expect(topNumericRecall(wordTokens(NUMERIC_ORIGINAL), wordTokens(summary))).toBe(0)
     const report = evaluateQuality({
       originalText: NUMERIC_ORIGINAL,
       shadowedTokens: 500,
       summaryText: summary,
       summaryTokens: 40,
     }, GATE)
+    // Passing summaries record their per-signal scores too (issue #1
+    // follow-up), so a deployment can derive its own floors from the log.
     expect(report.passed).toBe(true)
+    expect(report.metrics).toBeDefined()
+    expect(report.metrics!.numericRecall).toBe(0)
   })
 
   it('passes L2 when only one signal is below its floor', () => {

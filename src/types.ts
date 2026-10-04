@@ -262,7 +262,10 @@ export interface QualityReport {
   readonly blocking: boolean
   readonly layer: 1 | 2 | 'pass'
   readonly note?: string
-  /** Measured values that failed the gate, when the summary was rejected. */
+  /**
+   * Measured per-signal values, recorded on every evaluation (passing and
+   * rejected) so a deployment can derive its own floors from its corpus.
+   */
   readonly metrics?: QualityMetrics
 }
 

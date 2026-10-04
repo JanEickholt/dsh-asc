@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Releases are consolidated: tags are only created for meaningful, coherent
 releases, not for every commit.
 
+## [Unreleased]
+
+### Added
+
+- Per-signal quality scores are now recorded on every fold, passing
+  summaries included (issue #1 follow-up): the gate report carries
+  `metrics` on passing evaluations too, and the report persists in the
+  session log as provenance fields on the compaction bracket's replacement
+  `user/message` source. Deployments can read their own recall distribution
+  from the log and derive floors from it, as the issue's follow-up
+  measurements recommend, instead of inheriting the defaults.
+
 ## [0.3.1] - 2026-10-04
 
 Motivated by the field readings in

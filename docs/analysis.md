@@ -293,3 +293,36 @@ responses.
   calibration inherited from the fuzzy n-gram rulers the issue itself
   flagged as uncalibrated. Tier >= 2 distillation waives it like the other
   coverage floors.
+
+### Follow-up readings and the floor decision (2026-10-04)
+
+The same reporter re-ran the measurement against the v2 signal's own shape:
+**10 sessions, 303 adjacent-generation pairs**, digit tokens of summary *n*
+still verbatim in summary *n+1*:
+
+- Top-20 digit-token recall: median 75% (min 25%, p10 50%, p90 95%).
+  Recurring numbers survive; the tail drops (calendar dates, ratios, one-off
+  metric values) — salience, not abstraction.
+- All distinct digit tokens: median ~38%. The top-20 count being roughly
+  double the all-token count confirms the selector shape.
+- Floor simulation (fires below threshold): at 0.20 the signal fires on
+  **0 of 303 folds**; the knee sits at 0.50–0.60 (7–16% of folds).
+- **Text presence is not correctness:** a dropped number is sometimes
+  correctly superseded (an older count, a replaced version).
+
+Two consequences, one deliberate non-change, one change:
+
+- **The floor stays 0.20.** The L2 conjunction is a catastrophic-loss
+  backstop by design — it fires only when word overlap, keyword recall, and
+  numeric recall all collapse. Measuring drift is not its job; drift between
+  summaries belongs to the live-state doctrine rule above, and the
+  supersession caveat is exactly why the numeric floor must not chase drift:
+  at the 0.50–0.60 knee it would reject 21–47 legitimate supersessions per
+  303 folds.
+- **Per-signal scores are now recorded on every fold, passing ones
+  included** (`src/engine/quality-gate.ts`; the report rides the compaction
+  bracket's replacement `user/message` source, `src/engine/region.ts`). The
+  reporter's method — sample your own corpus, read the recall distribution,
+  derive the floor from it instead of inheriting one — is now executable
+  against this plugin's own log: floors as deployment-derived constants is
+  the transferable part; our 0.20 is only the catastrophic default.

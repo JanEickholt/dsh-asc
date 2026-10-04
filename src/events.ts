@@ -10,6 +10,9 @@
  *
  * - compressions use the upstream `compaction/start|summary|end` bracket
  *   and a replacement `user/message` with `compactCheckpointSource`;
+ * - the per-fold quality-gate report (with per-signal metrics) rides extra
+ *   provenance fields on that replacement message's source, so the session
+ *   log itself is the record a deployment derives its own floors from;
  * - the summary authorship is recoverable from `compaction/summary`'s
  *   `llmStreamCall` flag (model-written vs fallback LLM call);
  * - nudges are appended `user/message` events whose source is

@@ -121,7 +121,12 @@ Compresses one or more surface ranges into model-written checkpoints.
   length/retention floors and waives the coverage layer, because the
   tier-2/3 writing rules intentionally drop the lower-level vocabulary.
   Blocking failures reject the whole plan once; the exact-range retry with
-  `acknowledgeRisk` bypasses. Non-blocking mode records the outcome.
+  `acknowledgeRisk` bypasses. Non-blocking mode records the outcome. Every
+  evaluation records its per-signal metrics on the report, passing ones
+  included; the report persists as provenance fields on the bracket's
+  replacement `user/message` source — the durable per-fold record a
+  deployment derives its own floors from (the `compaction/summary` payload
+  is harness-owned and closed to plugin fields).
 - Result: `{ compressed: [...], failures: [...] }` with per-entry
   `compactionId`, `tier`, shadowed `startSeq`/`endSeq`, `shadowedSeqs`,
   `shadowedTokenCount`, `summaryTokenCount`, `author`, `topic?`,
