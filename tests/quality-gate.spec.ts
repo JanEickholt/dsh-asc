@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { evaluateQuality, rouge1F1, topKeywordRecall, wordTokens } from '../src/engine/quality-gate.ts'
+import {
+  evaluateQuality,
+  rouge1F1,
+  topKeywordRecall,
+  topNumericRecall,
+  wordTokens,
+} from '../src/engine/quality-gate.ts'
 
 const GATE: Required<import('../src/types.ts').QualityGateConfig> = {
   enabled: true,
@@ -8,12 +14,16 @@ const GATE: Required<import('../src/types.ts').QualityGateConfig> = {
   layer1MinRetentionPct: 1.0,
   layer2MaxRougeF1: 0.05,
   layer2MaxTop20Recall: 0.20,
+  layer2MaxNumericRecall: 0.20,
   distillationMinChars: 40,
   distillationMinRetentionPct: 0.5,
   noiseUniqueRatio: 0.02,
 }
 
 const LONG_ORIGINAL = Array.from({ length: 80 }, (_, i) => `word${i} token${i} concept${i % 7}`).join(' ')
+
+/** An original whose load-bearing detail is exact numbers (issue #1: folding drops them). */
+const NUMERIC_ORIGINAL = Array.from({ length: 60 }, (_, i) => `build failed at line ${100 + i} error ${i % 30}`).join(' ')
 
 describe('wordTokens', () => {
   it('splits on non-alphanumeric boundaries and lowercases', () => {
@@ -49,6 +59,36 @@ describe('rouge1F1 and topKeywordRecall', () => {
     const summary = wordTokens('aaa bbb')
     expect(rouge1F1(original, summary)).toBeGreaterThan(0)
     expect(rouge1F1(original, summary)).toBeLessThan(1)
+  })
+})
+
+describe('topNumericRecall', () => {
+  it('is 1 when the original carries no numeric literals', () => {
+    expect(topNumericRecall(wordTokens('no numbers here'), wordTokens('nothing'))).toBe(1)
+  })
+
+  it('matches pure digit tokens, not digit-bearing words', () => {
+    // 'word0' is one word token, not the number 0; only '22' counts.
+    const original = wordTokens('word0 Node 22 port 3080')
+    const summary = wordTokens('Node 22 only')
+    expect(topNumericRecall(original, summary)).toBe(0.5)
+  })
+
+  it('scores partial recall proportionally and 1 for full retention', () => {
+    const original = wordTokens('error 22 at 3080 retry 3')
+    expect(topNumericRecall(original, wordTokens('error 22 at 3080'))).toBe(2 / 3)
+    expect(topNumericRecall(original, wordTokens('3 3080 22 error retry at'))).toBe(1)
+  })
+
+  it('measures only the top-20 most frequent numeric literals', () => {
+    // 25 frequent numbers (twice each) and 5 rare ones (once): the rare
+    // numbers must not drag recall below 1 when the frequent ones survive.
+    const original = wordTokens(
+      Array.from({ length: 25 }, (_, i) => `hot ${i} hot ${i}`).join(' ')
+        + ' cold 100 cold 101 cold 102 cold 103 cold 104',
+    )
+    const summary = wordTokens(Array.from({ length: 25 }, (_, i) => `n ${i}`).join(' '))
+    expect(topNumericRecall(original, summary)).toBe(1)
   })
 })
 
@@ -104,14 +144,16 @@ describe('evaluateQuality', () => {
     expect(report.passed).toBe(false)
     expect(report.layer).toBe(1)
     // The summary does overlap the original; the metrics must say so even
-    // though L1 short-circuited the gate.
+    // though L1 short-circuited the gate. The numeric signal is reported
+    // too (vacuously 1: this original has no numeric literals).
     expect(report.metrics!.rouge1F1).toBeGreaterThan(0)
     expect(report.metrics!.top20Recall).toBeGreaterThan(0)
+    expect(report.metrics!.numericRecall).toBe(1)
   })
 
-  it('fails L2 when both rouge and keyword recall are below floors', () => {
+  it('fails L2 when all three coverage signals are below their floors', () => {
     const report = evaluateQuality({
-      originalText: LONG_ORIGINAL,
+      originalText: NUMERIC_ORIGINAL,
       shadowedTokens: 500,
       summaryText: 'completely unrelated prose about the weather today ' + 'b'.repeat(250),
       summaryTokens: 40,
@@ -120,6 +162,24 @@ describe('evaluateQuality', () => {
     expect(report.layer).toBe(2)
     expect(report.metrics!.rouge1F1).toBeLessThan(GATE.layer2MaxRougeF1)
     expect(report.metrics!.top20Recall).toBeLessThan(GATE.layer2MaxTop20Recall)
+    expect(report.metrics!.numericRecall).toBeLessThan(GATE.layer2MaxNumericRecall)
+    expect(report.metrics!.layer2MaxNumericRecall).toBe(GATE.layer2MaxNumericRecall)
+  })
+
+  it('passes L2 while dropping every number as long as words overlap (AND-combined)', () => {
+    // The gate catches catastrophic loss, not deliberate detail selection:
+    // a summary that keeps the vocabulary but drops all exact numbers must
+    // not be rejected on the numeric signal alone.
+    const summary = `${'build failed at line error '.repeat(10)}${'c'.repeat(100)}`
+    // A passing report carries no metrics; the signal is verified directly.
+    expect(topNumericRecall(wordTokens(NUMERIC_ORIGINAL), wordTokens(summary))).toBe(0)
+    const report = evaluateQuality({
+      originalText: NUMERIC_ORIGINAL,
+      shadowedTokens: 500,
+      summaryText: summary,
+      summaryTokens: 40,
+    }, GATE)
+    expect(report.passed).toBe(true)
   })
 
   it('passes L2 when only one signal is below its floor', () => {

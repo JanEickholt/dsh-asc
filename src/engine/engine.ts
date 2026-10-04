@@ -162,6 +162,7 @@ function engineConfigSchema(): z<AgenticCompactionConfig> {
       layer1MinRetentionPct: ratioSchema,
       layer2MaxRougeF1: ratioSchema,
       layer2MaxTop20Recall: ratioSchema,
+      layer2MaxNumericRecall: ratioSchema,
       distillationMinChars: countSchema,
       distillationMinRetentionPct: ratioSchema,
       noiseUniqueRatio: ratioSchema,
@@ -1111,6 +1112,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
         layer1MinRetentionPct: this.config.qualityGate.distillationMinRetentionPct,
         layer2MaxRougeF1: 0,
         layer2MaxTop20Recall: 0,
+        layer2MaxNumericRecall: 0,
       }
       : this.config.qualityGate
     return evaluateQuality(
@@ -1276,11 +1278,13 @@ function qualityGateDetail(metrics: QualityMetrics): string {
     parts.push(`retention ${metrics.retentionPct.toFixed(2)}% < ${metrics.layer1MinRetentionPct}% floor`)
   }
   if (metrics.rouge1F1 < metrics.layer2MaxRougeF1
-    && metrics.top20Recall < metrics.layer2MaxTop20Recall) {
+    && metrics.top20Recall < metrics.layer2MaxTop20Recall
+    && metrics.numericRecall < metrics.layer2MaxNumericRecall) {
     parts.push(
       `ROUGE-1 ${metrics.rouge1F1.toFixed(3)} < ${metrics.layer2MaxRougeF1} `
       + `and recall ${metrics.top20Recall.toFixed(2)} < ${metrics.layer2MaxTop20Recall} `
-      + '(key terms missing)',
+      + `and numeric recall ${metrics.numericRecall.toFixed(2)} < ${metrics.layer2MaxNumericRecall} `
+      + '(key terms and exact numbers missing)',
     )
   }
   return parts.join('; ') || 'summary below quality floors'

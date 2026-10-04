@@ -8,6 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Releases are consolidated: tags are only created for meaningful, coherent
 releases, not for every commit.
 
+## [Unreleased]
+
+Motivated by the field readings in
+[issue #1](https://github.com/JanEickholt/dsh-asc/issues/1) (recorded in
+`docs/analysis.md` §5): folded summaries keep guidance but lose exact
+values, and paraphrased live state drifts across generations until it
+contradicts the log.
+
+### Added
+
+- `qualityGate.layer2MaxNumericRecall` (default `0.20`): third AND-combined
+  L2 coverage signal — top-20 numeric-literal recall over pure digit tokens
+  in the original, matched exact-string. A tier-1 summary that drops every
+  exact value no longer passes the gate on word overlap alone.
+- `topNumericRecall` exported from the plugin entry.
+
+### Changed
+
+- Quality-gate id is now `rouge-recall-v2`: L2 reports ROUGE-1 F1, top-20
+  keyword recall, and top-20 numeric recall together, and rejects only when
+  all three are below their floors. Tier >= 2 distillation waives the
+  numeric-recall floor like the other coverage floors.
+- Compaction doctrine (KEEP VERBATIM) now requires live state — goal
+  status, blockers, pending decisions, standing commitments — to be copied
+  verbatim from the newest event in the range and stamped "as of" that
+  event, because paraphrased state is rewritten on every fold while quoted
+  state survives unchanged.
+
 ## [0.3.0] - 2026-09-14
 
 Feature release: post-execute **reversible tool-result projection** and the

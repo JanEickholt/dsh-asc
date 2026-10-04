@@ -219,7 +219,7 @@ describe('commitSurfaceCompaction', () => {
         summary: SUMMARY,
         provider: MODEL,
         model: MODEL,
-        quality: { gate: 'rouge-recall-v1', passed: true, blocking: true, layer: 'pass' },
+        quality: { gate: 'rouge-recall-v2', passed: true, blocking: true, layer: 'pass' },
       },
       { owner: 'current-turn', stability: 'whole-surface' },
     )

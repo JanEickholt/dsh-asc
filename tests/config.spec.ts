@@ -20,6 +20,7 @@ describe('resolveConfig', () => {
     expect(config.qualityGate.enabled).toBe(true)
     expect(config.qualityGate.blocking).toBe(true)
     expect(config.qualityGate.layer1MinChars).toBe(200)
+    expect(config.qualityGate.layer2MaxNumericRecall).toBe(0.20)
     expect(config.qualityGate.distillationMinChars).toBe(40)
     expect(config.qualityGate.distillationMinRetentionPct).toBe(0.5)
     expect(config.fallback.enabled).toBe(true)
@@ -51,6 +52,7 @@ describe('resolveConfig', () => {
     expect(() => resolveConfig({ nudge: { frequency: 0 } })).toThrow('positive integer')
     expect(() => resolveConfig({ nudge: { growthTokens: 0 } })).toThrow('positive integer')
     expect(() => resolveConfig({ nudge: { force: 'loud' } as never })).toThrow('"soft" or "strong"')
+    expect(() => resolveConfig({ qualityGate: { layer2MaxNumericRecall: 1.5 } })).toThrow('must be a number in (0, 1]')
     expect(() => resolveConfig({ decompress: { maxTokens: -1 } })).toThrow('positive integer')
   })
 

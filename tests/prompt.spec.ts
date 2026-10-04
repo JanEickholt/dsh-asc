@@ -37,6 +37,10 @@ describe('registerPhilosophyPrompt', () => {
     expect(section!.text).toContain('HOW TO COMPRESS')
     expect(section!.text).toContain('KEEP VERBATIM')
     expect(section!.text).toContain('load-bearing')
+    // Live state is quoted and stamped, not paraphrased: paraphrased state
+    // drifts across folds until it contradicts the log (issue #1 readings).
+    expect(section!.text).toContain('Live state')
+    expect(section!.text).toContain('as of')
     expect(section!.text).toContain('DROP')
     expect(section!.text).toContain('PRIORITY')
     // Multi-tier: the levels and their restore path are explicit.

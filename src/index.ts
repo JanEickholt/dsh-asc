@@ -46,7 +46,7 @@ export {
   recommendRanges,
   buildNudgeText,
 } from './policy/nudge.ts'
-export { evaluateQuality, wordTokens, rouge1F1, topKeywordRecall } from './engine/quality-gate.ts'
+export { evaluateQuality, wordTokens, rouge1F1, topKeywordRecall, topNumericRecall } from './engine/quality-gate.ts'
 export {
   resolveRestoreTargets,
   expandRestoreSeqs,

@@ -3,8 +3,10 @@
  *
  * A two-layer heuristic gate that catches catastrophic content loss without
  * ever blocking good summaries: L1 is a length/retention floor, L2 is a
- * content-coverage check (ROUGE-1 F1 AND top-keyword recall, AND-combined to
- * keep false positives low). The implementation here is original; the
+ * content-coverage check (ROUGE-1 F1 AND top-keyword recall AND top-20
+ * numeric-literal recall, AND-combined to keep false positives low; the
+ * numeric signal catches summaries that drop every exact value while word
+ * overlap alone still passes). The implementation here is original; the
  * two-layer design follows the idea of non-blocking quality evaluation from
  * model-driven context pruning systems.
  *
@@ -21,6 +23,12 @@ const WORD_BOUNDARY = /[^\p{L}\p{N}]+/u
 
 /** CJK ideographs are tokenized as individual characters (unigrams). */
 const CJK_RE = /[\u3400-\u9fff]/u
+
+/**
+ * Stable gate identifier, surfaced in quality reports. v2: L2 gained the
+ * top-20 numeric-literal recall as a third AND-combined signal.
+ */
+const GATE_ID = 'rouge-recall-v2'
 
 /**
  * Tokenize text into word-level units: runs of letters/digits, with CJK
@@ -101,6 +109,35 @@ export function topKeywordRecall(original: readonly Token[], summary: readonly T
   return matched / keywords.length
 }
 
+/** A numeric literal token: a pure digit run ("22", "0", "3080"). */
+const NUMERIC_RE = /^\d+$/u
+
+/**
+ * Top-20 numeric-literal recall: the fraction of the original's most
+ * frequent numeric tokens that appear in the summary. Field readings
+ * (issue #1) show folding drops exact values while word overlap stays
+ * passable, so numbers get their own signal: matching is exact-string, so
+ * no threshold calibration is inherited from fuzzy rulers.
+ * @param original - original token bag.
+ * @param summary - summary token bag.
+ * @returns numeric recall in [0, 1].
+ */
+export function topNumericRecall(original: readonly Token[], summary: readonly Token[]): number {
+  const counts = new Map<Token, number>()
+  for (const token of original) {
+    if (!NUMERIC_RE.test(token)) continue
+    counts.set(token, (counts.get(token) ?? 0) + 1)
+  }
+  const numbers = [...counts.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 20)
+    .map(([token]) => token)
+  if (numbers.length === 0) return 1
+  const summarySet = new Set(summary)
+  const matched = numbers.filter(token => summarySet.has(token)).length
+  return matched / numbers.length
+}
+
 /** Inputs for one quality evaluation. */
 export interface QualityInput {
   /** Plain-text rendering of the shadowed content. */
@@ -142,6 +179,7 @@ export function evaluateQuality(
   const summaryTokensList = wordTokens(input.summaryText)
   const rouge = rouge1F1(originalTokensList, summaryTokensList)
   const recall = topKeywordRecall(originalTokensList, summaryTokensList)
+  const numericRecall = topNumericRecall(originalTokensList, summaryTokensList)
 
   if (summaryChars < config.layer1MinChars) {
     noteParts.push(`summary ${summaryChars} chars below the ${config.layer1MinChars}-char floor`)
@@ -154,7 +192,7 @@ export function evaluateQuality(
   }
   if (noteParts.length > 0) {
     return {
-      gate: 'rouge-recall-v1',
+      gate: GATE_ID,
       passed: false,
       blocking: config.blocking,
       layer: 1,
@@ -164,33 +202,39 @@ export function evaluateQuality(
         retentionPct,
         rouge1F1: rouge,
         top20Recall: recall,
+        numericRecall,
         layer1MinChars: config.layer1MinChars,
         layer1MinRetentionPct: config.layer1MinRetentionPct,
         layer2MaxRougeF1: config.layer2MaxRougeF1,
         layer2MaxTop20Recall: config.layer2MaxTop20Recall,
+        layer2MaxNumericRecall: config.layer2MaxNumericRecall,
       },
     }
   }
 
-  if (!isNoise && rouge < config.layer2MaxRougeF1 && recall < config.layer2MaxTop20Recall) {
+  if (!isNoise && rouge < config.layer2MaxRougeF1
+    && recall < config.layer2MaxTop20Recall
+    && numericRecall < config.layer2MaxNumericRecall) {
     return {
-      gate: 'rouge-recall-v1',
+      gate: GATE_ID,
       passed: false,
       blocking: config.blocking,
       layer: 2,
-      note: `ROUGE-1 F1 ${rouge.toFixed(3)} and top-20 keyword recall ${recall.toFixed(2)} `
-        + 'both below their floors',
+      note: `ROUGE-1 F1 ${rouge.toFixed(3)}, top-20 keyword recall ${recall.toFixed(2)}, `
+        + `and top-20 numeric recall ${numericRecall.toFixed(2)} all below their floors`,
       metrics: {
         summaryChars,
         retentionPct,
         rouge1F1: rouge,
         top20Recall: recall,
+        numericRecall,
         layer1MinChars: config.layer1MinChars,
         layer1MinRetentionPct: config.layer1MinRetentionPct,
         layer2MaxRougeF1: config.layer2MaxRougeF1,
         layer2MaxTop20Recall: config.layer2MaxTop20Recall,
+        layer2MaxNumericRecall: config.layer2MaxNumericRecall,
       },
     }
   }
-  return { gate: 'rouge-recall-v1', passed: true, blocking: config.blocking, layer: 'pass' }
+  return { gate: GATE_ID, passed: true, blocking: config.blocking, layer: 'pass' }
 }

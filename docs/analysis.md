@@ -232,3 +232,64 @@ every decision on DSH's log:
 
 Net increment over either side alone: **reversible + searchable + auditable
 at the same time**, with model-owned density and deterministic safety nets.
+
+## 5. Field readings: what folded summaries still keep
+
+Recorded from [issue #1](https://github.com/JanEickholt/dsh-asc/issues/1)
+(readings taken 2026-10-03 on one live deployment: 827 compaction index
+files, 489 generations across 53 multi-generation sessions). Not our
+measurements, and single-machine — but the only published measurements of
+*what the folded text still contains*, which is the complementary question
+to this plugin's "can I get the original back". They motivated two design
+responses.
+
+### The readings
+
+- **Folding is a selector, not an abstractor.** Guidance/rule-line density
+  stays flat across generations (1.2 → 1.2 and 1.2 → 1.6 per 1,000 chars)
+  while the quoted-verbatim share thins (5.7% → 4.4% and 4.3% → 1.6%): the
+  category of content survives, the detail is what gets dropped. About half
+  of guidance lines are rewritten or lost per fold (per-generation diff
+  over 10 sessions).
+- **Quoted text survives; paraphrased state drifts.** One commitment
+  sentence stayed byte-identical across 22 generations while the status
+  marker next to it was rewritten 5 times — and one rewrite *contradicted
+  the log* (a goal re-armed 8 minutes earlier still read as needing a human
+  turn). Quoted-fragment survival must be compared verbatim, not fuzzily.
+- **Shadowing shape is a per-generation event, judged only against the
+  shadowed list.** A generation whose range straddles a previous
+  checkpoint may still shadow no checkpoint: the range endpoints are seq
+  bounds, and seqs between them can be off-surface. Nesting (a shadowed
+  set containing a prior checkpoint) and sequential shapes both occur, and
+  sessions switch shape mid-lifetime; one generation even consumed two
+  prior checkpoints at once.
+- **Falsified deployment assumptions** (recorded so nobody re-digs them):
+  injected context blocks *should* be shadowable (repeated injection
+  measured only ~13% of cost); summaries do not grow toward the output cap
+  (median net growth 0 over 489 generations); the summarization call is
+  cheap because it replays the conversation prefix and reuses the provider
+  KV cache — "the cost is not in compaction; it is in the history you keep
+  carrying".
+
+### Compliance and design responses
+
+- **Already compliant:** dsh-asc judges membership only against the
+  explicit shadowed list — tier derivation folds
+  `replacement.shadowedSeqs` (`src/engine/tier.ts`), commit stability
+  compares the exact list (`expectedShadowedSeqs`), and `context_status`
+  prints the list per checkpoint. Nothing derives membership from range
+  endpoints.
+- **Doctrine (response to state drift):** the KEEP VERBATIM list now
+  requires live state — goal status, blockers, pending decisions, standing
+  commitments — to be copied verbatim from the newest event in the range and
+  stamped "as of" that event (`src/engine/prompt.ts`). Paraphrased state is
+  rewritten on every fold until it contradicts the log; quoted state
+  survives unchanged.
+- **Quality gate (response to detail loss):** L2 gains a third
+  AND-combined signal, top-20 numeric-literal recall
+  (`qualityGate.layer2MaxNumericRecall`, `src/engine/quality-gate.ts`), so
+  a summary that drops every exact value no longer passes on word overlap
+  alone. Matching is exact-string over pure digit tokens — no threshold
+  calibration inherited from the fuzzy n-gram rulers the issue itself
+  flagged as uncalibrated. Tier >= 2 distillation waives it like the other
+  coverage floors.

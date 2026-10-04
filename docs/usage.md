@@ -149,8 +149,9 @@ All fields are optional; every unknown key fails plugin load.
 | `blocking` | `true` | Reject the plan on failure until the exact range set is retried with `acknowledgeRisk`. |
 | `layer1MinChars` | `200` | L1: minimum summary length in characters. |
 | `layer1MinRetentionPct` | `1.0` | L1: minimum summary tokens as a percent of shadowed tokens. |
-| `layer2MaxRougeF1` | `0.05` | L2: fail when ROUGE-1 F1 is below this (AND with keyword recall). |
-| `layer2MaxTop20Recall` | `0.20` | L2: fail when top-20 keyword recall is below this (AND with ROUGE-1 F1). |
+| `layer2MaxRougeF1` | `0.05` | L2: fail when ROUGE-1 F1 is below this (AND with keyword and numeric recall). |
+| `layer2MaxTop20Recall` | `0.20` | L2: fail when top-20 keyword recall is below this (AND with ROUGE-1 F1 and numeric recall). |
+| `layer2MaxNumericRecall` | `0.20` | L2: fail when top-20 numeric-literal recall is below this (AND with ROUGE-1 F1 and keyword recall). Field readings showed folding drops exact values while word overlap stays passable, so pure digit tokens get their own exact-string signal. |
 | `distillationMinChars` | `40` | L1 length floor for tier >= 2 distillation summaries (they deliberately drop lower-level detail, so the raw floor does not apply). |
 | `distillationMinRetentionPct` | `0.5` | L1 retention floor for tier >= 2 summaries, as a percent of the shadowed checkpoint tokens. The L2 keyword-coverage layer is waived for distillation: tier 2/3 rules require dropping exactly the vocabulary L2 would measure. |
 | `noiseUniqueRatio` | `0.02` | Below this unique-token ratio the shadowed content is repetitive noise: the retention and ROUGE floors are waived, and a length-adequate summary passes. |

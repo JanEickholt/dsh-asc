@@ -88,6 +88,7 @@ export const COMPACTION_PHILOSOPHY = [
   '- Constraints discovered ("must support Node 22", "no new dependencies", "AGENTS.md forbids as any").',
   '- Exact values: versions, config keys, thresholds, magic numbers.',
   '- User intent — quote short user messages verbatim. When too long to quote, preserve intent with extra care: do not change scope, constraints, priorities, acceptance criteria, or requested outcomes. Mark them clearly as past quotes (e.g., "User said: ..."), not as current directives.',
+  '- Live state — goal status, blockers, pending decisions, standing commitments: copy the current state sentence VERBATIM from the newest event in the range and stamp it "as of" that event. Paraphrased state is rewritten on every fold and drifts until it contradicts the log; quoted state survives unchanged.',
   '- The user\'s overall goal and any changes to it — each summary must reflect the goal as it stood at the end of the range, including pivots.',
   '- Purpose behind each significant action — not just what was done but why: the hypothesis behind each experiment, the question behind each exploration.',
   '- Open questions and unresolved TODOs — losing these changes what work appears to remain.',

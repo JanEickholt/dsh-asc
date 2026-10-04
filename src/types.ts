@@ -67,6 +67,13 @@ export interface QualityGateConfig {
   /** L2: fail when top-20 keyword recall is below this (AND with ROUGE-1 F1). Defaults to `0.20`. */
   layer2MaxTop20Recall?: number
   /**
+   * L2: fail when top-20 numeric-literal recall is below this (AND with
+   * ROUGE-1 F1 and keyword recall). Exact values are what folding drops
+   * while word overlap stays passable, so numbers get their own signal.
+   * Defaults to `0.20`.
+   */
+  layer2MaxNumericRecall?: number
+  /**
    * L1 length floor for tier >= 2 distillation summaries. Distillation
    * rules intentionally drop process detail, so the tier-1 floor does not
    * apply. Defaults to `40`.
@@ -250,7 +257,7 @@ export interface ModelCompressResult {
 
 /** Quality-gate report for one summary. */
 export interface QualityReport {
-  readonly gate: 'rouge-recall-v1'
+  readonly gate: 'rouge-recall-v2'
   readonly passed: boolean
   readonly blocking: boolean
   readonly layer: 1 | 2 | 'pass'
@@ -269,6 +276,8 @@ export interface QualityMetrics {
   readonly rouge1F1: number
   /** Top-20 keyword recall of the summary against the original. */
   readonly top20Recall: number
+  /** Top-20 numeric-literal recall of the summary against the original. */
+  readonly numericRecall: number
   /** L1: minimum summary length in characters. */
   readonly layer1MinChars: number
   /** L1: minimum retention percent. */
@@ -277,6 +286,8 @@ export interface QualityMetrics {
   readonly layer2MaxRougeF1: number
   /** L2: top-20 keyword recall floor. */
   readonly layer2MaxTop20Recall: number
+  /** L2: top-20 numeric-literal recall floor. */
+  readonly layer2MaxNumericRecall: number
 }
 
 /** One decompression target resolved from the log. */
