@@ -3,6 +3,7 @@ import {
   evaluateQuality,
   rouge1F1,
   topKeywordRecall,
+  topLongNumericRecall,
   topNumericRecall,
   wordTokens,
 } from '../src/engine/quality-gate.ts'
@@ -89,6 +90,23 @@ describe('topNumericRecall', () => {
     )
     const summary = wordTokens(Array.from({ length: 25 }, (_, i) => `n ${i}`).join(' '))
     expect(topNumericRecall(original, summary)).toBe(1)
+  })
+})
+
+describe('topLongNumericRecall', () => {
+  it('is 1 when the original carries no 3+ digit numerics', () => {
+    // Only split fragments (1-2 digits) exist: the fragment-free head is
+    // empty, and the empty set convention mirrors topNumericRecall.
+    expect(topLongNumericRecall(wordTokens('port 22 retries 9'), wordTokens('nothing'))).toBe(1)
+  })
+
+  it('reads value survival, not split-fragment survival', () => {
+    // '2026-09-21' and '0.226' split into fragments; only the 3+ digit runs
+    // count, so a summary that keeps the date pieces but drops the payload
+    // value scores below 1 on the long signal alone.
+    const original = wordTokens('date 2026-09-21 value 0.226 port 3080')
+    const summary = wordTokens('date 2026 09 21 port 3080')
+    expect(topLongNumericRecall(original, summary)).toBe(2 / 3)
   })
 })
 
@@ -187,6 +205,7 @@ describe('evaluateQuality', () => {
     expect(report.passed).toBe(true)
     expect(report.metrics).toBeDefined()
     expect(report.metrics!.numericRecall).toBe(0)
+    expect(report.metrics!.top20LongNumericRecall).toBe(0)
   })
 
   it('passes L2 when only one signal is below its floor', () => {

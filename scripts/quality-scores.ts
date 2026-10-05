@@ -4,6 +4,9 @@
  * scores for every compaction fold in historical session logs and report the
  * distribution, so the numeric-recall floor can be read off the corpus it will
  * police (issue #1). Repo-local dev tool; not part of the published package.
+ * Also profiles the numeric signal's blind spots: top-20 composition (is it
+ * saturated with split fragments) and recall over the freq-1 singleton tail,
+ * the numbers that actually carry information.
  *
  * Mirrors the gate's text rendering (src/utils/text.ts serializeMessages) on
  * the log's event shapes: exact for pure-digit tokens, near-mirror for word
@@ -20,12 +23,15 @@ import { spawnSync } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { rouge1F1, topKeywordRecall, topNumericRecall, wordTokens } from '../src/engine/quality-gate.ts'
+import { rouge1F1, topKeywordRecall, topLongNumericRecall, topNumericRecall, wordTokens } from '../src/engine/quality-gate.ts'
 
 /** Gate floors fixed by the default config; only the numeric floor varies. */
 const ROUGE_FLOOR = 0.05
 const KEYWORD_FLOOR = 0.2
 const NUMERIC_FLOORS = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7] as const
+
+/** Mirrors quality-gate.ts NUMERIC_RE (module-private there): a pure digit run. */
+const NUMERIC_TOKEN_RE = /^\d+$/u
 
 /** One lossless-JSON session-log event, as persisted in the JSONL file. */
 interface LogEvent {
@@ -47,10 +53,35 @@ export interface FoldScore {
   readonly rouge1F1: number
   readonly top20Recall: number
   readonly numericRecall: number
+  /** Recall over numeric tokens appearing exactly once in the original (the tail). */
+  readonly singletonRecall: number
+  /** How many freq-1 numeric tokens the original had. */
+  readonly singletonCount: number
+  /** Share of the top-20 numeric slots held by tokens of 1-2 digits (fragments). */
+  readonly top20ShortShare: number
+  /** The original's top-20 numeric tokens by frequency, for composition dumps. */
+  readonly top20: readonly NumericTokenCount[]
+  /** Recall over the top-20 numeric tokens of 3+ digits (fragment-free head). */
+  readonly longNumericRecall: number
+  /** Singleton-tail recall split by token length: 1-2, 3-5, 6+ digits. */
+  readonly singletonBuckets: readonly SingletonBucket[]
   /** Recorded numericRecall from a 0.3.2+ checkpoint source, when present. */
   readonly recordedNumericRecall: number | null
   /** Recorded vs recomputed agreement (tolerance 0.01), when both exist. */
   readonly recordedMatches: boolean | null
+}
+
+/** A numeric token with its frequency in the original. */
+export interface NumericTokenCount {
+  readonly token: string
+  readonly count: number
+}
+
+/** One singleton-tail length bucket: how many freq-1 numeric tokens, how many kept. */
+export interface SingletonBucket {
+  readonly label: string
+  readonly total: number
+  readonly matched: number
 }
 
 /** Score one summary against the original text, mirroring the gate. */
@@ -66,6 +97,54 @@ export function scoreFold(summaryText: string, originalText: string): {
     top20Recall: topKeywordRecall(originalTokens, summaryTokens),
     numericRecall: topNumericRecall(originalTokens, summaryTokens),
   }
+}
+
+/**
+ * Numeric profile of an original: the top-20 numeric tokens by frequency
+ * (what the gate's signal actually looks at) and the freq-1 tail.
+ */
+export function numericProfile(originalText: string): {
+  top20: NumericTokenCount[]
+  singletons: string[]
+} {
+  const counts = new Map<string, number>()
+  for (const token of wordTokens(originalText)) {
+    if (!NUMERIC_TOKEN_RE.test(token)) continue
+    counts.set(token, (counts.get(token) ?? 0) + 1)
+  }
+  const entries = [...counts.entries()].sort((left, right) => right[1] - left[1])
+  return {
+    top20: entries.slice(0, 20).map(([token, count]) => ({ token, count })),
+    singletons: entries.filter(([, count]) => count === 1).map(([token]) => token),
+  }
+}
+
+/**
+ * Recall over the singleton tail: the fraction of freq-1 numeric tokens that
+ * appear verbatim in the summary. Empty tail counts as 1, mirroring
+ * topNumericRecall's empty-set convention.
+ */
+export function singletonNumericRecall(singletons: readonly string[], summaryTokens: readonly string[]): number {
+  if (singletons.length === 0) return 1
+  const summarySet = new Set(summaryTokens)
+  return singletons.filter((token) => summarySet.has(token)).length / singletons.length
+}
+
+/** Singleton length buckets: 1-2 digits (split fragments), 3-5, 6+ (ids, epochs). */
+const BUCKET_LABELS = ['1-2 digits', '3-5 digits', '6+ digits'] as const
+const bucketOf = (token: string): 0 | 1 | 2 => (token.length <= 2 ? 0 : token.length <= 5 ? 1 : 2)
+
+/** Split the singleton tail into length buckets and count verbatim survival. */
+export function singletonBuckets(singletons: readonly string[], summaryTokens: readonly string[]): SingletonBucket[] {
+  const totals = [0, 0, 0]
+  const matched = [0, 0, 0]
+  const summarySet = new Set(summaryTokens)
+  for (const token of singletons) {
+    const index = bucketOf(token)
+    totals[index]! += 1
+    if (summarySet.has(token)) matched[index]! += 1
+  }
+  return BUCKET_LABELS.map((label, index) => ({ label, total: totals[index]!, matched: matched[index]! }))
 }
 
 /** Distribution summary: min, p10, median, p90, max. */
@@ -189,18 +268,30 @@ export function parseSessionLog(jsonl: string, name: string): FoldScore[] {
     if (summaryText.trim() === '' || rendered.some((text) => text === null) || rendered.length === 0) continue
     const originalText = rendered.filter((text) => text !== null && text.trim() !== '').join('\n\n')
     if (originalText.trim() === '') continue
-    const scores = scoreFold(summaryText, originalText)
+    // Tokenize once; the profile needs the same tokens the scorers do.
+    const originalTokens = wordTokens(originalText)
+    const summaryTokens = wordTokens(summaryText)
+    const { top20, singletons } = numericProfile(originalText)
+    const numericRecall = topNumericRecall(originalTokens, summaryTokens)
     const checkpoint = checkpoints.get(compactionId)
     folds.push({
       session: name,
       compactionId,
       provider: asString(data.provider),
       model: asString(data.model),
-      ...scores,
+      rouge1F1: rouge1F1(originalTokens, summaryTokens),
+      top20Recall: topKeywordRecall(originalTokens, summaryTokens),
+      numericRecall,
+      singletonRecall: singletonNumericRecall(singletons, summaryTokens),
+      singletonCount: singletons.length,
+      singletonBuckets: singletonBuckets(singletons, summaryTokens),
+      longNumericRecall: topLongNumericRecall(originalTokens, summaryTokens),
+      top20ShortShare: top20.filter((entry) => entry.token.length <= 2).length / Math.max(1, top20.length),
+      top20,
       recordedNumericRecall: checkpoint?.recordedNumericRecall ?? null,
       recordedMatches: checkpoint === undefined || checkpoint.recordedNumericRecall === null
         ? null
-        : Math.abs(checkpoint.recordedNumericRecall - scores.numericRecall) <= 0.01,
+        : Math.abs(checkpoint.recordedNumericRecall - numericRecall) <= 0.01,
     })
   }
   return folds
@@ -256,6 +347,7 @@ function main(): void {
     ['rouge1F1', (fold) => fold.rouge1F1],
     ['top20Recall', (fold) => fold.top20Recall],
     ['numericRecall', (fold) => fold.numericRecall],
+    ['longRecall', (fold) => fold.longNumericRecall],
   ]
   console.log('              min      p10     median   p90      max')
   for (const [label, pick] of signals) {
@@ -277,6 +369,11 @@ function main(): void {
     const fires = folds.filter((fold) => fold.numericRecall < floor).length
     console.log(`  floor ${floor.toFixed(2)}: ${fires} of ${folds.length} (${pct(fires / folds.length)})`)
   }
+  console.log(`longNumericRecall (top-20 of 3+ digit tokens) alone < floor:`)
+  for (const floor of NUMERIC_FLOORS) {
+    const fires = folds.filter((fold) => fold.longNumericRecall < floor).length
+    console.log(`  floor ${floor.toFixed(2)}: ${fires} of ${folds.length} (${pct(fires / folds.length)})`)
+  }
   const recorded = folds.filter((fold) => fold.recordedNumericRecall !== null)
   if (recorded.length > 0) {
     const matching = recorded.filter((fold) => fold.recordedMatches === true).length
@@ -286,6 +383,40 @@ function main(): void {
     console.log('\nrecorded vs recomputed: no folds carry recorded metrics (pre-0.3.2 logs)')
   }
   console.log('retentionPct: not recomputable offline (needs the live token meter); skipped')
+
+  // The tail analysis (issue #1 follow-up): is the top-20 saturated with
+  // split fragments, and does the freq-1 tail survive at all?
+  const withTail = folds.filter((fold) => fold.singletonCount > 0)
+  const tailStats = distribution(withTail.map((fold) => fold.singletonRecall))
+  console.log(`\nsingleton tail: ${withTail.length} folds with freq-1 numerics, ${folds.length - withTail.length} without`)
+  console.log(
+    `singletonRecall  min ${tailStats.min.toFixed(3)}  p10 ${tailStats.p10.toFixed(3)}  median ${tailStats.median.toFixed(3)}`
+      + `  p90 ${tailStats.p90.toFixed(3)}  max ${tailStats.max.toFixed(3)}`,
+  )
+  const buckets = new Map<string, { total: number, matched: number }>()
+  for (const fold of withTail) {
+    for (const bucket of fold.singletonBuckets) {
+      const entry = buckets.get(bucket.label) ?? { total: 0, matched: 0 }
+      entry.total += bucket.total
+      entry.matched += bucket.matched
+      buckets.set(bucket.label, entry)
+    }
+  }
+  console.log('singleton recall by token length (aggregate over all singleton occurrences):')
+  for (const [label, { total, matched }] of buckets) {
+    const recall = total === 0 ? 1 : matched / total
+    console.log(`  ${label.padEnd(10)} ${matched}/${total} (${pct(recall)})`)
+  }
+  console.log(`top-20 composition: median share of 1-2-digit slots ${distribution(folds.map((fold) => fold.top20ShortShare)).median.toFixed(2)}`)
+  const aggregate = new Map<string, number>()
+  for (const fold of folds) {
+    for (const entry of fold.top20) aggregate.set(entry.token, (aggregate.get(entry.token) ?? 0) + 1)
+  }
+  const common = [...aggregate.entries()].sort((left, right) => right[1] - left[1]).slice(0, 12)
+  console.log(`most common top-20 members across folds: ${common.map(([token, count]) => `${token}x${count}`).join(' ')}`)
+  for (const fold of [folds[Math.floor(folds.length / 3)]!, folds[Math.floor((2 * folds.length) / 3)]!]) {
+    console.log(`top-20 of ${fold.session} (${fold.compactionId}): ${fold.top20.map((entry) => `${entry.token}x${entry.count}`).join(' ')}`)
+  }
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) main()

@@ -35,6 +35,19 @@ describe('parseSessionLog', () => {
     expect(b!.numericRecall).toBe(1)
     expect(b!.recordedNumericRecall).toBeNull()
     expect(b!.recordedMatches).toBeNull()
+    // Tail analysis: fold A's only singleton (22) is dropped, fold B keeps its
+    // single 3080; half of fold A's top-20 is a short fragment.
+    expect(a!.singletonCount).toBe(1)
+    expect(a!.singletonRecall).toBe(0)
+    expect(a!.top20ShortShare).toBe(0.5)
+    expect(a!.singletonBuckets.find((bucket) => bucket.label === '1-2 digits')).toEqual({ label: '1-2 digits', total: 1, matched: 0 })
+    expect(a!.singletonBuckets.find((bucket) => bucket.label === '3-5 digits')).toEqual({ label: '3-5 digits', total: 0, matched: 0 })
+    expect(b!.singletonCount).toBe(1)
+    expect(b!.singletonRecall).toBe(1)
+    // Fragment-free head: fold A's long top-20 is just 3080 (dropped),
+    // fold B's is 3080 (kept).
+    expect(a!.longNumericRecall).toBe(0)
+    expect(b!.longNumericRecall).toBe(1)
   })
 })
 

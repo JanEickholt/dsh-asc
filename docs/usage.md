@@ -158,13 +158,21 @@ All fields are optional; every unknown key fails plugin load.
 
 Every evaluation — passing or rejected — records its per-signal metrics
 (`summaryChars`, `retentionPct`, `rouge1F1`, `top20Recall`,
-`numericRecall`, plus the floors in force). The report rides the compaction
-bracket's replacement `user/message` event as provenance fields on the
-checkpoint source, so the session log itself is the per-fold record. Read
-your own recall distribution there before tightening the floors: the
-defaults are a catastrophic-loss backstop, and a floor that rejects
-legitimate supersessions (an updated count, a replaced version) is worse
-than a silent fold.
+`numericRecall`, `top20LongNumericRecall`, plus the floors in force). The
+report rides the compaction bracket's replacement `user/message` event as
+provenance fields on the checkpoint source, so the session log itself is
+the per-fold record. Read your own recall distribution there before
+tightening the floors: the defaults are a catastrophic-loss backstop, and
+a floor that rejects legitimate supersessions (an updated count, a
+replaced version) is worse than a silent fold.
+
+One reading note: the plain `numericRecall` top-20 saturates with 1-2
+digit split fragments on large originals (dates and decimals split into
+short runs), so it tracks summary size more than value fidelity. The
+recorded `top20LongNumericRecall` (top-20 over 3+ digit runs,
+fragment-free) is the per-fold value-survival reading; the L2 gate still
+fires on the plain variant, whose all-the-way-to-zero collapse is the
+catastrophic signal that conjunction catches.
 
 ### `fallback`
 
@@ -183,7 +191,7 @@ than a silent fold.
 | `protectFirstUserMessage` | `true` | Always protect the first human prompt. |
 | `retainRecentMessages` | `20` | Protect the last N surface nodes from inclusion in a range. |
 | `protectedTools` | `[]` | Tool names whose calls and results are excluded from ranges. `context_compress`/`context_decompress` call records are deliberately NOT force-protected: compression audit lives in log-only `compaction/*` events, and decompression audit lives in the restored `user/message` plus the shadowed originals. |
-| `protectedSources` | `[]` | Plugin names whose injected `user/message` nodes are excluded (including this plugin's own nudges, notices, and restored transcripts when `dsh-asc` is listed). |
+| `protectedSources` | `[]` | Producer names whose injected `user/message` nodes are excluded (including this plugin's own nudges, notices, and restored transcripts when `dsh-asc` is listed). Since dsh 0.2 every producer owns its source `kind`, so entries name the producer: `dsh-asc` for this plugin, and the pre-0.2 names of renamed core producers (`compact`, `tools-ptc`) still resolve. |
 
 ### `decompress`
 

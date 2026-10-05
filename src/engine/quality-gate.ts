@@ -112,6 +112,30 @@ export function topKeywordRecall(original: readonly Token[], summary: readonly T
 /** A numeric literal token: a pure digit run ("22", "0", "3080"). */
 const NUMERIC_RE = /^\d+$/u
 
+/** A fragment-free numeric token: a 3+ digit run ("3080", "0226"). */
+const LONG_NUMERIC_RE = /^\d{3,}$/u
+
+/** Shared shape of the two top-20 numeric recall variants. */
+function topRecallOf(
+  original: readonly Token[],
+  summary: readonly Token[],
+  matches: (token: Token) => boolean,
+): number {
+  const counts = new Map<Token, number>()
+  for (const token of original) {
+    if (!matches(token)) continue
+    counts.set(token, (counts.get(token) ?? 0) + 1)
+  }
+  const numbers = [...counts.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 20)
+    .map(([token]) => token)
+  if (numbers.length === 0) return 1
+  const summarySet = new Set(summary)
+  const matched = numbers.filter(token => summarySet.has(token)).length
+  return matched / numbers.length
+}
+
 /**
  * Top-20 numeric-literal recall: the fraction of the original's most
  * frequent numeric tokens that appear in the summary. Field readings
@@ -123,19 +147,22 @@ const NUMERIC_RE = /^\d+$/u
  * @returns numeric recall in [0, 1].
  */
 export function topNumericRecall(original: readonly Token[], summary: readonly Token[]): number {
-  const counts = new Map<Token, number>()
-  for (const token of original) {
-    if (!NUMERIC_RE.test(token)) continue
-    counts.set(token, (counts.get(token) ?? 0) + 1)
-  }
-  const numbers = [...counts.entries()]
-    .sort((left, right) => right[1] - left[1])
-    .slice(0, 20)
-    .map(([token]) => token)
-  if (numbers.length === 0) return 1
-  const summarySet = new Set(summary)
-  const matched = numbers.filter(token => summarySet.has(token)).length
-  return matched / numbers.length
+  return topRecallOf(original, summary, token => NUMERIC_RE.test(token))
+}
+
+/**
+ * Top-20 recall over fragment-free numerics (3+ digit runs): the per-fold
+ * value-survival reading. The plain top-20 saturates with 1-2 digit split
+ * fragments on large originals (issue #1 follow-up: a median 80% of its
+ * slots), so it tracks summary/original size more than value fidelity. This
+ * variant is recorded as a metric only; the L2 gate keeps gating on the
+ * plain variant, whose digit-free collapse is the catastrophic signal.
+ * @param original - original token bag.
+ * @param summary - summary token bag.
+ * @returns fragment-free numeric recall in [0, 1].
+ */
+export function topLongNumericRecall(original: readonly Token[], summary: readonly Token[]): number {
+  return topRecallOf(original, summary, token => LONG_NUMERIC_RE.test(token))
 }
 
 /** Inputs for one quality evaluation. */
@@ -181,12 +208,14 @@ export function evaluateQuality(
   const rouge = rouge1F1(originalTokensList, summaryTokensList)
   const recall = topKeywordRecall(originalTokensList, summaryTokensList)
   const numericRecall = topNumericRecall(originalTokensList, summaryTokensList)
+  const longNumericRecall = topLongNumericRecall(originalTokensList, summaryTokensList)
   const metrics: QualityMetrics = {
     summaryChars,
     retentionPct,
     rouge1F1: rouge,
     top20Recall: recall,
     numericRecall,
+    top20LongNumericRecall: longNumericRecall,
     layer1MinChars: config.layer1MinChars,
     layer1MinRetentionPct: config.layer1MinRetentionPct,
     layer2MaxRougeF1: config.layer2MaxRougeF1,

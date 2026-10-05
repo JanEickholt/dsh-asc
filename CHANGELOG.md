@@ -19,10 +19,16 @@ releases, not for every commit.
   `user/message` source. Deployments can read their own recall distribution
   from the log and derive floors from it, as the issue's follow-up
   measurements recommend, instead of inheriting the defaults.
+- `metrics.top20LongNumericRecall`: recorded (never gated) top-20 recall
+  over 3+ digit runs — the fragment-free value-survival reading. The plain
+  numeric top-20 saturates with 1-2 digit split fragments on large
+  originals (dates and decimals split into short runs), so the long
+  variant is the per-fold reading that tracks value fidelity.
 - `scripts/quality-scores.ts` (repo-local dev tool, not published): corpus
-  sampler that recomputes the gate's three signals for every fold in
-  historical session logs and prints the distribution plus floor fire counts,
-  so the derive-floors-from-your-own-corpus method is executable directly.
+  sampler that recomputes the gate's signals for every fold in historical
+  session logs and prints the distribution, floor fire counts, singleton
+  tail recall, and top-20 composition, so the
+  derive-floors-from-your-own-corpus method is executable directly.
 - Test coverage proving the recorded quality report survives the storage
   boundary: snapshot → JSONL line → validated `Session.create` replay,
   the path a restart or offline log reader takes.

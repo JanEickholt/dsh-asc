@@ -354,3 +354,40 @@ covered 854 folds across 1909 sessions:
   boundary (snapshot → JSONL line → validated `Session.create` replay),
   so a future corpus run can cross-check the per-fold recorded metrics
   against recomputation from the raw log.
+
+### Saturation, the singleton tail, and the fragment-free reading (2026-10-05)
+
+The reporter's second pass found the mechanism behind our low
+`numericRecall` medians, and his method was worth running in full on our
+own corpus (914 folds, ~1960 sessions):
+
+- **The plain top-20 saturates with split fragments.** Tokenizing
+  `2026-09-21` yields `2026`/`09`/`21`; `0.226` yields `0`/`226`. On
+  large originals the 20 most frequent numeric tokens are mostly 1-2
+  digit fragments: our corpus median share of 1-2 digit slots in the
+  top-20 is **0.80** (most common members corpus-wide: `1`×896, `2`×894,
+  `0`×882 …). Fragment survival is cheap, so the signal partially tracks
+  summary/original size ratio rather than value fidelity.
+- **The freq-1 tail is gone, ours too.** Singleton numeric recall over
+  912 folds with a tail: median 0.004, p90 0.047; by bucket, 1-2 digit
+  singles 4.3%, 3-5 digit 0.7%, 6+ digit 0.7% aggregate recall.
+  One-off values are dropped universally — a property of tier-distilled
+  summaries, not a defect a floor can cure, and partly correct
+  compaction when the value is superseded.
+- **The fragment-free head cannot gate either.** Top-20 recall over 3+
+  digit runs (`top20LongNumericRecall`): median 0.25, p10 0.05, p90
+  0.70. A 0.20 floor would fire on 35.7% of folds — the value head
+  itself is mostly dropped in distilled summaries, so no floor on it
+  separates catastrophic loss from normal distillation.
+
+Decision, again no gate change: every more-sensitive numeric variant
+fires on baselines that swamp any floor, and the only clean signal — a
+digit-free collapse to zero — is already what the AND conjunction catches
+at 0.20 (8 of 914 folds, 0.9%, identical at every floor through 0.70).
+What changes is the recording: `QualityMetrics` gains
+`top20LongNumericRecall` as a recorded, never-gated field — the per-fold
+value-survival reading the saturated plain signal cannot provide. The
+sampler (`scripts/quality-scores.ts`) now prints the long signal, the
+singleton tail, and top-20 composition alongside the gated signals, and
+the first fold recorded with the d24a4f8 metrics agrees with
+recomputation exactly (numericRecall diff 0.000).

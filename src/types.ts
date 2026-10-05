@@ -281,6 +281,8 @@ export interface QualityMetrics {
   readonly top20Recall: number
   /** Top-20 numeric-literal recall of the summary against the original. */
   readonly numericRecall: number
+  /** Top-20 recall over 3+ digit numerics: the per-fold value-survival reading. */
+  readonly top20LongNumericRecall: number
   /** L1: minimum summary length in characters. */
   readonly layer1MinChars: number
   /** L1: minimum retention percent. */

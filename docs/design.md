@@ -126,7 +126,12 @@ Compresses one or more surface ranges into model-written checkpoints.
   included; the report persists as provenance fields on the bracket's
   replacement `user/message` source — the durable per-fold record a
   deployment derives its own floors from (the `compaction/summary` payload
-  is harness-owned and closed to plugin fields).
+  is harness-owned and closed to plugin fields). Alongside the gated
+  signals the metrics carry `top20LongNumericRecall` (top-20 over 3+ digit
+  runs), recorded but never gated: the plain numeric top-20 saturates with
+  1-2 digit split fragments on large originals, so the long variant is the
+  per-fold value-survival reading while the plain one's zero-collapse
+  remains the catastrophic signal.
 - Result: `{ compressed: [...], failures: [...] }` with per-entry
   `compactionId`, `tier`, shadowed `startSeq`/`endSeq`, `shadowedSeqs`,
   `shadowedTokenCount`, `summaryTokenCount`, `author`, `topic?`,
