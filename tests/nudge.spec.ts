@@ -17,6 +17,7 @@ import {
 import { resolveConfig } from '../src/config.ts'
 import type { NudgeInput } from '../src/policy/nudge.ts'
 import { createContext, conversationSession, MODEL } from './helpers.ts'
+import { nudgeSource } from '../src/events.ts'
 
 function nudgeInput(
   session: import('@deepseek-ai/dsh-session').Session,
@@ -156,7 +157,7 @@ describe('decideNudge', () => {
     for (let i = 0; i < 20; i += 1) {
       session.append('user/message', createUserMessage({
         content: [{ type: 'text', text: `injected context ${i}` }],
-        source: { kind: 'plugin', plugin: 'other' },
+        source: { kind: 'plugin:other' },
       }), { surfaceOp: 'append' })
     }
     const config = resolveConfig({
@@ -175,7 +176,7 @@ describe('decideNudge', () => {
     for (let i = 0; i < 20; i += 1) {
       session.append('user/message', createUserMessage({
         content: [{ type: 'text', text: `injected context ${i}` }],
-        source: { kind: 'plugin', plugin: 'other' },
+        source: { kind: 'plugin:other' },
       }), { surfaceOp: 'append' })
     }
     const config = resolveConfig({
@@ -195,7 +196,7 @@ describe('decideNudge', () => {
     const session = conversationSession(2)
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: '[context-management] nudge' }],
-      source: { kind: 'plugin', plugin: 'dsh-asc', purpose: 'nudge' },
+      source: nudgeSource(),
     }), { surfaceOp: 'append' })
     // conversationSession(2) = [u1, a1, u2, a2]; the nudge lands after the
     // last user message, so the count is a2 + nudge = 2 — and appending
@@ -203,7 +204,7 @@ describe('decideNudge', () => {
     expect(nodesSinceLastUser(session)).toBe(2)
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: '[context-management] nudge again' }],
-      source: { kind: 'plugin', plugin: 'dsh-asc', purpose: 'nudge' },
+      source: nudgeSource(),
     }), { surfaceOp: 'append' })
     expect(nodesSinceLastUser(session)).toBe(3)
     // A real user message resets the counter.
@@ -308,7 +309,7 @@ describe('recommendRanges', () => {
   it('never recommends the head system-prompt node (0.1.5 surface contract)', () => {
     const ctx = createContext()
     const session = conversationSession(5)
-    // Core 0.1.5 makes the system prompt the surface head node. Mirror that:
+    // Core makes the system prompt the surface head node. Mirror that:
     // rewrite node 0 with a system/message and protect the first user message
     // right behind it — the regression collapsed the head range to [node 0]
     // alone, which core rejects at commit time.
@@ -316,7 +317,7 @@ describe('recommendRanges', () => {
     session.append('system/message', {
       turn: 1,
       step: 1,
-      message: createSystemMessage('doctrine', 'test-system-prompt'),
+      message: createSystemMessage('doctrine'),
     }, {
       surfaceOp: { op: 'replace', startSeq: SessionSeq(head), endSeq: SessionSeq(head) },
       sourceEventSeqs: [SessionSeq(head)],
@@ -440,7 +441,7 @@ function toolSession(): ReturnType<typeof conversationSession> {
     step: 1,
     message: createToolResultMessage({
       callId,
-      content: [{ type: 'tool-result', toolCallId: callId, content: [{ type: 'text', text: 'huge output '.repeat(200) }] }],
+      content: [{ type: 'text', text: 'huge output '.repeat(200) }],
       isError: false,
     }),
   }, { surfaceOp: 'append' })

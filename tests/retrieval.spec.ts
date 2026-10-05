@@ -57,17 +57,14 @@ function shadowedOriginal(text: string): { session: Session; hash: string; origi
     shadowedSeqs: [SessionSeq(originalSeq)],
     shadowedTokenCount: 5_000,
   })
-  const blocks = (event.data.message.content[0]?.content ?? []) as { type: string; text: string }[]
+  const blocks = event.data.message.content as readonly { type: string; text: string }[]
   const hash = contentHash(blocks as never)
   session.append('tool/result', {
     turn: 1,
     step: 1,
     message: {
       ...event.data.message,
-      content: [{
-        ...event.data.message.content[0]!,
-        content: [{ type: 'text', text: `[dsh-asc projection: log compressed. Full original (seq ${originalSeq}): context_retrieve(hash="${hash}").]` }],
-      }],
+      content: [{ type: 'text', text: `[dsh-asc projection: log compressed. Full original (seq ${originalSeq}): context_retrieve(hash="${hash}").]` }],
     },
   }, {
     surfaceOp: { op: 'replace', startSeq: SessionSeq(originalSeq), endSeq: SessionSeq(originalSeq) },

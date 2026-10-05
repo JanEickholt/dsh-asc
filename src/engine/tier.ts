@@ -15,6 +15,7 @@ import { foldSurface } from '@deepseek-ai/dsh-session'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
+import { isNudgeSource, isRestoredSource } from '../events.ts'
 
 /** Kind of one surface node, for previews and eligibility. */
 export type SurfaceNodeKind = 'user' | 'assistant' | 'tool' | 'checkpoint' | 'nudge' | 'restored'
@@ -33,18 +34,9 @@ export interface TierSnapshot {
 
 const tierCache = new WeakMap<Session, { generation: number; nodes: number; snapshot: TierSnapshot }>()
 
-/** The plugin name used in decompression message sources. */
-export const PLUGIN_NAME = 'dsh-asc'
-
-/** Whether a user-message source is one of our nudge injections. */
-export function isNudgeSource(source: { kind: string; plugin?: string; purpose?: string }): boolean {
-  return source.kind === 'plugin' && source.plugin === PLUGIN_NAME && source.purpose === 'nudge'
-}
-
-/** Whether a user-message source is one of our decompression injections. */
-export function isRestoredSource(source: { kind: string; plugin?: string; op?: string }): boolean {
-  return source.kind === 'plugin' && source.plugin === PLUGIN_NAME && source.op === 'decompress'
-}
+// Producer-owned provenance lives in ../events.ts; re-exported here so the
+// classification predicates and the name stay importable from one module.
+export { PLUGIN_NAME, isNudgeSource, isRestoredSource } from '../events.ts'
 
 /**
  * Classify one surface event's node kind.

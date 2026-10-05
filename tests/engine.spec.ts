@@ -6,6 +6,7 @@ import { registerContextTools } from '../src/tools/tools.ts'
 import { resolveConfig } from '../src/config.ts'
 import { validateSurfaceRange, rangeIneligibility, checkpointViews } from '../src/policy/protected.ts'
 import { createContext, conversationSession, closedSession, agentOf, eventOf, MODEL } from './helpers.ts'
+import { PLUGIN_SOURCE_KIND } from '../src/events.ts'
 
 const SUMMARY = 'consolidated checkpoint preserving file paths, decisions, commands, and the pending next step in full detail'
 /** Short enough to be strictly smaller than any shadowed tool result. */
@@ -421,7 +422,7 @@ function toolTurnSession(results = 1): Session {
       step: 1,
       message: createToolResultMessage({
         callId,
-        content: [{ type: 'tool-result', toolCallId: callId, content: [{ type: 'text', text: `result ${callId} `.repeat(500) }] }],
+        content: [{ type: 'text', text: `result ${callId} `.repeat(500) }],
         isError: false,
       }),
     }, { surfaceOp: 'append' })
@@ -838,7 +839,7 @@ describe('AgenticCompactionEngine automatic behavior', () => {
     for (let i = 0; i < 30; i += 1) {
       session.append('user/message', createUserMessage({
         content: [{ type: 'text', text: `more context ${i} `.repeat(40) }],
-        source: { kind: 'plugin', plugin: 'other' },
+        source: { kind: 'plugin:other' },
       }), { surfaceOp: 'append' })
     }
     const second = await engine.compactIfNeeded(agent, 'pressure', new AbortController().signal)
@@ -847,7 +848,7 @@ describe('AgenticCompactionEngine automatic behavior', () => {
       && (event.data.source as { purpose?: string }).purpose === 'nudge')
     expect(nudgeIdx).toBeGreaterThanOrEqual(0)
     const nudgeMessage = eventOf(session.snapshotEvents(), nudgeIdx, 'user/message')
-    expect((nudgeMessage.data.content as { text: string }[])[0]!.text).toContain('[context-management]')
+    expect((nudgeMessage.data.content as readonly { text: string }[])[0]!.text).toContain('[context-management]')
   })
 
   it('compacts automatically on context overflow through the fallback summarizer', async () => {
@@ -868,7 +869,7 @@ describe('AgenticCompactionEngine automatic behavior', () => {
     // The model is told the automatic compaction happened: a durable notice
     // names the replaced range and how to restore it.
     const notice = session.snapshotEvents().find(event => event.type === 'user/message'
-      && (event.data.source as { kind: string }).kind === 'plugin'
+      && (event.data.source as { kind: string }).kind === PLUGIN_SOURCE_KIND
       && (event.data.source as { purpose?: string }).purpose === 'overflow-notice')
     expect(notice).toBeDefined()
     const text = (notice as unknown as { data: { content: Array<{ text: string }> } }).data.content

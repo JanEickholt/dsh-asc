@@ -79,8 +79,8 @@ already-known event types:
 |---|---|
 | Compression transaction | `compaction/start` → `compaction/summary` → replacement `user/message` (`surfaceOp: replace`, `compactCheckpointSource`) → `compaction/end` |
 | Summary authorship | `compaction/summary.llmStreamCall` — `true` means the fallback LLM call; model-written summaries never carry it |
-| A nudge | an appended `user/message` with source `{ kind: 'plugin', plugin: 'dsh-asc', purpose: 'nudge' }` and `surfaceOp: 'append'` |
-| A decompressed transcript | an in-place replacement `user/message` with source `{ kind: 'plugin', plugin: 'dsh-asc', op: 'decompress', compactionId }`, committed over the checkpoint node (`surfaceOp: replace`) |
+| A nudge | an appended `user/message` with source `{ kind: 'plugin:dsh-asc', purpose: 'nudge' }` and `surfaceOp: 'append'` |
+| A decompressed transcript | an in-place replacement `user/message` with source `{ kind: 'plugin:dsh-asc', op: 'decompress', compactionId }`, committed over the checkpoint node (`surfaceOp: replace`) |
 | Checkpoint tier | derived from the shadow chain (`tierSnapshot`) |
 
 Nudge cadence and tier baselines are **transient in-memory state**

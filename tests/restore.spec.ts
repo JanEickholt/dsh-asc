@@ -13,6 +13,7 @@ import {
 import { validateSurfaceRange } from '../src/policy/protected.ts'
 import { resolveConfig } from '../src/config.ts'
 import { createContext, conversationSession, MODEL } from './helpers.ts'
+import { requestOnlySource } from '../src/events.ts'
 
 const SUMMARY = 'checkpoint that keeps file paths, decisions, and the pending next step in full detail'
 
@@ -220,7 +221,7 @@ describe('buildRestoredContent and restoreTargets', () => {
     expect(ctx.tokenMeter.estimateMessage(content.message)).toBe(
       ctx.tokenMeter.estimateMessage(createUserMessage({
         content: [{ type: 'text', text: content.text }],
-        source: { kind: 'plugin', plugin: 'dsh-asc' },
+        source: requestOnlySource(),
       })),
     )
   })

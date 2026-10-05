@@ -131,7 +131,7 @@ export class ToolResultProjectionService extends Service {
       // Only freshly appended originals; replacements (pruner or ours) never
       // re-enter this path — their call ids were consumed with the original.
       if (event.surfaceOp !== 'append') return
-      const callId = event.data.message.source.callId
+      const callId = event.data.message.toolCallId
       const key = `${session.id}:${callId}`
       const candidate = this.pending.get(key)
       if (candidate === undefined) return
@@ -195,23 +195,18 @@ export class ToolResultProjectionService extends Service {
     let shadowed = false
     try {
       const message = event.data.message
-      const resultBlock = message.content[0]
-      if (resultBlock === undefined || resultBlock.type !== 'tool-result') {
-        this.ctx.logger.warn(`${prefix}: unexpected content shape at seq ${event.seq}; skipped`)
-        return
-      }
       const meter = this.ctx.tokenMeter
       const tokensBefore = meter.estimateMessage(message)
       if (tokensBefore <= this.config.thresholdTokens) return
-      const isError = resultBlock.isError === true
+      const isError = message.isError === true
       const estimate = (blocks: readonly ContentBlock[]): number => meter.estimateMessage(
         createToolResultMessage({
-          callId: message.source.callId,
+          callId: message.toolCallId,
           content: [...blocks],
           isError,
         }),
       )
-      const plan = planProjection(resultBlock.content, event.seq, {
+      const plan = planProjection(message.content, event.seq, {
         thresholdTokens: this.config.thresholdTokens,
         estimate,
         toolName,
@@ -224,12 +219,9 @@ export class ToolResultProjectionService extends Service {
         shadowedSeqs: [event.seq],
         shadowedTokenCount: tokensBefore,
       })
-      const replacementContent: ToolResultMessage['content'] = [
-        { ...resultBlock, content: [...plan.blocks] },
-      ]
       const replacementMessage = freezeMessage({
         ...message,
-        content: replacementContent,
+        content: [...plan.blocks],
       })
       session.append('tool/result', {
         ...event.data,

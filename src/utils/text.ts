@@ -13,10 +13,14 @@ export function blockText(block: ContentBlock): string {
       return block.text
     case 'image':
       return '[image]'
+    case 'file':
+      return '[file]'
     case 'tool-call':
       return `[tool-call: ${block.name}(${block.id})]\n${block.arguments}`
-    case 'tool-result':
-      return `[tool-result: ${block.toolCallId}]\n${block.content.map(blockText).join('\n')}`
+    case 'tool-addition':
+      return `[tool-addition: ${block.toolName}]`
+    case 'tool-removal':
+      return `[tool-removal: ${block.toolName}]`
     case 'reasoning':
       return `[reasoning]\n${block.text}`
     default:
@@ -32,7 +36,11 @@ export function blockText(block: ContentBlock): string {
 export function serializeMessage(message: Message): string {
   const header = message.role === 'user'
     ? '[user]'
-    : message.role === 'assistant' ? '[assistant]' : `[${message.role}]`
+    : message.role === 'assistant'
+      ? '[assistant]'
+      : message.role === 'tool'
+        ? `[tool: ${message.toolCallId}]`
+        : `[${message.role}]`
   const body = message.content.map(blockText).join('\n')
   return `${header}\n${body}`
 }

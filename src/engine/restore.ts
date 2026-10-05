@@ -24,60 +24,12 @@ import type { DecompressTarget, ResolvedConfig } from '../types.ts'
 import { checkpointViews, eventForSeq } from '../policy/protected.ts'
 import { tierSnapshot } from './tier.ts'
 import { serializeMessages, textPreview } from '../utils/text.ts'
+import { restoredSource } from '../events.ts'
 
-/** The plugin name used in nudge message sources. */
-export const PLUGIN_NAME = 'dsh-asc'
-
-const NUDGE_SOURCE = Object.freeze({ kind: 'plugin', plugin: PLUGIN_NAME, purpose: 'nudge' } as const)
-
-/** Message provenance carried by an injected nudge. */
-export type NudgeSource = typeof NUDGE_SOURCE
-
-/**
- * Create nudge provenance for an injected guidance message.
- * @returns immutable nudge source.
- */
-export function nudgeSource(): NudgeSource {
-  return NUDGE_SOURCE
-}
-
-const OVERFLOW_NOTICE_SOURCE = Object.freeze({
-  kind: 'plugin',
-  plugin: PLUGIN_NAME,
-  purpose: 'overflow-notice',
-} as const)
-
-/** Message provenance carried by an automatic-compaction notice. */
-export type OverflowNoticeSource = typeof OVERFLOW_NOTICE_SOURCE
-
-/**
- * Create provenance for the visible notice that follows a fallback
- * compaction (overflow recovery or manual compaction), so the model knows
- * history was replaced without its explicit choice.
- * @returns immutable notice source.
- */
-export function overflowNoticeSource(): OverflowNoticeSource {
-  return OVERFLOW_NOTICE_SOURCE
-}
-
-const RESTORED_SOURCE = Object.freeze({
-  kind: 'plugin',
-  plugin: PLUGIN_NAME,
-  op: 'decompress',
-} as const)
-
-/** Message provenance carried by an in-place restored transcript. */
-export type RestoredSource = typeof RESTORED_SOURCE & { readonly compactionId: CompactionId }
-
-/**
- * Create provenance for a restored transcript committed back into the
- * surface, marking it as plugin-restored content (not a fresh user prompt).
- * @param compactionId - the checkpoint whose content was restored.
- * @returns immutable restored source.
- */
-export function restoredSource(compactionId: CompactionId): RestoredSource {
-  return Object.freeze({ ...RESTORED_SOURCE, compactionId })
-}
+// Message provenance is producer-owned and declared once, in ../events.ts.
+// These re-exports keep this module's historical import surface.
+export { PLUGIN_NAME, nudgeSource, overflowNoticeSource, restoredSource } from '../events.ts'
+export type { NudgeSource, OverflowNoticeSource, RestoredSource } from '../events.ts'
 
 /** The preview length included in tool results. */
 export const RESTORE_PREVIEW_CHARS = 500

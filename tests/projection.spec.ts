@@ -28,7 +28,7 @@ function bigLogText(lines = 400): string {
 /** The inner content blocks of one tool-result event, without casts in tests. */
 function innerContentOf(event: SessionEvent): ContentBlock[] {
   if (event.type !== 'tool/result') throw new Error(`event ${event.seq} is not a tool/result`)
-  const blocks = event.data.message.content[0]?.content
+  const blocks = event.data.message.content
   if (!Array.isArray(blocks)) throw new Error(`event ${event.seq} has no inner content`)
   return blocks as ContentBlock[]
 }

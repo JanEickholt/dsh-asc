@@ -10,6 +10,7 @@ import {
 import { Session, SessionId, SessionSeq, snapshotSessionEvent, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { isProtectedNode, toolNameIndex, validateSurfaceRange, rangeIneligibility } from '../src/policy/protected.ts'
 import { resolveConfig } from '../src/config.ts'
+import { nudgeSource, restoredSource } from '../src/events.ts'
 import { createContext, conversationSession, closedSession, eventOf, MODEL } from './helpers.ts'
 
 const SUMMARY = 'consolidated checkpoint preserving file paths, decisions, commands, and the pending next step'
@@ -114,7 +115,7 @@ describe('commitSurfaceCompaction', () => {
       step: 2,
       message: createToolResultMessage({
         callId,
-        content: [{ type: 'tool-result', toolCallId: callId, content: [{ type: 'text', text: 'file body' }] }],
+        content: [{ type: 'text', text: 'file body' }],
         isError: false,
       }),
     }, { surfaceOp: 'append' })
@@ -249,8 +250,7 @@ describe('commitSurfaceCompaction', () => {
     const replacement = eventOf(events, result.summarySeq + 1, 'user/message')
     expect(isCompactCheckpointSource(replacement.data.source)).toBe(true)
     expect(replacement.data.source).toMatchObject({
-      kind: 'plugin',
-      plugin: 'compact',
+      kind: 'compact-checkpoint',
       compactionId: result.compactionId,
       quality,
     })
@@ -306,8 +306,7 @@ describe('commitSurfaceCompaction', () => {
       .find((message) => isCompactCheckpointSource(message.source))
     expect(checkpoint).toBeDefined()
     expect(checkpoint!.source).toMatchObject({
-      kind: 'plugin',
-      plugin: 'compact',
+      kind: 'compact-checkpoint',
       compactionId: result.compactionId,
       quality,
     })
@@ -370,7 +369,7 @@ describe('toolNameIndex cache', () => {
       step: 1,
       message: createToolResultMessage({
         callId,
-        content: [{ type: 'tool-result', toolCallId: callId, content: [{ type: 'text', text: 'result' }] }],
+        content: [{ type: 'text', text: 'result' }],
         isError: false,
       }),
     }, { surfaceOp: 'append' }).seq
@@ -383,11 +382,11 @@ describe('toolNameIndex cache', () => {
     const session = conversationSession(2)
     const nudge = session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: '[context-management] nudge' }],
-      source: { kind: 'plugin', plugin: 'dsh-asc', purpose: 'nudge' },
+      source: nudgeSource(),
     }), { surfaceOp: 'append' }).seq
     const restored = session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'replayed transcript' }],
-      source: { kind: 'plugin', plugin: 'dsh-asc', op: 'decompress', compactionId: 'cp-1' },
+      source: restoredSource(CompactionId('cp-1')),
     }), { surfaceOp: 'append' }).seq
     const checkpoint = session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: '<compacted-summary>summary</compacted-summary>' }],

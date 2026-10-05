@@ -62,7 +62,8 @@ import {
   validateSurfaceRange,
 } from '../policy/protected.ts'
 import { nodeKindOf, tierSnapshot, tierTokenUsage } from './tier.ts'
-import { buildRestoredContent, nudgeSource, overflowNoticeSource, PLUGIN_NAME, resolveRestoreTargets, restoreTargets } from './restore.ts'
+import { buildRestoredContent, nudgeSource, overflowNoticeSource, resolveRestoreTargets, restoreTargets } from './restore.ts'
+import { requestOnlySource } from '../events.ts'
 import { blockText, serializeMessages, textPreview } from '../utils/text.ts'
 import type {
   CompressionFailure,
@@ -1093,7 +1094,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
         ...plan.range.topic === undefined ? [] : [{ type: 'text' as const, text: `## Topic: ${plan.range.topic}` }],
         { type: 'text', text: plan.range.summary },
       ], CompactionId(QUALITY_GATE_COMPACTION_ID)),
-      source: { kind: 'plugin', plugin: PLUGIN_NAME },
+      source: requestOnlySource(),
     })
     // Distillation is a deliberate lossy transform of already-summarized
     // content: apply the tier-1 floors only to raw capture. Tier >= 2

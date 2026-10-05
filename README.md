@@ -24,13 +24,14 @@ compacted originals.
 **Prerequisites**: a working [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 installation (`dsh` CLI available); Node.js `^22.19` or `>=24`.
 
-**Harness compatibility**: 0.2.2 requires core `@deepseek-ai/dsh-*`
-`0.1.5-rc.2` or newer. `0.1.0-rc.6` cores need the `0.2.0` release and
-`0.1.2-rc.1` cores the `0.2.1` release; core changed the `Session` API between
-the generations (0.1.5 additionally made the system prompt a surface-eligible
-`system/message` event and renamed the replace `surfaceOp` bounds to
-`startSeq`/`endSeq`), and the plugin fails at runtime when the core is newer
-than the release supports.
+**Harness compatibility**: the built plugin targets core `@deepseek-ai/dsh-*`
+`0.2.0-rc.1` or newer (`>=0.2.0-rc.1 <0.3.0`); its `peerDependencies` also
+admit `^0.1.5-rc.2` so an older host still resolves the install. `0.1.0-rc.6`
+cores need the `0.2.0` release and `0.1.2-rc.1` cores the `0.2.1` release;
+core changed the `Session` API between the generations (0.1.5 additionally
+made the system prompt a surface-eligible `system/message` event and renamed
+the replace `surfaceOp` bounds to `startSeq`/`endSeq`), and the plugin fails
+at runtime when the core is newer than the release supports.
 
 **From npm** (recommended):
 

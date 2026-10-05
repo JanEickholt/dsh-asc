@@ -2,9 +2,11 @@ allowBuilds:
   esbuild: true
 # The whole DeepSeek Harness family publishes coherent rc releases; pin every
 # transitive @deepseek-ai dependency to the same generation so compiled types
-# and runtime exports never disagree. The caret range admits 0.1.5-rc.2 and
-# any later non-prerelease-compatible bump (semver excludes prereleases whose
-# major.minor.patch tuple differs from the range's floor).
+# and runtime exports never disagree. The range admits the 0.2.0-rc line this
+# plugin now builds against and any later non-prerelease-compatible bump
+# (semver excludes prereleases whose major.minor.patch tuple differs from the
+# range's floor). The peerDependencies range is deliberately wider so the
+# published plugin still installs beside a 0.1.5 host.
 overrides:
   '@deepseek-ai/cordis': 4.0.1
-  '@deepseek-ai/dsh-*': ^0.1.5-rc.2
+  '@deepseek-ai/dsh-*': ^0.2.0-rc.2

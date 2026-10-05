@@ -9,6 +9,7 @@ import {
 import { tierSnapshot, tierTokenUsage, nodeKindOf } from '../src/engine/tier.ts'
 import { checkpointViews, validateSurfaceRange } from '../src/policy/protected.ts'
 import { createContext, conversationSession, eventOf, MODEL } from './helpers.ts'
+import { nudgeSource, restoredSource } from '../src/events.ts'
 
 const M = (text: string): import('@deepseek-ai/dsh-llm').Message =>
   createAssistantMessage({ content: [{ type: 'text', text }], source: { provider: MODEL, model: MODEL } })
@@ -72,11 +73,11 @@ describe('tierSnapshot', () => {
     const session = conversationSession(2)
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: '[context-management] guidance' }],
-      source: { kind: 'plugin', plugin: 'dsh-asc', purpose: 'nudge' },
+      source: nudgeSource(),
     }), { surfaceOp: 'append' })
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'restored transcript' }],
-      source: { kind: 'plugin', plugin: 'dsh-asc', op: 'decompress', compactionId: CompactionId('x'), tier: 1, full: false },
+      source: restoredSource(CompactionId('x')),
     }), { surfaceOp: 'append' })
     const snapshot = tierSnapshot(session)
     const nodes = session.surface.nodes
@@ -107,7 +108,7 @@ describe('tierSnapshot', () => {
     const checkpointSeq = checkpointViews(session)[0]!.seq
     const restored = session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'the original transcript is back' }],
-      source: { kind: 'plugin', plugin: 'dsh-asc', op: 'decompress', compactionId: compacted.compactionId },
+      source: restoredSource(compacted.compactionId),
     }), {
       surfaceOp: { op: 'replace', startSeq: SessionSeq(checkpointSeq), endSeq: SessionSeq(checkpointSeq) },
       sourceEventSeqs: [SessionSeq(checkpointSeq), ...compacted.shadowedSeqs],

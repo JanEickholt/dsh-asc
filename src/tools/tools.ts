@@ -755,7 +755,7 @@ function readSeqOriginal(
       diagnostic: `seq ${seq} is a ${event.type} event, not a tool result`,
     }
   }
-  const inner = event.data.message.content[0]?.content
+  const inner = event.data.message.content
   if (!Array.isArray(inner)) {
     return { found: false, originalSeq: seq, diagnostic: `seq ${seq} carries no stored result content` }
   }
@@ -786,7 +786,7 @@ function readHashOriginal(session: Session, hash: string): RetrieveResult {
   }
   for (const event of session.snapshotEvents()) {
     if (event.type !== 'tool/result') continue
-    const inner = event.data.message.content[0]?.content
+    const inner = event.data.message.content
     if (!Array.isArray(inner)) continue
     const eventHash = contentHash(inner as unknown as ContentBlock[])
     if (eventHash !== hash) continue

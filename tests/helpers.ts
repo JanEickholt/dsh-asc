@@ -18,6 +18,14 @@ import TokenMeter from '@deepseek-ai/dsh-token-meter'
 export const MODEL = 'test-model'
 export const SIGNAL: AbortSignal = new AbortController().signal
 
+// A stand-in for another out-of-tree producer: `MessageSourceMap` is
+// merge-extensible, so every producer owns its own `kind`.
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'plugin:other': { readonly kind: 'plugin:other' }
+  }
+}
+
 let sessionCounter = 0
 
 /** A context with the LLM seam, token meter, and one registered adapter. */

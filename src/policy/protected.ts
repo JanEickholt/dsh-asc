@@ -30,6 +30,7 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ResolvedConfig } from '../types.ts'
 import { tierSnapshot } from '../engine/tier.ts'
+import { sourceProducerName } from '../events.ts'
 
 /** Tool-call blocks inside one assistant message. */
 export interface ToolCallFacts {
@@ -113,7 +114,7 @@ export function isProtectedNode(
   if (event.type === 'system/message' && session.surface.nodes[0] === seq) return true
   switch (event.type) {
     case 'user/message': {
-      const source = event.data.source as { kind: string; plugin?: string }
+      const source = event.data.source as { kind: string }
       if (source.kind === 'user') {
         if (config.protection.protectUserMessages) return true
         if (config.protection.protectFirstUserMessage && seq === firstUserMessageSeq(session)) {
@@ -121,11 +122,14 @@ export function isProtectedNode(
         }
         return false
       }
-      if (source.kind === 'plugin') {
-        // `protectedSources` is honored for every plugin-injected message,
-        // including this plugin's own nudges, notices, and restored
-        // transcripts; none of them is force-protected by default.
-        return config.protection.protectedSources.includes(source.plugin ?? '')
+      // `protectedSources` is honored for every producer-injected message,
+      // including this plugin's own nudges, notices, and restored
+      // transcripts; none of them is force-protected by default. Core-owned
+      // sources (compaction checkpoints, system prompt) are not producers and
+      // are never matched here.
+      const producer = sourceProducerName(source)
+      if (producer !== undefined) {
+        return config.protection.protectedSources.includes(producer)
       }
       return false
     }
