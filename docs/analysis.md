@@ -58,7 +58,7 @@ provider/model that wrote it, raw output, and usage), and `compaction/end`
 so pure consumers can subtract tokens without per-node state. The actual
 replacement is a `user/message` whose source is
 `compactCheckpointSource(compactionId)` — a backend-independent marker
-(`{ kind: 'plugin', plugin: 'compact' }`) that consumers and UI use to
+(`{ kind: 'compact-checkpoint', compactionId }`) that consumers and UI use to
 recognize checkpoints. The shadow-price protocol requires the metering event
 and its replacement to be appended synchronously adjacent.
 
@@ -391,3 +391,27 @@ sampler (`scripts/quality-scores.ts`) now prints the long signal, the
 singleton tail, and top-20 composition alongside the gated signals, and
 the first fold recorded with the d24a4f8 metrics agrees with
 recomputation exactly (numericRecall diff 0.000).
+
+### Cross-deployment divergence and the concentration bound (2026-10-05)
+
+The reporter ran the fragment-free signal on his own corpus (487 folds,
+45 sessions): median 0.40, p10 0.20 — against our 0.25 / 0.05. Same code,
+same definition, 15 points apart, and he refuses to call either summary
+set better: the difference concentrates in the low tail (0% of his folds
+below 5% recall; a visible fraction of ours near zero), while the tops
+are comparable (65% vs 70% p90). His reading: a cross-deployment number
+this variant is not, and record-only is exactly the right status for it
+in both deployments.
+
+His mechanical hypothesis for the gap is testable on our side with two
+numbers the sampler now records per fold: **distinct 3+ digit runs in the
+original** and **the top-20's share of all long-digit occurrences**. The
+top-20 of a diffuse original (200 distinct long runs) covers little mass
+and its recall is arithmetic-bound low; a concentrated one (40 runs)
+scores high regardless of what the summary kept. Our corpus reads:
+distinct long runs median 392 (p10 71, p90 1047), top-20 mass coverage
+median 0.34 (p10 0.12, p90 0.69) over 934 folds. If his originals are
+more concentrated than that, his higher median is arithmetic rather than
+summary quality — "long-head retention" and "concentration" are different
+claims, and these two numbers are how you tell them apart before
+comparing any two deployments' long-recall medians.

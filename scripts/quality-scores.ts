@@ -6,7 +6,9 @@
  * police (issue #1). Repo-local dev tool; not part of the published package.
  * Also profiles the numeric signal's blind spots: top-20 composition (is it
  * saturated with split fragments) and recall over the freq-1 singleton tail,
- * the numbers that actually carry information.
+ * the numbers that actually carry information, plus the 3+ digit
+ * concentration stats (distinct runs, top-20 mass coverage) that bound the
+ * fragment-free signal across corpora.
  *
  * Mirrors the gate's text rendering (src/utils/text.ts serializeMessages) on
  * the log's event shapes: exact for pure-digit tokens, near-mirror for word
@@ -32,6 +34,9 @@ const NUMERIC_FLOORS = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7] as const
 
 /** Mirrors quality-gate.ts NUMERIC_RE (module-private there): a pure digit run. */
 const NUMERIC_TOKEN_RE = /^\d+$/u
+
+/** Mirrors quality-gate.ts LONG_NUMERIC_RE: a fragment-free 3+ digit run. */
+const LONG_NUMERIC_TOKEN_RE = /^\d{3,}$/u
 
 /** One lossless-JSON session-log event, as persisted in the JSONL file. */
 interface LogEvent {
@@ -63,6 +68,10 @@ export interface FoldScore {
   readonly top20: readonly NumericTokenCount[]
   /** Recall over the top-20 numeric tokens of 3+ digits (fragment-free head). */
   readonly longNumericRecall: number
+  /** Distinct 3+ digit runs in the original: the long-head concentration. */
+  readonly longDistinctCount: number
+  /** Share of all long-digit occurrences the top-20 of them covers. */
+  readonly longTop20Coverage: number
   /** Singleton-tail recall split by token length: 1-2, 3-5, 6+ digits. */
   readonly singletonBuckets: readonly SingletonBucket[]
   /** Recorded numericRecall from a 0.3.2+ checkpoint source, when present. */
@@ -101,11 +110,14 @@ export function scoreFold(summaryText: string, originalText: string): {
 
 /**
  * Numeric profile of an original: the top-20 numeric tokens by frequency
- * (what the gate's signal actually looks at) and the freq-1 tail.
+ * (what the gate's signal actually looks at) and the freq-1 tail, plus the
+ * 3+ digit concentration stats (distinct count and top-20 mass coverage).
  */
 export function numericProfile(originalText: string): {
   top20: NumericTokenCount[]
   singletons: string[]
+  longDistinctCount: number
+  longTop20Coverage: number
 } {
   const counts = new Map<string, number>()
   for (const token of wordTokens(originalText)) {
@@ -113,9 +125,14 @@ export function numericProfile(originalText: string): {
     counts.set(token, (counts.get(token) ?? 0) + 1)
   }
   const entries = [...counts.entries()].sort((left, right) => right[1] - left[1])
+  const longEntries = entries.filter(([token]) => LONG_NUMERIC_TOKEN_RE.test(token))
+  const longTotal = longEntries.reduce((sum, [, count]) => sum + count, 0)
+  const longTop20Mass = longEntries.slice(0, 20).reduce((sum, [, count]) => sum + count, 0)
   return {
     top20: entries.slice(0, 20).map(([token, count]) => ({ token, count })),
     singletons: entries.filter(([, count]) => count === 1).map(([token]) => token),
+    longDistinctCount: longEntries.length,
+    longTop20Coverage: longTotal === 0 ? 1 : longTop20Mass / longTotal,
   }
 }
 
@@ -271,7 +288,7 @@ export function parseSessionLog(jsonl: string, name: string): FoldScore[] {
     // Tokenize once; the profile needs the same tokens the scorers do.
     const originalTokens = wordTokens(originalText)
     const summaryTokens = wordTokens(summaryText)
-    const { top20, singletons } = numericProfile(originalText)
+    const { top20, singletons, longDistinctCount, longTop20Coverage } = numericProfile(originalText)
     const numericRecall = topNumericRecall(originalTokens, summaryTokens)
     const checkpoint = checkpoints.get(compactionId)
     folds.push({
@@ -286,6 +303,8 @@ export function parseSessionLog(jsonl: string, name: string): FoldScore[] {
       singletonCount: singletons.length,
       singletonBuckets: singletonBuckets(singletons, summaryTokens),
       longNumericRecall: topLongNumericRecall(originalTokens, summaryTokens),
+      longDistinctCount,
+      longTop20Coverage,
       top20ShortShare: top20.filter((entry) => entry.token.length <= 2).length / Math.max(1, top20.length),
       top20,
       recordedNumericRecall: checkpoint?.recordedNumericRecall ?? null,
@@ -408,6 +427,19 @@ function main(): void {
     console.log(`  ${label.padEnd(10)} ${matched}/${total} (${pct(recall)})`)
   }
   console.log(`top-20 composition: median share of 1-2-digit slots ${distribution(folds.map((fold) => fold.top20ShortShare)).median.toFixed(2)}`)
+  // The concentration check (issue #1 follow-up): recall of the top-20 is
+  // bounded by how concentrated the long-digit distribution is, so record
+  // both alongside the long signal for cross-corpus comparison.
+  const distinctStats = distribution(folds.map((fold) => fold.longDistinctCount))
+  const coverageStats = distribution(folds.map((fold) => fold.longTop20Coverage))
+  console.log(
+    `distinct 3+ digit runs per original: min ${distinctStats.min}  p10 ${distinctStats.p10}  median ${distinctStats.median}`
+      + `  p90 ${distinctStats.p90}  max ${distinctStats.max}`,
+  )
+  console.log(
+    `top-20 share of all long-digit occurrences: min ${coverageStats.min.toFixed(2)}  p10 ${coverageStats.p10.toFixed(2)}`
+      + `  median ${coverageStats.median.toFixed(2)}  p90 ${coverageStats.p90.toFixed(2)}  max ${coverageStats.max.toFixed(2)}`,
+  )
   const aggregate = new Map<string, number>()
   for (const fold of folds) {
     for (const entry of fold.top20) aggregate.set(entry.token, (aggregate.get(entry.token) ?? 0) + 1)

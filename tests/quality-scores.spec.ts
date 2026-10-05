@@ -48,6 +48,13 @@ describe('parseSessionLog', () => {
     // fold B's is 3080 (kept).
     expect(a!.longNumericRecall).toBe(0)
     expect(b!.longNumericRecall).toBe(1)
+    // Concentration: each fold has one distinct 3+ digit run (3080), so
+    // the top-20 covers all of the long-digit mass and the distinct
+    // count is 1 — the arithmetic-bound hypothesis' two numbers.
+    expect(a!.longDistinctCount).toBe(1)
+    expect(a!.longTop20Coverage).toBe(1)
+    expect(b!.longDistinctCount).toBe(1)
+    expect(b!.longTop20Coverage).toBe(1)
   })
 })
 

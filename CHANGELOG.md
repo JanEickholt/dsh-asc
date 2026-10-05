@@ -10,6 +10,26 @@ releases, not for every commit.
 
 ## [Unreleased]
 
+### Changed
+
+- Migrated to dsh `0.2.0-rc.2`: the built plugin now targets core
+  `@deepseek-ai/dsh-*` `>=0.2.0-rc.1 <0.3.0` (the `peerDependencies` range
+  additionally admits `^0.1.5-rc.2`), and the dsh loader no longer skips
+  this profile bundle as incompatible. Two core contracts changed and the
+  plugin follows them:
+  - Message sources are producer-owned. Session format v4 refuses to
+    persist a message whose source still carries the shared
+    `{ kind: 'plugin', plugin }` wrapper, so every message this plugin
+    injects now carries its own `kind: 'plugin:dsh-asc'` (declared through
+    `MessageSourceMap`) with the same `purpose`/`op`/`compactionId` fields.
+    `protection.protectedSources` entries now name a producer; renamed
+    core producers (`compact`, `tools-ptc`) still resolve.
+  - Tool results are first-class messages. A tool result is a `tool`-role
+    message with `toolCallId`/`isError` on the message instead of a
+    `tool-result` content block, so the projection service reads and
+    rewrites `message.content` directly and `context_retrieve` reads the
+    stored blocks from the message itself.
+
 ### Added
 
 - Per-signal quality scores are now recorded on every fold, passing
@@ -27,8 +47,10 @@ releases, not for every commit.
 - `scripts/quality-scores.ts` (repo-local dev tool, not published): corpus
   sampler that recomputes the gate's signals for every fold in historical
   session logs and prints the distribution, floor fire counts, singleton
-  tail recall, and top-20 composition, so the
-  derive-floors-from-your-own-corpus method is executable directly.
+  tail recall, top-20 composition, and the 3+ digit concentration stats
+  (distinct runs, top-20 mass coverage) that bound the fragment-free signal
+  across corpora, so the derive-floors-from-your-own-corpus method is
+  executable directly.
 - Test coverage proving the recorded quality report survives the storage
   boundary: snapshot → JSONL line → validated `Session.create` replay,
   the path a restart or offline log reader takes.
