@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { distribution, parseSessionLog, scoreFold } from '../scripts/quality-scores.ts'
+import { distribution, parseSessionLog, pearson, scoreFold } from '../scripts/quality-scores.ts'
 
 /** Two scorable folds plus one partial fold whose shadowed events are absent. */
 const FIXTURE = [
@@ -70,5 +70,24 @@ describe('distribution', () => {
   it('picks min, p10, median, p90, max', () => {
     const stats = distribution([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     expect(stats).toEqual({ min: 1, p10: 1, median: 5, p90: 9, max: 10 })
+  })
+})
+
+describe('pearson', () => {
+  it('correlates a clean linear pair at 1 and its inverse at -1', () => {
+    expect(pearson([1, 2, 3, 4], [2, 4, 6, 8])).toBeCloseTo(1, 10)
+    expect(pearson([1, 2, 3, 4], [8, 6, 4, 2])).toBeCloseTo(-1, 10)
+  })
+
+  it('reads zero for uncorrelated and degenerate samples', () => {
+    // xor pattern: no linear relationship.
+    expect(pearson([1, 2, 3, 4, 1, 2, 3, 4], [1, 2, 3, 4, 4, 3, 2, 1])).toBeCloseTo(0, 10)
+    // zero variance in either sample: 0, not NaN.
+    expect(pearson([1, 1, 1], [1, 2, 3])).toBe(0)
+    expect(pearson([1, 2, 3], [1, 1, 1])).toBe(0)
+  })
+
+  it('rejects mismatched lengths', () => {
+    expect(() => pearson([1, 2], [1, 2, 3])).toThrow('equal-length')
   })
 })

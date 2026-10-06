@@ -47,10 +47,10 @@ releases, not for every commit.
 - `scripts/quality-scores.ts` (repo-local dev tool, not published): corpus
   sampler that recomputes the gate's signals for every fold in historical
   session logs and prints the distribution, floor fire counts, singleton
-  tail recall, top-20 composition, and the 3+ digit concentration stats
-  (distinct runs, top-20 mass coverage) that bound the fragment-free signal
-  across corpora, so the derive-floors-from-your-own-corpus method is
-  executable directly.
+  tail recall, top-20 composition, the 3+ digit concentration stats
+  (distinct runs, top-20 mass coverage), and the within-corpus
+  concentration ↔ recall correlations, so the derive-floors-from-your-
+  own-corpus method is executable directly.
 - Test coverage proving the recorded quality report survives the storage
   boundary: snapshot → JSONL line → validated `Session.create` replay,
   the path a restart or offline log reader takes.

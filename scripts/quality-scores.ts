@@ -178,6 +178,29 @@ export function distribution(values: readonly number[]): {
   return { min: sorted[0]!, p10: pick(0.1), median: pick(0.5), p90: pick(0.9), max: sorted.at(-1)! }
 }
 
+/**
+ * Pearson correlation of two equal-length samples. Degenerate (zero
+ * variance in either sample) reads as 0, not NaN, so corpus runs stay
+ * printable.
+ */
+export function pearson(xs: readonly number[], ys: readonly number[]): number {
+  if (xs.length !== ys.length) throw new Error('pearson needs equal-length samples')
+  if (xs.length < 2) throw new Error('pearson needs at least two samples')
+  const mx = xs.reduce((sum, value) => sum + value, 0) / xs.length
+  const my = ys.reduce((sum, value) => sum + value, 0) / ys.length
+  let numerator = 0
+  let sx = 0
+  let sy = 0
+  for (let i = 0; i < xs.length; i++) {
+    const dx = xs[i]! - mx
+    const dy = ys[i]! - my
+    numerator += dx * dy
+    sx += dx * dx
+    sy += dy * dy
+  }
+  return sx === 0 || sy === 0 ? 0 : numerator / Math.sqrt(sx * sy)
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : [])
@@ -439,6 +462,41 @@ function main(): void {
   console.log(
     `top-20 share of all long-digit occurrences: min ${coverageStats.min.toFixed(2)}  p10 ${coverageStats.p10.toFixed(2)}`
       + `  median ${coverageStats.median.toFixed(2)}  p90 ${coverageStats.p90.toFixed(2)}  max ${coverageStats.max.toFixed(2)}`,
+  )
+  // The lever-length check (issue #1 follow-up): within our own folds, how
+  // much of the long-recall spread does the concentration knob explain?
+  // His corpus reads r = 0.18 (n = 534); ours needs the same number before
+  // "pipeline fingerprint, not corpus arithmetic" stands on both sides.
+  const concentrationPairs = folds.filter((fold) => fold.longDistinctCount > 0)
+  const r = pearson(
+    concentrationPairs.map((fold) => fold.longTop20Coverage),
+    concentrationPairs.map((fold) => fold.longNumericRecall),
+  )
+  const distinctR = pearson(
+    concentrationPairs.map((fold) => fold.longDistinctCount),
+    concentrationPairs.map((fold) => fold.longNumericRecall),
+  )
+  console.log(
+    `concentration ↔ longRecall within-corpus: r(coverage, recall) = ${r.toFixed(3)}`
+      + `, r(distinct, recall) = ${distinctR.toFixed(3)}  (n = ${concentrationPairs.length})`,
+  )
+  // Median recall by concentration quartile: his side moves 10pp across a
+  // ~7× concentration range while recall's own p10→p90 spans 50pp. The
+  // same joint, stated without a coefficient.
+  const sortedByCoverage = [...concentrationPairs].sort((left, right) => left.longTop20Coverage - right.longTop20Coverage)
+  const quartile = (slice: readonly FoldScore[]): string => {
+    const stats = distribution(slice.map((fold) => fold.longNumericRecall))
+    return `${stats.median.toFixed(2)} (${stats.p10.toFixed(2)}–${stats.p90.toFixed(2)})`
+  }
+  const q = Math.ceil(sortedByCoverage.length / 4)
+  console.log(
+    `median longRecall by top-20-share quartile (coverage median → recall median): ${[0, 1, 2, 3]
+      .map((index) => {
+        const slice = sortedByCoverage.slice(index * q, index === 3 ? sortedByCoverage.length : (index + 1) * q)
+        const coverage = slice.map((fold) => fold.longTop20Coverage)
+        return `${distribution(coverage).median.toFixed(2)} → ${quartile(slice)}`
+      })
+      .join('  ')}`,
   )
   const aggregate = new Map<string, number>()
   for (const fold of folds) {

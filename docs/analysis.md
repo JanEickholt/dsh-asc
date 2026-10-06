@@ -415,3 +415,40 @@ more concentrated than that, his higher median is arithmetic rather than
 summary quality — "long-head retention" and "concentration" are different
 claims, and these two numbers are how you tell them apart before
 comparing any two deployments' long-recall medians.
+
+### The hypothesis fails its own test (2026-10-06)
+
+He measured the two concentration numbers on his corpus (534 folds, the
+same 45 sessions): distinct long runs median 433 (p10 171, p90 911),
+top-20 mass coverage median 0.44 (p10 0.27, p90 0.70). Both point the
+wrong way for the arithmetic explanation — his originals are if
+anything *more* concentrated than ours, and his p10 distinct count is
+higher. Then the direct test: within his own folds, the correlation
+between concentration and long-head recall is r = 0.18 (n = 534), about
+3% of the variance. Across a ~7× concentration range his median recall
+moves 10 points, while recall's own p10→p90 spans 50.
+
+We ran the same correlation on our corpus once the sampler could
+compute it: **r(coverage, recall) = 0.069, r(distinct, recall) = 0.056**
+(n = 930). Even flatter than his. Our quartile view moves similarly —
+median long-recall 0.20 / 0.25 / 0.35 / 0.30 across top-20-share
+quartiles whose coverage medians run 0.14 → 0.62, against a within-
+quartile p10→p90 of up to 0.70.
+
+So the concentration knob sits on a short lever in both corpora, and
+neither deployment's long-recall median is corpus arithmetic. What the
+15-point gap actually tracks is pipeline + workload — the shape of
+what gets summarized and how — which is exactly why the variant stays
+record-only, per deployment, ungated. His phrasing: "record per
+deployment, don't gate on it: I'd sign that." Two independent corpora,
+two flat correlations, one conclusion; this closes the concentration
+question the earlier section opened.
+
+His per-fold distribution lands with the same verdict: single-moded,
+no second peak, a thin but real low tail (10.3% of his folds ≤ 15%)
+against our fat one (p10 0.05). The tail is where the two deployments
+differ, not the middle. And his parser anecdote — two of his own
+parsers disagreeing by one fold because a row number's space went
+missing (`#100` vs `#  1`), never erroring, only miscounting — is the
+never-errors-only-miscounts failure mode this whole thread keeps
+circling, live in his own tooling.
