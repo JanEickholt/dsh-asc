@@ -462,7 +462,8 @@ rotation). A fingerprint — the shadowed seq list plus the summary's
 first 200 chars — collapses our 942 raw `compaction/summary` events to
 806 unique folds: 60 duplicate groups contributing 136 extra folds, 16
 same-session-dir (rotation pairs) and 120 cross-session-dir (resumed
-conversations, one 5-way group in `--home-Jan-Projects-tovias-website--`).
+conversations; the largest group spans six session keys in
+`--home-Jan-Projects-serveio--`, eight occurrences of one fold).
 The seq list must be part of the key: rotation can insert events and
 shift the shadowed seqs by one while the summary text stays identical.
 The 942-vs-938 parse gap is unrelated: four v4-only folds shadow a
