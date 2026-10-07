@@ -452,3 +452,24 @@ parsers disagreeing by one fold because a row number's space went
 missing (`#100` vs `#  1`), never erroring, only miscounting — is the
 never-errors-only-miscounts failure mode this whole thread keeps
 circling, live in his own tooling.
+
+### Fold dedup: the same conversation under several session keys (2026-10-07)
+
+His issue #3 finding reproduces on our corpus exactly. The same fold
+entered the sweep 2–5× because one conversation can live under several
+session keys (resumed sessions) and several log generations (v3→v4
+rotation). A fingerprint — the shadowed seq list plus the summary's
+first 200 chars — collapses our 942 raw `compaction/summary` events to
+806 unique folds: 60 duplicate groups contributing 136 extra folds, 16
+same-session-dir (rotation pairs) and 120 cross-session-dir (resumed
+conversations, one 5-way group in `--home-Jan-Projects-tovias-website--`).
+The seq list must be part of the key: rotation can insert events and
+shift the shadowed seqs by one while the summary text stays identical.
+The 942-vs-938 parse gap is unrelated: four v4-only folds shadow a
+`developer/message` (tool-registry) event, which renders null and was
+already skipped before dedup. The sampler now dedupes before reporting
+(keep first occurrence, earliest file) and gained a `--fold-dump
+<path>` mode: one JSON line per unique fold with the per-fold pipeline
+columns he asked for — session dir, provider/model, shadowed event
+count, rendered byte total, and the recall signals — for his per-fold
+analysis.

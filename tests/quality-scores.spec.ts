@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { distribution, parseSessionLog, pearson, scoreFold } from '../scripts/quality-scores.ts'
+import { dedupeFolds, distribution, foldDumpRow, parseSessionLog, pearson, scoreFold, sessionDirOf } from '../scripts/quality-scores.ts'
+import type { FoldScore } from '../scripts/quality-scores.ts'
 
 /** Two scorable folds plus one partial fold whose shadowed events are absent. */
 const FIXTURE = [
@@ -89,5 +90,105 @@ describe('pearson', () => {
 
   it('rejects mismatched lengths', () => {
     expect(() => pearson([1, 2], [1, 2, 3])).toThrow('equal-length')
+  })
+})
+
+/** A parsed fold reduced to the fields dedup and the dump need. */
+function fold(overrides: Partial<Pick<FoldScore, 'session' | 'compactionId' | 'fingerprint' | 'eventCount'>>): FoldScore {
+  return {
+    session: '/root/project/session-1/session.v3.jsonl.zstd',
+    compactionId: 'c-000',
+    provider: 'p',
+    model: 'm',
+    fingerprint: '0,1|alpha only, numbers dropped',
+    eventCount: 2,
+    totalBytes: 120,
+    rouge1F1: 0.4,
+    top20Recall: 0.5,
+    numericRecall: 0,
+    singletonRecall: 0,
+    singletonCount: 1,
+    singletonBuckets: [],
+    longNumericRecall: 0,
+    longDistinctCount: 1,
+    longTop20Coverage: 1,
+    top20ShortShare: 0.5,
+    top20: [],
+    recordedNumericRecall: null,
+    recordedMatches: null,
+    ...overrides,
+  }
+}
+
+describe('sessionDirOf', () => {
+  it('names the session directory, not the file or project key', () => {
+    expect(sessionDirOf('/root/--home-Jan-Projects-serveio--/session-47d1ce60/session.v4.jsonl.zstd'))
+      .toBe('session-47d1ce60')
+  })
+})
+
+describe('dedupeFolds', () => {
+  it('keeps the first occurrence of exact duplicates and reports the group', () => {
+    const first = fold({ compactionId: 'c-aaa', session: '/r/p/session-1/session.v3.jsonl.zstd' })
+    const second = fold({ compactionId: 'c-aaa', session: '/r/p/session-1/session.v4.jsonl.zstd' })
+    const result = dedupeFolds([first, second])
+    expect(result.unique).toEqual([first])
+    expect(result.groups).toHaveLength(1)
+    expect(result.groups[0]!.members).toEqual([first, second])
+    expect(result.sameDirExtra).toBe(1)
+    expect(result.crossDirExtra).toBe(0)
+  })
+
+  it('classifies the same conversation resumed under another session key as cross-dir', () => {
+    const original = fold({ session: '/r/p/session-1/session.v3.jsonl.zstd' })
+    const resumed = fold({ compactionId: 'c-aaa', session: '/r/p/session-2/session.v3.jsonl.zstd' })
+    const result = dedupeFolds([original, resumed])
+    expect(result.unique).toEqual([original])
+    expect(result.sameDirExtra).toBe(0)
+    expect(result.crossDirExtra).toBe(1)
+  })
+
+  it('keeps folds whose summaries or shadowed seq lists differ', () => {
+    const rotated = fold({ fingerprint: '0,1|alpha only, numbers dropped', session: '/r/p/session-1/session.v4.jsonl.zstd' })
+    // v4 can insert events, shifting the shadowed seq list by one: the seq
+    // list is part of the fingerprint, so a rotation that shifts seqs is NOT
+    // a duplicate even when the summary text matches.
+    const shifted = fold({ fingerprint: '0,1,2|alpha only, numbers dropped', session: '/r/p/session-1/session.v4.jsonl.zstd' })
+    const rewritten = fold({ fingerprint: '0,1|beta summary, rewritten', session: '/r/p/session-1/session.v4.jsonl.zstd' })
+    const result = dedupeFolds([rotated, shifted, rewritten])
+    expect(result.unique).toEqual([rotated, shifted, rewritten])
+    expect(result.groups).toHaveLength(0)
+    expect(result.sameDirExtra).toBe(0)
+    expect(result.crossDirExtra).toBe(0)
+  })
+
+  it('counts each duplicate class per group member, not per group', () => {
+    const base = fold({ fingerprint: 'f', session: '/r/p/session-1/session.v3.jsonl.zstd' })
+    const sameDir = fold({ fingerprint: 'f', session: '/r/p/session-1/session.v4.jsonl.zstd' })
+    const crossDir = fold({ fingerprint: 'f', session: '/r/q/session-2/session.v3.jsonl.zstd' })
+    const result = dedupeFolds([base, sameDir, crossDir])
+    expect(result.sameDirExtra).toBe(1)
+    expect(result.crossDirExtra).toBe(1)
+    expect(result.groups[0]!.members).toHaveLength(3)
+  })
+})
+
+describe('foldDumpRow', () => {
+  it('shapes one dump row with the issue #3 pipeline columns', () => {
+    const parsed = parseSessionLog(FIXTURE, '/root/--p--/session-1/session.jsonl')
+    const row = foldDumpRow(parsed[0]!)
+    expect(Object.keys(row)).toEqual([
+      'session', 'compactionId', 'provider', 'model', 'eventCount', 'totalBytes',
+      'rouge1F1', 'top20Recall', 'numericRecall', 'longNumericRecall',
+      'singletonRecall', 'longDistinctCount', 'longTop20Coverage', 'top20ShortShare',
+    ])
+    // The session column names the session directory slug, not the full path.
+    expect(row.session).toBe('session-1')
+    expect(row.compactionId).toBe('c-aaa')
+    expect(row.eventCount).toBe(2)
+    // Fold A's original: the user message plus the assistant message.
+    expect(row.totalBytes).toBeGreaterThan(0)
+    expect(row.rouge1F1).toBeGreaterThanOrEqual(0)
+    expect(row.longNumericRecall).toBe(0)
   })
 })
