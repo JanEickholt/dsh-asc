@@ -18,13 +18,17 @@
  * those are compared against the recomputation as an extraction-fidelity check.
  *
  * Usage: node scripts/quality-scores.ts [roots...]   (default ~/.dsh/sessions)
+ *        node scripts/quality-scores.ts --fold-dump <path> [roots...]
+ * Folds are deduplicated on a fingerprint (shadowed seqs + summary text)
+ * before reporting: the same conversation logged under multiple session
+ * keys or log generations counts once (issue #3).
  *
  * @module dsh-asc/quality-scores
  */
 import { spawnSync } from 'node:child_process'
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { rouge1F1, topKeywordRecall, topLongNumericRecall, topNumericRecall, wordTokens } from '../src/engine/quality-gate.ts'
 
 /** Gate floors fixed by the default config; only the numeric floor varies. */
@@ -55,6 +59,12 @@ export interface FoldScore {
   readonly compactionId: string
   readonly provider: string
   readonly model: string
+  /** Dedup fingerprint: shadowed seq list plus the summary's first 200 chars. */
+  readonly fingerprint: string
+  /** Number of shadowed surface events contributing to the original text. */
+  readonly eventCount: number
+  /** Sum of UTF-8 byte lengths of the rendered shadowed event texts. */
+  readonly totalBytes: number
   readonly rouge1F1: number
   readonly top20Recall: number
   readonly numericRecall: number
@@ -163,6 +173,64 @@ export function singletonBuckets(singletons: readonly string[], summaryTokens: r
   }
   return BUCKET_LABELS.map((label, index) => ({ label, total: totals[index]!, matched: matched[index]! }))
 }
+
+/** Result of deduplicating parsed folds on their fingerprint. */
+export interface DedupResult {
+  /** First occurrence of each fingerprint, in input order. */
+  readonly unique: readonly FoldScore[]
+  /** Duplicate groups: fingerprint -> every occurrence, unique first. */
+  readonly groups: readonly { readonly fingerprint: string, readonly members: readonly FoldScore[] }[]
+  /** Extra folds dropped whose session dir matches the group's first fold. */
+  readonly sameDirExtra: number
+  /** Extra folds dropped whose session dir differs (same conversation, another key). */
+  readonly crossDirExtra: number
+}
+
+/**
+ * Deduplication key of a parsed fold's session directory: DSH persists logs
+ * as <root>/<project-key>/<encoded-session-id>/session.vN.jsonl, so the
+ * session dir (not the file) is the unit that log rotation and resumed
+ * sessions duplicate across.
+ */
+export function sessionDirOf(session: string): string {
+  const dir = dirname(session)
+  const slug = basename(dir)
+  return slug === '.' || slug === '/' ? basename(session) : slug
+}
+
+/**
+ * Dedupe folds on their fingerprint, keeping the first occurrence (callers
+ * pass folds in file order, so the earliest log wins). Reports duplicates by
+ * class: same session dir (v3→v4 log rotation) vs cross session dir (the
+ * same conversation resumed under another session key).
+ */
+export function dedupeFolds(folds: readonly FoldScore[]): DedupResult {
+  const groupsByFingerprint = new Map<string, FoldScore[]>()
+  const unique: FoldScore[] = []
+  for (const fold of folds) {
+    const members = groupsByFingerprint.get(fold.fingerprint)
+    if (members === undefined) {
+      groupsByFingerprint.set(fold.fingerprint, [fold])
+      unique.push(fold)
+      continue
+    }
+    members.push(fold)
+  }
+  const groups = [...groupsByFingerprint.entries()]
+    .filter(([, members]) => members.length > 1)
+    .map(([fingerprint, members]) => ({ fingerprint, members }))
+  let sameDirExtra = 0
+  let crossDirExtra = 0
+  for (const { members } of groups) {
+    const firstDir = sessionDirOf(members[0]!.session)
+    for (const member of members.slice(1)) {
+      if (sessionDirOf(member.session) === firstDir) sameDirExtra += 1
+      else crossDirExtra += 1
+    }
+  }
+  return { unique, groups, sameDirExtra, crossDirExtra }
+}
+
 
 /** Distribution summary: min, p10, median, p90, max. */
 export function distribution(values: readonly number[]): {
@@ -302,11 +370,13 @@ export function parseSessionLog(jsonl: string, name: string): FoldScore[] {
     const data = isRecord(summary.data) ? summary.data : {}
     const compactionId = asString(data.compactionId)
     const summaryText = blocksText(asArray(data.summary))
-    const rendered = asArray(data.shadowedSeqs)
+    const shadowedSeqs = asArray(data.shadowedSeqs)
+    const rendered = shadowedSeqs
       .map((seq) => (typeof seq === 'number' ? bySeq.get(seq) : undefined))
       .map((event) => (event === undefined ? null : eventText(event)))
     if (summaryText.trim() === '' || rendered.some((text) => text === null) || rendered.length === 0) continue
-    const originalText = rendered.filter((text) => text !== null && text.trim() !== '').join('\n\n')
+    const contributing = rendered.filter((text): text is string => text !== null && text.trim() !== '')
+    const originalText = contributing.join('\n\n')
     if (originalText.trim() === '') continue
     // Tokenize once; the profile needs the same tokens the scorers do.
     const originalTokens = wordTokens(originalText)
@@ -319,6 +389,12 @@ export function parseSessionLog(jsonl: string, name: string): FoldScore[] {
       compactionId,
       provider: asString(data.provider),
       model: asString(data.model),
+      // Same conversation logged twice (rotation or resumed under another
+      // key) shares its shadowed seq list and summary text; that is the
+      // fingerprint the dedup pass keys on (issue #3).
+      fingerprint: `${shadowedSeqs.map(String).join(',')}|${summaryText.slice(0, 200)}`,
+      eventCount: contributing.length,
+      totalBytes: contributing.reduce((sum, text) => sum + Buffer.byteLength(text, 'utf8'), 0),
       rouge1F1: rouge1F1(originalTokens, summaryTokens),
       top20Recall: topKeywordRecall(originalTokens, summaryTokens),
       numericRecall,
@@ -358,13 +434,58 @@ function collectLogs(root: string, out: string[] = []): string[] {
     if (entry.isDirectory()) collectLogs(path, out)
     else if (entry.isFile() && /session.*\.jsonl(\.zstd)?$/.test(entry.name)) out.push(path)
   }
-  return out
+  return out.sort()
 }
 
 const pct = (fraction: number): string => `${(100 * fraction).toFixed(1)}%`
 
+/** One JSON line of the --fold-dump: the per-fold pipeline columns issue #3 asks for. */
+export interface FoldDumpRow {
+  readonly session: string
+  readonly compactionId: string
+  readonly provider: string
+  readonly model: string
+  readonly eventCount: number
+  readonly totalBytes: number
+  readonly rouge1F1: number
+  readonly top20Recall: number
+  readonly numericRecall: number
+  readonly longNumericRecall: number
+  readonly singletonRecall: number
+  readonly longDistinctCount: number
+  readonly longTop20Coverage: number
+  readonly top20ShortShare: number
+}
+
+export function foldDumpRow(fold: FoldScore): FoldDumpRow {
+  return {
+    session: sessionDirOf(fold.session),
+    compactionId: fold.compactionId,
+    provider: fold.provider,
+    model: fold.model,
+    eventCount: fold.eventCount,
+    totalBytes: fold.totalBytes,
+    rouge1F1: fold.rouge1F1,
+    top20Recall: fold.top20Recall,
+    numericRecall: fold.numericRecall,
+    longNumericRecall: fold.longNumericRecall,
+    singletonRecall: fold.singletonRecall,
+    longDistinctCount: fold.longDistinctCount,
+    longTop20Coverage: fold.longTop20Coverage,
+    top20ShortShare: fold.top20ShortShare,
+  }
+}
+
 function main(): void {
-  const roots = process.argv.slice(2)
+  const args = process.argv.slice(2)
+  const dumpFlag = args.indexOf('--fold-dump')
+  const dumpPath = dumpFlag === -1 ? undefined : args[dumpFlag + 1]
+  if (dumpFlag !== -1 && typeof dumpPath !== 'string') {
+    console.error('--fold-dump needs a path argument')
+    process.exitCode = 1
+    return
+  }
+  const roots = args.filter((_, index) => index !== dumpFlag && index !== dumpFlag + 1)
   if (roots.length === 0) roots.push(join(homedir(), '.dsh', 'sessions'))
   const folds: FoldScore[] = []
   let sessions = 0
@@ -384,7 +505,20 @@ function main(): void {
     console.log(`no scorable folds across ${sessions} session logs`)
     return
   }
-  console.log(`sessions read: ${sessions}${unreadable > 0 ? ` (${unreadable} unreadable)` : ''}, folds: ${folds.length}`)
+  const { unique, groups, sameDirExtra, crossDirExtra } = dedupeFolds(folds)
+  console.log(
+    `sessions read: ${sessions}${unreadable > 0 ? ` (${unreadable} unreadable)` : ''}, folds: ${folds.length}`
+      + `, unique: ${unique.length} (dup groups ${groups.length}, extra: ${sameDirExtra} same-dir, ${crossDirExtra} cross-key)`,
+  )
+  if (dumpPath !== undefined) {
+    writeFileSync(dumpPath, `${unique.map((fold) => JSON.stringify(foldDumpRow(fold))).join('\n')}\n`)
+    console.log(`fold dump: ${unique.length} unique folds → ${dumpPath}`)
+    return
+  }
+  report(unique)
+}
+
+function report(folds: readonly FoldScore[]): void {
   const signals: readonly [label: string, pick: (fold: FoldScore) => number][] = [
     ['rouge1F1', (fold) => fold.rouge1F1],
     ['top20Recall', (fold) => fold.top20Recall],
