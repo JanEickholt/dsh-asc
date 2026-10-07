@@ -452,3 +452,24 @@ parsers disagreeing by one fold because a row number's space went
 missing (`#100` vs `#  1`), never erroring, only miscounting — is the
 never-errors-only-miscounts failure mode this whole thread keeps
 circling, live in his own tooling.
+
+### Write-time fold fingerprints (2026-10-07)
+
+His 526-not-534 discovery exposed the join hazard: the same
+conversation under multiple session keys writes the same fold into
+several logs, and deduping on (shadowedSeqs + summary prefix) is a
+post-hoc heuristic any analyser has to reinvent. The bracket now
+persists the identity at write time instead: every checkpoint's
+message source carries a `fingerprint` field, sha256 over the shadowed
+seqs and the rendered shadowed region, truncated to 24 hex chars.
+
+The invariant: the fingerprint derives ONLY from in-fold content and
+session-absolute seq numbers — never the session id, timestamps, or
+the per-commit random `compactionId` — so the same conversation
+replayed or resumed under any session key yields the same fingerprint.
+Offline analysers dedupe folds by exact identity (`fingerprint`, then
+`compactionId`) instead of heuristic content matching. The field is
+metadata only: nothing at runtime reads or branches on it, and logs
+written before the field existed parse and restore identically —
+absent fingerprints are simply not dedupable, which is the old
+behaviour.

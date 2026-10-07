@@ -15,7 +15,7 @@
  * @module dsh-asc/region
  */
 
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import {
   CompactionId,
@@ -33,7 +33,7 @@ import { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { QualityReport, ResolvedConfig } from '../types.ts'
 import { eventForSeq, rangeIneligibility, validateSurfaceRange } from '../policy/protected.ts'
-import { blockText } from '../utils/text.ts'
+import { blockText, serializeMessages } from '../utils/text.ts'
 import { tierSnapshot } from './tier.ts'
 
 /** Tag wrapping the structured summary inside the landed checkpoint node. */
@@ -279,7 +279,7 @@ export async function commitSurfaceCompaction(
 
   try {
     const prepared = prepareCompaction(dependencies, session, selection)
-    const framed = frameCheckpoint(dependencies, prepared, source, compactionId, options.sourceCommandId)
+    const framed = frameCheckpoint(dependencies, session, prepared, source, compactionId, options.sourceCommandId)
     assertStable(dependencies, session, prepared, options.stability)
     stage = 'commit'
     const pending = commitBody(session, startEvent, prepared, source, framed.message, framed.framedTokenCount)
@@ -387,9 +387,36 @@ function modelSummaryBlocks(source: Extract<SummarySource, { kind: 'model' }>): 
   ]
 }
 
+/**
+ * Stable offline identity of one fold: sha256 over the shadowed seq numbers
+ * and the rendered shadowed region, truncated to 24 hex chars (this repo's
+ * content-hash idiom). Invariant: the fingerprint derives ONLY from in-fold
+ * content and session-absolute seq numbers — never from the session id,
+ * timestamps, or the per-commit random `compactionId` — so the same
+ * conversation replayed or resumed under a different session key yields the
+ * same fingerprint, and offline analysers can dedupe identical folds across
+ * keys without heuristics. Metadata only: no runtime path branches on it.
+ * @param session - session holding the shadowed events.
+ * @param shadowedSeqs - the fold's session-absolute shadowed seqs.
+ * @returns the 24-hex fold fingerprint.
+ */
+export function foldFingerprint(
+  session: Session,
+  shadowedSeqs: readonly number[],
+): string {
+  const digest = createHash('sha256')
+  for (const message of regionMessages(session, shadowedSeqs)) {
+    digest.update(serializeMessages([message]))
+    digest.update('\n')
+  }
+  digest.update(`seqs:${shadowedSeqs.join(',')}`)
+  return digest.digest('hex').slice(0, 24)
+}
+
 /** Build the checkpoint message and enforce the shrink invariant. */
 function frameCheckpoint(
   dependencies: CommitDependencies,
+  session: Session,
   prepared: ReturnType<typeof prepareCompaction>,
   source: SummarySource,
   compactionId: CompactionResult['compactionId'],
@@ -403,17 +430,20 @@ function frameCheckpoint(
   }
   const checkpointMessage = createUserMessage({
     content: frameSummary(summaryBlocks, compactionId),
-    // The gate report rides provenance fields on the checkpoint source: the
+    // Per-fold provenance rides the checkpoint source: the
     // `compaction/summary` payload is harness-owned and closed to plugin
     // fields, while message sources are this repo's log channel (nudge,
-    // decompress). The replacement event inside the bracket is therefore
-    // the durable per-fold quality record.
-    source: source.kind === 'model' && source.quality !== undefined
-      ? Object.freeze({
-        ...compactCheckpointSource(compactionId, sourceCommandId),
-        quality: source.quality,
-      })
-      : compactCheckpointSource(compactionId, sourceCommandId),
+    // decompress). The replacement event inside the bracket is therefore the
+    // durable per-fold record — the fold fingerprint (dedup invariant: same
+    // fold content under any session key hashes identically) and the quality
+    // report when the gate ran.
+    source: Object.freeze({
+      ...compactCheckpointSource(compactionId, sourceCommandId),
+      fingerprint: foldFingerprint(session, prepared.selection.shadowedSeqs),
+      ...source.kind === 'model' && source.quality !== undefined
+        ? { quality: source.quality }
+        : {},
+    }),
   })
   const framedTokenCount = dependencies.meter.estimateMessage(checkpointMessage)
   if (framedTokenCount >= prepared.shadowedTokenCount) {
