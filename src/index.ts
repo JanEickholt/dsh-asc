@@ -33,6 +33,7 @@ export {
   commitSurfaceCompaction,
   selectCompactableRange,
   frameSummary,
+  foldFingerprint,
   regionMessages,
   inspectCompactionEntryState,
   SummaryNotSmallerError,
