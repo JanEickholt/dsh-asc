@@ -277,3 +277,21 @@ so very large recaps/searches should use narrower ids or queries.
   log and survive restarts.
 - **Disabling.** Set `auto: false` to stop nudges and overflow recovery
   while keeping the tools; remove the row to disable everything.
+
+## Cache economics
+
+Folds have a cost the session log alone cannot see: each compaction
+rewrites the conversation prefix, so the provider's prompt cache misses on
+the next request and the new surface is re-billed. To measure that per fold,
+run the session behind the bili proxy in `--passthrough` mode (it forwards
+bodies uncompressed, so dsh-asc stays the sole compactor while bili keeps a
+cache ledger), export the `acp_cache` report or `acp-cache diff` pairs, and
+run the offline join `tsx scripts/bili-cache-join.ts --session
+<session-log.jsonl> --cache <bili-report.json>` — it matches each
+`compaction/summary` event to the first later request that charged
+compression re-pay and reports per-fold re-pay `ΔC₁`, breakeven turns
+`n* = ΔC₁/Δs` against the measured post-fold cadence `k`, and a
+`PAID BACK` / `NOT PAID BACK` / `unobserved` verdict. Healthy traffic reads
+95–97% cache hit with re-pay at or under 2% of input. The full operator
+guide, including how to read NOT-PAID-BACK folds that stayed quiet
+(never decompressed — no regret), is in [docs/cache-join.md](cache-join.md).
