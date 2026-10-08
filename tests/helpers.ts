@@ -6,7 +6,9 @@ import { Context } from '@deepseek-ai/cordis'
 import {
   LlmAdapter,
   LlmRuntime,
+  ToolCallId,
   createAssistantMessage,
+  createToolResultMessage,
   createUserMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -151,4 +153,45 @@ export function eventOf<T extends import('@deepseek-ai/dsh-session').SessionEven
   }
   // The caller asserted the discriminant; tests deliberately read exact payloads.
   return event as import('@deepseek-ai/dsh-session').SessionEvent<T>
+}
+
+/**
+ * Append one `tool/call` + `tool/result` pair for a `context_*` tool with a
+ * JSON `arguments` string and an optional tool result message. Analytics
+ * fixtures build retrieval/decompress histories from these pairs.
+ */
+export function appendContextToolPair(
+  session: Session,
+  name: string,
+  argumentsJson: string,
+  result?: { content?: string[]; isError?: boolean },
+): number {
+  const seq = session.seq
+  const turn = 1 + countTurns(session)
+  session.append('tool/call', {
+    turn,
+    step: 1,
+    callId: ToolCallId(`call-${sessionCounter++}`),
+    name,
+    arguments: argumentsJson,
+  })
+  session.append('tool/result', {
+    turn,
+    step: 1,
+    message: createToolResultMessage({
+      callId: ToolCallId(`call-${sessionCounter - 1}`),
+      content: (result?.content ?? ['{}']).map(text => ({ type: 'text', text })),
+      isError: result?.isError ?? false,
+    }),
+  }, { surfaceOp: 'append' })
+  return seq
+}
+
+/** Count closed turns in a session log (analytics fixtures need turn numbers). */
+function countTurns(session: Session): number {
+  let turns = 0
+  for (const event of session.snapshotEvents()) {
+    if (event.type === 'turn/start') turns = Math.max(turns, event.data.turn)
+  }
+  return turns
 }

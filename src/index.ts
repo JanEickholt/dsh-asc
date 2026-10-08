@@ -57,6 +57,18 @@ export {
 export { serializeMessage, serializeMessages, textPreview } from './utils/text.ts'
 export { tierSnapshot, tierTokenUsage, nodeKindOf } from './engine/tier.ts'
 export type {
+  CheckpointUsage,
+  ToolCallUsage,
+  DecompressUsage,
+  DecompressOutcomeKind,
+  UsageReport,
+  RegretCause,
+  RegretSignal,
+  SignalReport,
+  SignalOptions,
+} from './analytics/types.ts'
+export { DEFAULT_SIGNAL_OPTIONS } from './analytics/types.ts'
+export type {
   AgenticCompactionConfig,
   ModelAgenticPolicyConfig,
   NudgeConfig,
@@ -66,6 +78,7 @@ export type {
   ProtectionConfig,
   DecompressConfig,
   ProjectionConfig,
+  AnalyticsConfig,
   ModelCompressionRange,
   CompressionOutcome,
   CompressionFailure,

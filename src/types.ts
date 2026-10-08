@@ -154,6 +154,17 @@ export interface ProjectionConfig {
   thresholdTokens?: number
 }
 
+/**
+ * Session-log analytics: derived usage counters and regret signals over
+ * committed compaction events. Read-only observations — never new state.
+ */
+export interface AnalyticsConfig {
+  /** Master switch; `false` disables the `asc-stats` command registration. Defaults to `true`. */
+  enabled?: boolean
+  /** Seq window for post-fold decompress regret classification. Defaults to `200`. */
+  regretSeqWindow?: number
+}
+
 /** Complete agentic compaction configuration. */
 export interface AgenticCompactionConfig extends CompactionPolicyFields {
   /** Exact provider/model overrides; duplicate targets fail plugin load. */
@@ -176,6 +187,8 @@ export interface AgenticCompactionConfig extends CompactionPolicyFields {
   decompress?: DecompressConfig
   /** Post-execute reversible tool-result projection. */
   projection?: ProjectionConfig
+  /** Session-log analytics (usage counters, regret signals, `asc-stats`). */
+  analytics?: AnalyticsConfig
 }
 
 /** Exactly one validated retention form. */
@@ -199,6 +212,7 @@ export interface ResolvedConfig {
   readonly protection: Required<ProtectionConfig>
   readonly decompress: Required<DecompressConfig>
   readonly projection: Required<ProjectionConfig>
+  readonly analytics: Required<AnalyticsConfig>
 }
 
 /** One model-chosen compression range with its model-written summary. */

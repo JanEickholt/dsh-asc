@@ -55,6 +55,7 @@ const AGENTIC_CONFIG_KEYS: ReadonlySet<string> = new Set([
   'protection',
   'decompress',
   'projection',
+  'analytics',
 ])
 
 const COMPRESS_KEYS: ReadonlySet<string> = new Set(['autoExpandToolPairs'])
@@ -103,6 +104,8 @@ const PROTECTION_KEYS: ReadonlySet<string> = new Set([
 const DECOMPRESS_KEYS: ReadonlySet<string> = new Set(['maxTokens', 'maxBlocks'])
 
 const PROJECTION_KEYS: ReadonlySet<string> = new Set(['enabled', 'thresholdTokens'])
+
+const ANALYTICS_KEYS: ReadonlySet<string> = new Set(['enabled', 'regretSeqWindow'])
 
 /**
  * Resolve and validate the full agentic compaction configuration.
@@ -278,6 +281,18 @@ export function resolveConfig(config: AgenticCompactionConfig = {}): ResolvedCon
     }
   })
 
+  const analytics = resolveGroup(config.analytics, ANALYTICS_KEYS, 'AgenticCompactionConfig.analytics', {
+    enabled: true,
+    regretSeqWindow: 200,
+  } as const, (group, name) => {
+    if (group.enabled !== undefined && typeof group.enabled !== 'boolean') {
+      throw new Error(`${name}.enabled must be a boolean`)
+    }
+    if (group.regretSeqWindow !== undefined) {
+      assertPositiveInteger(`${name}.regretSeqWindow`, group.regretSeqWindow)
+    }
+  })
+
   const modelPolicies = resolveModelPolicies(config.modelPolicies)
   for (const [index, policy] of modelPolicies.entries()) {
     const policyRetainRatio = policy.retainRatio ?? retention.retainRatio
@@ -305,6 +320,7 @@ export function resolveConfig(config: AgenticCompactionConfig = {}): ResolvedCon
     protection,
     decompress,
     projection,
+    analytics,
   })
 }
 

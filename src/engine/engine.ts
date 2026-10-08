@@ -190,6 +190,10 @@ function engineConfigSchema(): z<AgenticCompactionConfig> {
       enabled: z.boolean(),
       thresholdTokens: maxTokensSchema,
     }),
+    analytics: z.object({
+      enabled: z.boolean(),
+      regretSeqWindow: maxTokensSchema,
+    }),
   })
 }
 
