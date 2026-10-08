@@ -132,9 +132,11 @@ src/
   policy/       受保护节点策略与 nudge 状态机
   tools/        六个模型工具
   projection/   可逆工具结果投影服务与压缩器
+  analytics/    会话日志用量扫描、regret 信号、asc-stats 命令
   utils/        共享文本工具
 tests/          vitest 测试套件
-docs/           usage、design、analysis、e2e-validation
+scripts/        corpus-stats 与 bili-cache-join 测量脚本
+docs/           usage、design、analysis、e2e-validation、cache-join
 ```
 
 ## 搭配官方 tool-result pruner 使用
@@ -157,6 +159,74 @@ pruner 是安全网而非标准路径。
 
 两者可以干净地组合：`pruneSession()` 幂等，投影维护自己的检索索引，
 任意先后顺序都安全。
+
+## 生产环境实测
+
+下面的数字来自维护者机器上的真实会话——每一个都可以用
+[scripts/corpus-stats.mjs](scripts/corpus-stats.mjs) 扫描你自己的 DSH 会话
+日志复现（用法：`node scripts/corpus-stats.mjs [~/.dsh/sessions]`）。会话
+日志是持久的，所以这里没有任何估算或模拟：折叠、被 shadow 的 token 数、
+每次请求的缓存用量都是已提交的事件。
+
+语料扫描于 2026-10-08——240 个含折叠的会话，每个至少一次 `context_*` 工具
+调用（引擎归因：只统计注册过 dsh-asc 工具的会话；压缩引擎切换实验的会话
+按该指纹排除）：
+
+| 指标 | 数值 |
+|---|---|
+| 含折叠会话数 | 240 |
+| 折叠（压缩事务） | 721 |
+| 被折叠 shadow 的 token | 51.9M |
+| 模型署名摘要 | 721（fallback：10） |
+| 失败折叠 | 16（2.2%） |
+| 折叠中位大小 | 60.5K token |
+| 全部计量请求的 prompt-cache 命中率 | 94.8% |
+| 折叠后首请求缓存未命中中位数 | 27.6K token |
+| 折叠后的 `context_decompress` | 9 次 — 0.7% 的折叠 |
+| `context_recap` | 12 次 |
+| `context_retrieve`（投影找回） | 1,188 次 |
+| `context_search` | 38 次 |
+
+这张表讲的故事：约 721 次折叠、约 52M token 的被压缩历史里，模型只
+**9 次**要求取回原文。摘要加分层检查点撑起了工作；真正需要细节时，
+`context_retrieve` 可逆地恢复了它（1,188 次查找，零不可逆丢失）。94.8%
+的缓存命中率——计自这些会话里全部 78,927 次计量 LLM 请求，含每次折叠
+造成的 re-pay 尖峰——说明压缩与 prompt 缓存健康共存，而不是互相破坏。
+
+### 一次折叠的完整流转
+
+```mermaid
+flowchart TD
+    A[模型调用 context_compress] --> B[compaction/start]
+    B --> C[质量门：摘要必须过 L1 下限 + L2 召回]
+    C -->|通过| D[compaction/summary：shadowedRange + 分层摘要提交]
+    C -->|失败| G[ 折叠被拒绝 — 原文保留 ]
+    D --> E[user/message 替换事件：表面切换为摘要]
+    E --> F[compaction/end]
+    F --> H{模型之后需要细节?}
+    H -->|通常不需要| I[在摘要上继续工作]
+    H -->|721 次中的 9 次| J[context_decompress / context_retrieve]
+    J --> K[日志回放恢复逐字节原文]
+    K --> L[一条原地替换事件 — 仍然没有侧面状态]
+
+    style C fill:#f9f
+    style J fill:#ff9
+```
+
+这个流程里有两个 wire 层压缩器给不了的保证：质量门（没过下限/召回检查
+的折叠绝不销毁历史——它被拒绝）和可逆性（解压是日志回放，不是原文
+缓存；日志是唯一事实来源）。
+
+### 压缩的成本，诚实地说
+
+每次折叠都重写消息列表，所以下一个请求要重付 prompt 缓存：折叠后首请求
+未命中中位数为 27.6K token（对比 60.5K 的折叠中位大小）。折叠是一次性
+成本，换来的是更小表面的逐轮节省——[cache-join 脚本](docs/cache-join.md)
+逐折叠地把这个权衡对着 wire 代理的账本量出来，给出 PAID BACK / NOT
+PAID BACK 判定。
+
+用数字，不用形容词：corpus-stats 与 cache-join 两个脚本的存在，就是让
+"压缩到底划不划算？"这个问题从你自己的日志里得到回答。
 
 ## 文档
 

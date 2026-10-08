@@ -174,9 +174,11 @@ src/
   policy/       protected-node policy and the nudge state machine
   tools/        the six model tools
   projection/   reversible tool-result projection service + reducers
+  analytics/    session-log usage scanner, regret signals, asc-stats command
   utils/        shared text helpers
 tests/          vitest suites
-docs/           usage, design, analysis, e2e-validation
+scripts/        corpus-stats and bili-cache-join measurement scripts
+docs/           usage, design, analysis, e2e-validation, cache-join
 ```
 
 ## Using dsh-asc alongside the official tool-result pruner
@@ -203,6 +205,81 @@ pruner is the safety net, not the standard path.
 
 The two compose cleanly: `pruneSession()` is idempotent and projection keeps
 its own retrieval index, so either can run first.
+
+## Measured in production
+
+The numbers below come from real sessions on the maintainer's machine — every
+one is reproducible by running [scripts/corpus-stats.mjs](scripts/corpus-stats.mjs)
+against your own DSH session logs (usage: `node scripts/corpus-stats.mjs
+[~/.dsh/sessions]`). Session logs are durable, so nothing here is estimated or
+simulated: folds, shadowed-token counts, and per-request cache usage are all
+committed events.
+
+Corpus scanned 2026-10-08 — 240 sessions with folds, at least one
+`context_*` tool call each (engine attribution: only sessions where dsh-asc's
+tools were registered count; sessions from the compaction-engine swap
+experiment are excluded by that fingerprint):
+
+| Metric | Value |
+|---|---|
+| Sessions with folds | 240 |
+| Folds (compaction transactions) | 721 |
+| Tokens shadowed by folds | 51.9M |
+| Model-authored summaries | 721 (fallback: 10) |
+| Failed folds | 16 (2.2%) |
+| Median fold size | 60.5K tokens |
+| Prompt-cache hit rate across all metered requests | 94.8% |
+| Median first-request-after-fold cache miss | 27.6K tokens |
+| `context_decompress` after a fold | 9 calls — 0.7% of folds |
+| `context_recap` | 12 calls |
+| `context_retrieve` (projection lookups) | 1,188 calls |
+| `context_search` | 38 calls |
+
+The story the table tells: across ~721 folds covering ~52M tokens of
+compacted history, the model asked for originals back **9 times**. Summaries
+plus tiered checkpoints carried the work; when detail was genuinely needed,
+`context_retrieve` restored it reversibly (1,188 lookups without a single
+irreversible loss). The 94.8% cache hit rate — measured across all
+78,927 metered LLM requests in those sessions, including the re-pay spikes
+every fold causes — shows compaction coexisting with prompt caching at a
+healthy level rather than destroying it.
+
+### How a fold plays out
+
+```mermaid
+flowchart TD
+    A[Model calls context_compress] --> B[compaction/start]
+    B --> C[Quality gate: summary must pass L1 floor + L2 recall]
+    C -->|pass| D[compaction/summary: shadowedRange + tiered summary committed]
+    C -->|fail| G[ fold rejected — original stays ]
+    D --> E[user/message replace event: surface switches to the summary]
+    E --> F[compaction/end]
+    F --> H{Model needs detail later?}
+    H -->|usually not| I[Work continues on the summary]
+    H -->|9 of 721 folds| J[context_decompress / context_retrieve]
+    J --> K[Log replay restores byte-exact originals]
+    K --> L[One in-place replace event — still no side state]
+
+    style C fill:#f9f
+    style J fill:#ff9
+```
+
+Two properties visible in this flow that no wire-level compressor can offer:
+the quality gate (a fold that fails the floor/recall check never destroys
+history — it is rejected) and reversibility (decompression is log replay, not
+a cache of originals; the log is the only source of truth).
+
+### Cost of compaction, honestly
+
+Each fold rewrites the message list, so the next request re-pays the prompt
+cache: the median first-request-after-fold miss is 27.6K tokens (vs a 60.5K
+median fold). Folds are one-time costs paid for by the per-turn savings of a
+smaller surface — the [cache-join script](docs/cache-join.md) measures
+exactly this trade against a wire proxy's ledger, per fold, with PAID BACK /
+NOT PAID BACK verdicts.
+
+Numbers, not adjectives: the corpus-stats and cache-join scripts exist so the
+"does compaction pay?" question gets answered from your own logs.
 
 ## Documentation
 
