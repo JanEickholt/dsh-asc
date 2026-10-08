@@ -68,6 +68,7 @@ export type {
   SignalOptions,
 } from './analytics/types.ts'
 export { DEFAULT_SIGNAL_OPTIONS } from './analytics/types.ts'
+export { registerAnalyticsCommand } from './analytics/command.ts'
 export type {
   AgenticCompactionConfig,
   ModelAgenticPolicyConfig,
