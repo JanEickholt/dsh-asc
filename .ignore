@@ -10,6 +10,8 @@ coverage/
 .pnpm-store/
 
 # BEGIN oh-my-opencode-slim worktrees
-.slim/worktrees/
-.slim/worktrees.json
+!.slim/
+!.slim/worktrees.json
+!.slim/worktrees/
+!.slim/worktrees/**
 # END oh-my-opencode-slim worktrees
