@@ -10,7 +10,13 @@ releases, not for every commit.
 
 ## [Unreleased]
 
-### Changed
+## [0.4.0] - 2026-10-08
+
+This is the dsh `0.2.0-rc.2` generation release: the peer range admits both
+host generations, message sources are producer-owned, tool results are
+first-class messages, and the plugin gains measured-in-production analytics.
+
+### Changed (breaking)
 
 - Migrated to dsh `0.2.0-rc.2`: the built plugin now targets core
   `@deepseek-ai/dsh-*` `>=0.2.0-rc.1 <0.3.0` (the `peerDependencies` range
@@ -54,6 +60,37 @@ releases, not for every commit.
 - Test coverage proving the recorded quality report survives the storage
   boundary: snapshot → JSONL line → validated `Session.create` replay,
   the path a restart or offline log reader takes.
+- Session-log analytics (built with parallel worktree lanes, one feature
+  per lane):
+  - `scanSessionUsage(session)` in `src/analytics/scan.ts`: pure fold over
+    the durable log producing a `UsageReport` — per-checkpoint
+    `decompressCount`/`recapCount`, the six `context_*` tool calls, and
+    decompress outcomes (`restored`/`to-file`/`skipped`/`failed`).
+  - `computeSignals(report, options?)` in `src/analytics/signals.ts`:
+    regret classification (decompress within `analytics.regretSeqWindow`,
+    default 200 seqs, after a fold flags over-folding), zero-inclusive
+    per-checkpoint maps, and a quiet-tail verdict.
+  - `asc-stats` profile command via `registerAnalyticsCommand` (gated by
+    `analytics.enabled`, default on): scans the active session, derives
+    signals, renders a human report. Commands are a host service the
+    plugin now injects explicitly.
+  - `scripts/bili-cache-join.ts` + `docs/cache-join.md`: offline join of
+    dsh-asc folds against a bili wire-proxy `acp_cache` ledger — per-fold
+    re-pay vs shadowed tokens with PAID BACK / NOT PAID BACK verdicts.
+  - `scripts/corpus-stats.mjs`: reproducible production-numbers scanner
+    (sessions, folds, shadowed tokens, retrieval usage, cache hit rate,
+    post-fold re-pay) over DSH session logs; backs the README's
+    "Measured in production" section with numbers from real sessions.
+- Fold fingerprint persistence (issue #3): each checkpoint records the
+  fingerprint of the content it was produced from, and the quality-scores
+  sampler dedupes folds by fingerprint so re-folds of identical ranges
+  don't double-count in corpus readings.
+
+### Fixed
+
+- `registerAnalyticsCommand` is now wired into `apply()` (it was exported
+  but never mounted, so published builds never registered `asc-stats`);
+  the `commands` service is declared in the plugin's `inject` array.
 
 ## [0.3.1] - 2026-10-04
 
