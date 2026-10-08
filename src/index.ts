@@ -18,6 +18,7 @@ import type {} from '@deepseek-ai/dsh-session/types'
 import { AgenticCompactionEngine } from './engine/engine.ts'
 import { registerContextTools } from './tools/tools.ts'
 import { registerPhilosophyPrompt } from './engine/prompt.ts'
+import { registerAnalyticsCommand } from './analytics/command.ts'
 import { ToolResultProjectionService } from './projection/service.ts'
 import { resolveConfig } from './config.ts'
 import type { AgenticCompactionConfig } from './types.ts'
@@ -97,7 +98,7 @@ export type {
 /** Cordis plugin name. */
 export const name = 'dsh-asc'
 /** Hard dependencies required before the backend can register. */
-export const inject = ['llm', 'tokenMeter', 'sessions', 'tools', 'systemPrompt']
+export const inject = ['llm', 'tokenMeter', 'sessions', 'tools', 'commands', 'systemPrompt']
 /** Plugin configuration schema. */
 export const Config = AgenticCompactionEngine.Config
 
@@ -119,6 +120,7 @@ export function apply(ctx: Context, config: AgenticCompactionConfig = {}): () =>
   let projection: ToolResultProjectionService | undefined
   let disposePhilosophy: (() => void) | undefined
   let disposeTools: (() => void) | undefined
+  let disposeStats: (() => void) | undefined
   try {
     // Separate optional service: independent of the compaction engine and of
     // the overflow-only toolResultPruner, which stays mounted as fallback.
@@ -128,8 +130,10 @@ export function apply(ctx: Context, config: AgenticCompactionConfig = {}): () =>
     }
     disposePhilosophy = registerPhilosophyPrompt(ctx)
     disposeTools = registerContextTools(ctx, engine)
+    disposeStats = registerAnalyticsCommand(ctx, config)
   } catch (error: unknown) {
     // A partial apply must not leave automatic listeners behind.
+    disposeStats?.()
     disposeTools?.()
     disposePhilosophy?.()
     projection?.dispose()
@@ -137,6 +141,7 @@ export function apply(ctx: Context, config: AgenticCompactionConfig = {}): () =>
     throw error
   }
   return () => {
+    disposeStats?.()
     disposeTools?.()
     disposePhilosophy?.()
     projection?.dispose()

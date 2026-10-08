@@ -12,6 +12,7 @@ import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { InvariantRegistry } from '@deepseek-ai/dsh-invariants'
 import ToolResultPruner from '@deepseek-ai/dsh-compaction-tool-result-pruner'
 import { AgenticCompactionEngine } from '../src/engine/engine.ts'
@@ -44,6 +45,7 @@ async function loadYaml(lines: readonly string[]): Promise<Context> {
     ['@deepseek-ai/dsh-token-meter', TokenMeter],
     ['@deepseek-ai/dsh-system-prompt', SystemPrompt],
     ['@deepseek-ai/dsh-tools', ToolRuntime],
+    ['@deepseek-ai/dsh-commands', CommandRuntime],
     ['@deepseek-ai/dsh-invariants', InvariantRegistry],
     ['@deepseek-ai/dsh-compaction-tool-result-pruner', ToolResultPruner],
     ['dsh-asc', pluginEntry],
@@ -73,6 +75,7 @@ describe('real Loader composition', () => {
       "- name: '@deepseek-ai/dsh-token-meter'",
       "- name: '@deepseek-ai/dsh-system-prompt'",
       "- name: '@deepseek-ai/dsh-tools'",
+      "- name: '@deepseek-ai/dsh-commands'",
       "- name: '@deepseek-ai/dsh-invariants'",
       "- name: '@deepseek-ai/dsh-compaction-tool-result-pruner'",
       "  config:",
@@ -127,6 +130,7 @@ describe('real Loader composition', () => {
     await context.plugin(TokenMeter)
     await context.plugin(SystemPrompt)
     await context.plugin(ToolRuntime)
+    await context.plugin(CommandRuntime)
     await context.plugin(InvariantRegistry)
     await expect(context.plugin(pluginEntry, {
       bogus: true,
@@ -141,6 +145,7 @@ describe('real Loader composition', () => {
       "- name: '@deepseek-ai/dsh-token-meter'",
       "- name: '@deepseek-ai/dsh-system-prompt'",
       "- name: '@deepseek-ai/dsh-tools'",
+      "- name: '@deepseek-ai/dsh-commands'",
       "- name: '@deepseek-ai/dsh-invariants'",
       "- name: 'dsh-asc'",
       '  config:',
@@ -162,6 +167,7 @@ describe('real Loader composition', () => {
       "- name: '@deepseek-ai/dsh-token-meter'",
       "- name: '@deepseek-ai/dsh-system-prompt'",
       "- name: '@deepseek-ai/dsh-tools'",
+      "- name: '@deepseek-ai/dsh-commands'",
       "- name: '@deepseek-ai/dsh-invariants'",
       "- name: 'dsh-asc'",
       '  config:',
