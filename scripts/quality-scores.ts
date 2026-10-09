@@ -17,6 +17,14 @@
  * 0.3.2+ also carry the gate's own recorded metrics on the checkpoint source;
  * those are compared against the recomputation as an extraction-fidelity check.
  *
+ * Every fold also carries event-kind attribution (issue #3's instrument):
+ * each contributing event classifies as injected context, assistant text,
+ * tool result, checkpoint (an older summary folded again), or human turn,
+ * and every missed top-20 long-token occurrence is credited to the kind of
+ * the event it lives in. Occurrences belong to exactly one event, so the
+ * per-kind misses sum to the fold total — the reconciliation the report
+ * prints. The default report surfaces the tail tables tail vs non-tail.
+ *
  * Usage: node scripts/quality-scores.ts [roots...]   (default ~/.dsh/sessions)
  *        node scripts/quality-scores.ts --fold-dump <path> [roots...]
  * Folds are deduplicated on a fingerprint (shadowed seqs + summary text)
@@ -84,6 +92,12 @@ export interface FoldScore {
   readonly longTop20Coverage: number
   /** Singleton-tail recall split by token length: 1-2, 3-5, 6+ digits. */
   readonly singletonBuckets: readonly SingletonBucket[]
+  /** UTF-8 bytes of the original contributed by each event kind (issue #3). */
+  readonly kindBytes: KindCounts
+  /** Missed top-20 long-token occurrences per event kind; sums to missedLongOccurrences. */
+  readonly kindMissedLong: KindCounts
+  /** Occurrences of missed top-20 long tokens anywhere in the original. */
+  readonly missedLongOccurrences: number
   /** Recorded numericRecall from a 0.3.2+ checkpoint source, when present. */
   readonly recordedNumericRecall: number | null
   /** Recorded vs recomputed agreement (tolerance 0.01), when both exist. */
@@ -102,6 +116,14 @@ export interface SingletonBucket {
   readonly total: number
   readonly matched: number
 }
+
+/** Where a contributing event's content came from (issue #3 attribution). */
+export const EVENT_KINDS = ['injected', 'assistant', 'tool', 'checkpoint', 'human'] as const
+export type EventKind = (typeof EVENT_KINDS)[number]
+export type KindCounts = Readonly<Record<EventKind, number>>
+
+const zeroKindCounts = (): Record<EventKind, number> =>
+  ({ injected: 0, assistant: 0, tool: 0, checkpoint: 0, human: 0 })
 
 /** Score one summary against the original text, mirroring the gate. */
 export function scoreFold(summaryText: string, originalText: string): {
@@ -126,6 +148,7 @@ export function scoreFold(summaryText: string, originalText: string): {
 export function numericProfile(originalText: string): {
   top20: NumericTokenCount[]
   singletons: string[]
+  longTop20: NumericTokenCount[]
   longDistinctCount: number
   longTop20Coverage: number
 } {
@@ -141,6 +164,9 @@ export function numericProfile(originalText: string): {
   return {
     top20: entries.slice(0, 20).map(([token, count]) => ({ token, count })),
     singletons: entries.filter(([, count]) => count === 1).map(([token]) => token),
+    // Same count map and sort as the gate's topRecallOf, so this is exactly
+    // the token list topLongNumericRecall scores.
+    longTop20: longEntries.slice(0, 20).map(([token, count]) => ({ token, count })),
     longDistinctCount: longEntries.length,
     longTop20Coverage: longTotal === 0 ? 1 : longTop20Mass / longTotal,
   }
@@ -316,6 +342,35 @@ function eventText(event: LogEvent): string | null {
   }
 }
 
+/**
+ * Classify one contributing event for the kind attribution. Only called on
+ * events eventText() rendered, so the default is unreachable: the four
+ * renderable types are the only ones that reach here.
+ */
+function eventKindOf(event: LogEvent): EventKind {
+  const data = isRecord(event.data) ? event.data : {}
+  const source = isRecord(data.source) ? data.source : null
+  switch (event.type) {
+    case 'assistant/message':
+      return 'assistant'
+    case 'tool/result':
+      return 'tool'
+    case 'system/message':
+      return 'injected'
+    case 'user/message': {
+      // No source marker exists only on pre-source logs, where user turns
+      // were human-typed; everything sourced is harness content.
+      if (source === null || source.kind === 'user') return 'human'
+      if (source.kind === 'compact-checkpoint' || (source.kind === 'plugin' && source.plugin === 'compact')) {
+        return 'checkpoint'
+      }
+      return 'injected'
+    }
+    default:
+      return 'injected'
+  }
+}
+
 /** Checkpoint provenance source on a persisted replacement message. */
 interface CheckpointSource {
   readonly plugin: string
@@ -371,18 +426,46 @@ export function parseSessionLog(jsonl: string, name: string): FoldScore[] {
     const compactionId = asString(data.compactionId)
     const summaryText = blocksText(asArray(data.summary))
     const shadowedSeqs = asArray(data.shadowedSeqs)
-    const rendered = shadowedSeqs
+    const shadowed = shadowedSeqs
       .map((seq) => (typeof seq === 'number' ? bySeq.get(seq) : undefined))
-      .map((event) => (event === undefined ? null : eventText(event)))
-    if (summaryText.trim() === '' || rendered.some((text) => text === null) || rendered.length === 0) continue
-    const contributing = rendered.filter((text): text is string => text !== null && text.trim() !== '')
-    const originalText = contributing.join('\n\n')
+      .map((event) => {
+        if (event === undefined) return null
+        const text = eventText(event)
+        return text === null ? null : { event, text }
+      })
+    if (summaryText.trim() === '' || shadowed.some((cell) => cell === null) || shadowed.length === 0) continue
+    const contributing = shadowed.filter(
+      (cell): cell is { event: LogEvent, text: string } => cell !== null && cell.text.trim() !== '',
+    )
+    const originalText = contributing.map((cell) => cell.text).join('\n\n')
     if (originalText.trim() === '') continue
     // Tokenize once; the profile needs the same tokens the scorers do.
     const originalTokens = wordTokens(originalText)
     const summaryTokens = wordTokens(summaryText)
-    const { top20, singletons, longDistinctCount, longTop20Coverage } = numericProfile(originalText)
+    const { top20, singletons, longTop20, longDistinctCount, longTop20Coverage } = numericProfile(originalText)
     const numericRecall = topNumericRecall(originalTokens, summaryTokens)
+    // Kind attribution (issue #3): an occurrence of a missed top-20 long
+    // token lives in exactly one contributing event, so per-kind counts sum
+    // to the fold total by construction — the reconciliation the report
+    // re-derives and prints.
+    const summarySet = new Set(summaryTokens)
+    const missedTokens = new Set(
+      longTop20.filter((entry) => !summarySet.has(entry.token)).map((entry) => entry.token),
+    )
+    const kindBytes = zeroKindCounts()
+    const kindMissedLong = zeroKindCounts()
+    let missedLongOccurrences = 0
+    for (const cell of contributing) {
+      const kind = eventKindOf(cell.event)
+      kindBytes[kind] += Buffer.byteLength(cell.text, 'utf8')
+      if (missedTokens.size === 0) continue
+      let inEvent = 0
+      for (const token of wordTokens(cell.text)) {
+        if (missedTokens.has(token)) inEvent += 1
+      }
+      kindMissedLong[kind] += inEvent
+      missedLongOccurrences += inEvent
+    }
     const checkpoint = checkpoints.get(compactionId)
     folds.push({
       session: name,
@@ -394,7 +477,7 @@ export function parseSessionLog(jsonl: string, name: string): FoldScore[] {
       // fingerprint the dedup pass keys on (issue #3).
       fingerprint: `${shadowedSeqs.map(String).join(',')}|${summaryText.slice(0, 200)}`,
       eventCount: contributing.length,
-      totalBytes: contributing.reduce((sum, text) => sum + Buffer.byteLength(text, 'utf8'), 0),
+      totalBytes: contributing.reduce((sum, cell) => sum + Buffer.byteLength(cell.text, 'utf8'), 0),
       rouge1F1: rouge1F1(originalTokens, summaryTokens),
       top20Recall: topKeywordRecall(originalTokens, summaryTokens),
       numericRecall,
@@ -406,6 +489,9 @@ export function parseSessionLog(jsonl: string, name: string): FoldScore[] {
       longTop20Coverage,
       top20ShortShare: top20.filter((entry) => entry.token.length <= 2).length / Math.max(1, top20.length),
       top20,
+      kindBytes,
+      kindMissedLong,
+      missedLongOccurrences,
       recordedNumericRecall: checkpoint?.recordedNumericRecall ?? null,
       recordedMatches: checkpoint === undefined || checkpoint.recordedNumericRecall === null
         ? null
@@ -455,6 +541,9 @@ export interface FoldDumpRow {
   readonly longDistinctCount: number
   readonly longTop20Coverage: number
   readonly top20ShortShare: number
+  readonly kindBytes: KindCounts
+  readonly kindMissedLong: KindCounts
+  readonly missedLongOccurrences: number
 }
 
 export function foldDumpRow(fold: FoldScore): FoldDumpRow {
@@ -473,7 +562,46 @@ export function foldDumpRow(fold: FoldScore): FoldDumpRow {
     longDistinctCount: fold.longDistinctCount,
     longTop20Coverage: fold.longTop20Coverage,
     top20ShortShare: fold.top20ShortShare,
+    kindBytes: fold.kindBytes,
+    kindMissedLong: fold.kindMissedLong,
+    missedLongOccurrences: fold.missedLongOccurrences,
   }
+}
+
+/** Kind attribution summed over a fold set (issue #3's per-corpus tables). */
+export interface KindAggregate {
+  readonly folds: number
+  /** Byte share of the set's original text per kind (denominator: all bytes). */
+  readonly byteShares: KindCounts
+  /** Share of missed top-20 long-token occurrences per kind (denominator: all misses). */
+  readonly missedShares: KindCounts
+  readonly missedTotal: number
+  /** Folds whose tool bytes exceed half the original (the tool-heaviness cut). */
+  readonly toolDominant: number
+}
+
+export function kindAggregate(folds: readonly FoldScore[]): KindAggregate {
+  const bytes = zeroKindCounts()
+  const missed = zeroKindCounts()
+  let totalBytes = 0
+  let missedTotal = 0
+  let toolDominant = 0
+  for (const fold of folds) {
+    totalBytes += fold.totalBytes
+    missedTotal += fold.missedLongOccurrences
+    if (fold.kindBytes.tool / Math.max(1, fold.totalBytes) > 0.5) toolDominant += 1
+    for (const kind of EVENT_KINDS) {
+      bytes[kind] += fold.kindBytes[kind]
+      missed[kind] += fold.kindMissedLong[kind]
+    }
+  }
+  const byteShares = zeroKindCounts()
+  const missedShares = zeroKindCounts()
+  for (const kind of EVENT_KINDS) {
+    byteShares[kind] = totalBytes === 0 ? 0 : bytes[kind] / totalBytes
+    missedShares[kind] = missedTotal === 0 ? 0 : missed[kind] / missedTotal
+  }
+  return { folds: folds.length, byteShares, missedShares, missedTotal, toolDominant }
 }
 
 function main(): void {
@@ -632,6 +760,57 @@ function report(folds: readonly FoldScore[]): void {
       })
       .join('  ')}`,
   )
+  // Event-kind attribution (issue #3's instrument, reproducible): where the
+  // original's bytes and the missed top-20 long-token occurrences live,
+  // tail vs non-tail. Tail is longRecall < 0.10, big folds have >= 50
+  // contributing events — the two cuts the thread compares corpora under.
+  const isTail = (fold: FoldScore): boolean => fold.longNumericRecall < 0.10
+  const tailFolds = folds.filter(isTail)
+  const bigFolds = folds.filter((fold) => fold.eventCount >= 50)
+  const bigTail = bigFolds.filter(isTail)
+  const bigNonTail = bigFolds.filter((fold) => !isTail(fold))
+  const sessionOf = (fold: FoldScore): string => sessionDirOf(fold.session)
+  const bigTailBySession = new Map<string, number>()
+  for (const fold of bigTail) bigTailBySession.set(sessionOf(fold), (bigTailBySession.get(sessionOf(fold)) ?? 0) + 1)
+  const topSession = [...bigTailBySession.entries()].sort((left, right) => right[1] - left[1])[0]
+  console.log(`\nevent-kind attribution (tail = longRecall < 0.10):`)
+  console.log(
+    `  folds: ${folds.length} (tail ${tailFolds.length} across ${new Set(tailFolds.map(sessionOf)).size} sessions)`
+      + `; big (>=50 events): ${bigFolds.length} (tail ${bigTail.length}, ${pct(bigTail.length / Math.max(1, bigFolds.length))})`,
+  )
+  if (topSession !== undefined) {
+    console.log(`  top session carries ${topSession[1]} of ${bigTail.length} big tail folds (${bigTailBySession.size} sessions have any)`)
+  }
+  const byModel = new Map<string, { n: number, tail: number }>()
+  for (const fold of bigFolds) {
+    const key = fold.model === '' ? fold.provider : `${fold.provider}/${fold.model}`
+    const entry = byModel.get(key) ?? { n: 0, tail: 0 }
+    entry.n += 1
+    if (isTail(fold)) entry.tail += 1
+    byModel.set(key, entry)
+  }
+  const modelRows = [...byModel.entries()].filter(([, { n }]) => n >= 10).sort((left, right) => right[1].n - left[1].n)
+  if (modelRows.length > 0) {
+    console.log(
+      `  big-fold tail rate by model (n >= 10): ${modelRows.map(([model, { n, tail }]) => `${model} ${pct(tail / n)} (n=${n})`).join('  ')}`,
+    )
+  }
+  const tailAgg = kindAggregate(bigTail)
+  const nonTailAgg = kindAggregate(bigNonTail)
+  const bytePair = (kind: EventKind): string =>
+    `${kind} ${(100 * tailAgg.byteShares[kind]).toFixed(1)}% / ${(100 * nonTailAgg.byteShares[kind]).toFixed(1)}%`
+  const missedPair = (kind: EventKind): string =>
+    `${kind} ${(100 * tailAgg.missedShares[kind]).toFixed(1)}% / ${(100 * nonTailAgg.missedShares[kind]).toFixed(1)}%`
+  console.log(`  byte shares, big tail / big non-tail: ${EVENT_KINDS.map(bytePair).join('  ')}`)
+  console.log(`  missed top-20 long-token occurrence shares, big tail / non-tail: ${EVENT_KINDS.map(missedPair).join('  ')}`)
+  console.log(
+    `  tool-dominant folds (>50% tool bytes): ${tailAgg.toolDominant} of ${tailAgg.folds} tail`
+      + `, ${nonTailAgg.toolDominant} of ${nonTailAgg.folds} non-tail`,
+  )
+  const reconciles = folds.filter(
+    (fold) => EVENT_KINDS.reduce((sum, kind) => sum + fold.kindMissedLong[kind], 0) === fold.missedLongOccurrences,
+  ).length
+  console.log(`  attribution reconciles on ${reconciles} of ${folds.length} folds (per-kind misses sum to the fold total)`)
   const aggregate = new Map<string, number>()
   for (const fold of folds) {
     for (const entry of fold.top20) aggregate.set(entry.token, (aggregate.get(entry.token) ?? 0) + 1)

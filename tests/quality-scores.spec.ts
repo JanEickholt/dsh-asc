@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dedupeFolds, distribution, foldDumpRow, parseSessionLog, pearson, scoreFold, sessionDirOf } from '../scripts/quality-scores.ts'
+import { dedupeFolds, distribution, foldDumpRow, kindAggregate, parseSessionLog, pearson, scoreFold, sessionDirOf } from '../scripts/quality-scores.ts'
 import type { FoldScore } from '../scripts/quality-scores.ts'
 
 /** Two scorable folds plus one partial fold whose shadowed events are absent. */
@@ -114,6 +114,9 @@ function fold(overrides: Partial<Pick<FoldScore, 'session' | 'compactionId' | 'f
     longTop20Coverage: 1,
     top20ShortShare: 0.5,
     top20: [],
+    kindBytes: { injected: 12, assistant: 24, tool: 60, checkpoint: 6, human: 18 },
+    kindMissedLong: { injected: 0, assistant: 1, tool: 2, checkpoint: 0, human: 0 },
+    missedLongOccurrences: 3,
     recordedNumericRecall: null,
     recordedMatches: null,
     ...overrides,
@@ -181,6 +184,7 @@ describe('foldDumpRow', () => {
       'session', 'compactionId', 'provider', 'model', 'eventCount', 'totalBytes',
       'rouge1F1', 'top20Recall', 'numericRecall', 'longNumericRecall',
       'singletonRecall', 'longDistinctCount', 'longTop20Coverage', 'top20ShortShare',
+      'kindBytes', 'kindMissedLong', 'missedLongOccurrences',
     ])
     // The session column names the session directory slug, not the full path.
     expect(row.session).toBe('session-1')
@@ -190,5 +194,72 @@ describe('foldDumpRow', () => {
     expect(row.totalBytes).toBeGreaterThan(0)
     expect(row.rouge1F1).toBeGreaterThanOrEqual(0)
     expect(row.longNumericRecall).toBe(0)
+  })
+})
+
+/**
+ * Kind-attribution fixture (issue #3): one fold whose shadowed region holds
+ * all five event kinds, plus a pre-source fold that must read as human.
+ * Every 777777 and the 123 are dropped by the summary.
+ */
+const KIND_FIXTURE = [
+  '{"type":"session","version":4,"id":"k1"}',
+  '{"type":"tool/result","seq":10,"data":{"message":{"role":"tool","content":[{"type":"text","text":"out 777777 777777 padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding"}]}}}',
+  '{"type":"assistant/message","seq":11,"data":{"message":{"role":"assistant","content":[{"type":"text","text":"say 777777"}]}}}',
+  '{"type":"system/message","seq":12,"data":{"content":[{"type":"text","text":"note 777777"}]}}',
+  '{"type":"user/message","seq":13,"data":{"content":[{"type":"text","text":"inject 777777"}],"source":{"kind":"runtime-context"},"role":"user"}}',
+  '{"type":"user/message","seq":14,"data":{"content":[{"type":"text","text":"old summary said 777777"}],"source":{"kind":"compact-checkpoint"},"role":"user"}}',
+  '{"type":"user/message","seq":15,"data":{"content":[{"type":"text","text":"human typed 123"}],"source":{"kind":"user"},"role":"user"}}',
+  '{"type":"compaction/summary","seq":16,"data":{"compactionId":"c-kind","summary":[{"type":"text","text":"nothing kept"}],"shadowedSeqs":[10,11,12,13,14,15],"provider":"p","model":"m"}}',
+  '{"type":"user/message","seq":17,"data":{"content":[{"type":"text","text":"legacy 999999"}],"role":"user"}}',
+  '{"type":"compaction/summary","seq":18,"data":{"compactionId":"c-legacy","summary":[{"type":"text","text":"legacy dropped"}],"shadowedSeqs":[17],"provider":"p","model":"m"}}',
+].join('\n')
+
+describe('event-kind attribution', () => {
+  it('credits bytes and missed long-token occurrences to the five kinds', () => {
+    const [kind, legacy] = parseSessionLog(KIND_FIXTURE, 'kind.jsonl')
+    // 777777: twice in the tool result, once each in assistant, system
+    // (injected), runtime-context (injected) and the old checkpoint; 123
+    // once in the human turn. All missed.
+    expect(kind!.kindMissedLong).toEqual({ injected: 2, assistant: 1, tool: 2, checkpoint: 1, human: 1 })
+    expect(kind!.missedLongOccurrences).toBe(7)
+    // Byte shares partition the original: kinds sum to the fold total.
+    const kindBytesTotal = Object.values(kind!.kindBytes).reduce((sum, value) => sum + value, 0)
+    expect(kindBytesTotal).toBe(kind!.totalBytes)
+    expect(kind!.kindBytes.tool).toBeGreaterThan(kind!.kindBytes.assistant)
+    // The tool result carries most of the bytes → tool-dominant.
+    expect(kind!.kindBytes.tool / kind!.totalBytes).toBeGreaterThan(0.5)
+    // Pre-source user turns read as human.
+    expect(legacy!.kindBytes).toEqual({ injected: 0, assistant: 0, tool: 0, checkpoint: 0, human: legacy!.totalBytes })
+    expect(legacy!.kindMissedLong).toEqual({ injected: 0, assistant: 0, tool: 0, checkpoint: 0, human: 1 })
+  })
+
+  it('aggregates shares and tool dominance over a fold set', () => {
+    const folds = parseSessionLog(KIND_FIXTURE, 'kind.jsonl')
+    const [kind, legacy] = folds
+    const agg = kindAggregate(folds)
+    expect(agg.folds).toBe(2)
+    expect(agg.missedTotal).toBe(8)
+    // Missed occurrences: tool 2, assistant 1, injected 2, checkpoint 1,
+    // human 2 (one per fold) → shares over 8.
+    expect(agg.missedShares).toEqual({ injected: 0.25, assistant: 0.125, tool: 0.25, checkpoint: 0.125, human: 0.25 })
+    const byteTotal = kind!.totalBytes + legacy!.totalBytes
+    expect(Object.values(agg.byteShares).reduce((sum, value) => sum + value, 0)).toBeCloseTo(1, 10)
+    expect(agg.byteShares.tool).toBeCloseTo(kind!.kindBytes.tool / byteTotal, 10)
+    expect(agg.toolDominant).toBe(1)
+    expect(kindAggregate([])).toEqual({
+      folds: 0,
+      byteShares: { injected: 0, assistant: 0, tool: 0, checkpoint: 0, human: 0 },
+      missedShares: { injected: 0, assistant: 0, tool: 0, checkpoint: 0, human: 0 },
+      missedTotal: 0,
+      toolDominant: 0,
+    })
+  })
+
+  it('attributes nothing when the summary keeps the long head', () => {
+    const folds = parseSessionLog(FIXTURE, 'fixture.jsonl')
+    const kept = folds.find((fold) => fold.compactionId === 'c-bbb')!
+    expect(kept.kindMissedLong).toEqual({ injected: 0, assistant: 0, tool: 0, checkpoint: 0, human: 0 })
+    expect(kept.missedLongOccurrences).toBe(0)
   })
 })

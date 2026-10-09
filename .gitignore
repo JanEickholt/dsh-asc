@@ -8,6 +8,7 @@ coverage/
 .DS_Store
 *.tgz
 .pnpm-store/
+.slim/
 
 # BEGIN oh-my-opencode-slim worktrees
 .slim/worktrees/

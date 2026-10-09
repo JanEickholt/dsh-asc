@@ -495,3 +495,38 @@ metadata only: nothing at runtime reads or branches on it, and logs
 written before the field existed parse and restore identically —
 absent fingerprints are simply not dedupable, which is the old
 behaviour.
+
+### Event-kind attribution in the sampler (2026-10-09)
+
+The event-by-event reads from the issue #3 thread were one-shot session
+scripts; the instrument now lives in the sampler itself, so the numbers
+re-derive from the corpus on every run instead of being quoted from a
+thread. Each contributing event of a fold classifies into five kinds:
+injected context (system messages plus every sourced user-role message
+that is neither human nor an old checkpoint — runtime context, skill
+catalogs, agent instructions, plugin and agent machinery), assistant
+text, tool results, checkpoint (an older summary folded again), and
+human turns (source kind `user`, or no source on pre-source logs).
+Every missed top-20 long-token occurrence is credited to the kind of
+the event it lives in; an occurrence lives in exactly one event, so the
+per-kind misses sum to the fold total, and the report prints that
+reconciliation every run (813 of 813 folds on the first sweep).
+
+Reading of 2026-10-09 (813 unique folds, tail = longRecall < 0.10): the
+tail is 160 folds across 82 sessions; big folds (≥50 events) run 92 of
+677 tail (13.6%), the top session carrying 8 of the 92. The big-fold
+tail rate by summarizer model spans 6.2% to 16.4% (models with n ≥ 20;
+the 24% reading is a provider×model route cell of n=25, not a model
+effect) — wider than the deployment gap the thread started from, and
+the one axis composition tables cannot see. Kind shares stay flat
+between tail and
+non-tail (bytes: injected 14.7/13.9%, assistant 42.1/44.4%, tool
+42.1/40.8%, checkpoint 0.9/0.9%, human 0.1/0.1%), the missed-occurrence
+shares agree (human rounds to 0.0% on both sides), and tool-dominant
+folds sit at 19 of 92 tail against 148 of 585 non-tail. Composition
+does not separate tail from non-tail on either corpus; the thread's
+recorded finding stands.
+
+Reproduce with `node scripts/quality-scores.ts` (full report incl. the
+attribution tables) or `node scripts/quality-scores.ts --fold-dump
+<path>` (one JSON row per unique fold; the kind columns ride along).
