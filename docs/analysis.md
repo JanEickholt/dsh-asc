@@ -562,3 +562,22 @@ same instrument at commit time: the report rides the checkpoint source
 like a model-written fold (record-only — the last-resort path never
 blocks), and the overflow notice names the failed floors so the model
 can restate essential values the summary dropped.
+
+The lane statistics are a repo tool now, not thread quotes:
+scripts/tail-stats.ts re-derives every statistic the issue #3 reply
+cites from a fold-dump snapshot. Produce the snapshot with
+`node scripts/quality-scores.ts --fold-dump <path>`, then run
+`node scripts/tail-stats.ts <path>`. The script reports per-model
+big-fold tail rates with Wilson 95% CIs (big fold eventCount >= 50,
+tail longNumericRecall < 0.10, grouped by model alone, table bar
+n >= 20), the event-count tercile size control with the CMH stratified
+chi-square and pooled two-proportion z test for the largest pair, ten
+composition-share AUCs with seeded bootstrap percentile 95% CIs
+(5000 resamples, mulberry32 seed 20261009, deterministic across runs),
+and the byte-vs-missed unit-swap counts. On the 2026-10-09 snapshot
+(813 rows, 677 big folds) it reproduces the lane numbers exactly:
+omen-alpha 79/482 = 16.39% [13.35%, 19.96%] against zai-glm-5-3
+5/81 = 6.17% [2.67%, 13.65%], CMH χ²(1) = 5.4219 (p = 0.0199), pair
+z = 2.3881, the only CI excluding 0.5 is the assistant
+missed-occurrence share (AUC 0.4076 [0.3451, 0.4685]), and the
+assistant/tool strict flip rate is 221/673 = 32.8%.
