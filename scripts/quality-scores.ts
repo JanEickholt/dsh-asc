@@ -15,7 +15,10 @@
  * overlap. retentionPct is not recomputable offline (it prices the framed
  * checkpoint through the live token meter) and is skipped. Folds logged by
  * 0.3.2+ also carry the gate's own recorded metrics on the checkpoint source;
- * those are compared against the recomputation as an extraction-fidelity check.
+ * those are compared against the recomputation as an extraction-fidelity
+ * check — all four per-signal metrics, not just the gated one, because the
+ * fragment-free reading the issue #3 thread rides on is a record-only
+ * metric no gate decision exists for.
  *
  * Every fold also carries event-kind attribution (issue #3's instrument):
  * each contributing event classifies as injected context, assistant text,
@@ -98,9 +101,9 @@ export interface FoldScore {
   readonly kindMissedLong: KindCounts
   /** Occurrences of missed top-20 long tokens anywhere in the original. */
   readonly missedLongOccurrences: number
-  /** Recorded numericRecall from a 0.3.2+ checkpoint source, when present. */
-  readonly recordedNumericRecall: number | null
-  /** Recorded vs recomputed agreement (tolerance 0.01), when both exist. */
+  /** Gate metrics recorded on a 0.3.2+ checkpoint source, when all four exist. */
+  readonly recordedMetrics: RecordedMetrics | null
+  /** Recorded vs recomputed agreement on every metric (tolerance 0.01), when both exist. */
   readonly recordedMatches: boolean | null
 }
 
@@ -371,11 +374,19 @@ function eventKindOf(event: LogEvent): EventKind {
   }
 }
 
+/** Gate metrics recorded on a 0.3.2+ checkpoint source, when all four exist. */
+export interface RecordedMetrics {
+  readonly rouge1F1: number
+  readonly top20Recall: number
+  readonly numericRecall: number
+  readonly top20LongNumericRecall: number
+}
+
 /** Checkpoint provenance source on a persisted replacement message. */
 interface CheckpointSource {
   readonly plugin: string
   readonly compactionId: string
-  readonly recordedNumericRecall: number | null
+  readonly recorded: RecordedMetrics | null
 }
 
 function checkpointSource(event: LogEvent): CheckpointSource | null {
@@ -385,12 +396,22 @@ function checkpointSource(event: LogEvent): CheckpointSource | null {
   if (source.kind !== 'plugin' || source.plugin !== 'compact') return null
   const surfaceOp = isRecord(event.surfaceOp) ? event.surfaceOp : {}
   if (surfaceOp.op !== 'replace') return null
-  let recorded: number | null = null
+  let recorded: RecordedMetrics | null = null
   if (isRecord(source.quality) && isRecord(source.quality.metrics)) {
-    const value = source.quality.metrics.numericRecall
-    if (typeof value === 'number') recorded = value
+    const metrics = source.quality.metrics
+    // All four signals or none: a source with a partial metrics block is
+    // treated as unrecorded rather than half-checked.
+    if (typeof metrics.rouge1F1 === 'number' && typeof metrics.top20Recall === 'number'
+      && typeof metrics.numericRecall === 'number' && typeof metrics.top20LongNumericRecall === 'number') {
+      recorded = {
+        rouge1F1: metrics.rouge1F1,
+        top20Recall: metrics.top20Recall,
+        numericRecall: metrics.numericRecall,
+        top20LongNumericRecall: metrics.top20LongNumericRecall,
+      }
+    }
   }
-  return { plugin: 'compact', compactionId: asString(source.compactionId), recordedNumericRecall: recorded }
+  return { plugin: 'compact', compactionId: asString(source.compactionId), recorded }
 }
 
 /**
@@ -467,6 +488,10 @@ export function parseSessionLog(jsonl: string, name: string): FoldScore[] {
       missedLongOccurrences += inEvent
     }
     const checkpoint = checkpoints.get(compactionId)
+    const rougeScore = rouge1F1(originalTokens, summaryTokens)
+    const keywordScore = topKeywordRecall(originalTokens, summaryTokens)
+    const longScore = topLongNumericRecall(originalTokens, summaryTokens)
+    const recorded = checkpoint?.recorded ?? null
     folds.push({
       session: name,
       compactionId,
@@ -478,13 +503,13 @@ export function parseSessionLog(jsonl: string, name: string): FoldScore[] {
       fingerprint: `${shadowedSeqs.map(String).join(',')}|${summaryText.slice(0, 200)}`,
       eventCount: contributing.length,
       totalBytes: contributing.reduce((sum, cell) => sum + Buffer.byteLength(cell.text, 'utf8'), 0),
-      rouge1F1: rouge1F1(originalTokens, summaryTokens),
-      top20Recall: topKeywordRecall(originalTokens, summaryTokens),
+      rouge1F1: rougeScore,
+      top20Recall: keywordScore,
       numericRecall,
       singletonRecall: singletonNumericRecall(singletons, summaryTokens),
       singletonCount: singletons.length,
       singletonBuckets: singletonBuckets(singletons, summaryTokens),
-      longNumericRecall: topLongNumericRecall(originalTokens, summaryTokens),
+      longNumericRecall: longScore,
       longDistinctCount,
       longTop20Coverage,
       top20ShortShare: top20.filter((entry) => entry.token.length <= 2).length / Math.max(1, top20.length),
@@ -492,10 +517,16 @@ export function parseSessionLog(jsonl: string, name: string): FoldScore[] {
       kindBytes,
       kindMissedLong,
       missedLongOccurrences,
-      recordedNumericRecall: checkpoint?.recordedNumericRecall ?? null,
-      recordedMatches: checkpoint === undefined || checkpoint.recordedNumericRecall === null
+      recordedMetrics: recorded,
+      // Extraction fidelity: every recorded signal must match the offline
+      // recomputation, not just the gated one — the thread's instrument is
+      // the fragment-free metric, which no gate records a decision on.
+      recordedMatches: checkpoint === undefined || recorded === null
         ? null
-        : Math.abs(checkpoint.recordedNumericRecall - numericRecall) <= 0.01,
+        : Math.abs(recorded.rouge1F1 - rougeScore) <= 0.01
+          && Math.abs(recorded.top20Recall - keywordScore) <= 0.01
+          && Math.abs(recorded.numericRecall - numericRecall) <= 0.01
+          && Math.abs(recorded.top20LongNumericRecall - longScore) <= 0.01,
     })
   }
   return folds
@@ -678,11 +709,19 @@ function report(folds: readonly FoldScore[]): void {
     const fires = folds.filter((fold) => fold.longNumericRecall < floor).length
     console.log(`  floor ${floor.toFixed(2)}: ${fires} of ${folds.length} (${pct(fires / folds.length)})`)
   }
-  const recorded = folds.filter((fold) => fold.recordedNumericRecall !== null)
+  const recorded = folds.filter((fold) => fold.recordedMetrics !== null)
   if (recorded.length > 0) {
     const matching = recorded.filter((fold) => fold.recordedMatches === true).length
-    const worst = Math.max(...recorded.map((fold) => Math.abs((fold.recordedNumericRecall ?? 0) - fold.numericRecall)))
-    console.log(`\nrecorded vs recomputed numericRecall: ${matching}/${recorded.length} agree (max |diff| ${worst.toFixed(3)})`)
+    const worstOf = (diff: (fold: FoldScore) => number): number => Math.max(...recorded.map(diff))
+    console.log(
+      `\nrecorded vs recomputed, all four gate metrics (tolerance 0.01): ${matching}/${recorded.length} folds agree on every metric`,
+    )
+    console.log(
+      `  worst |diff| per signal: rouge1F1 ${worstOf((fold) => Math.abs((fold.recordedMetrics?.rouge1F1 ?? 0) - fold.rouge1F1)).toFixed(3)}`
+        + `, top20Recall ${worstOf((fold) => Math.abs((fold.recordedMetrics?.top20Recall ?? 0) - fold.top20Recall)).toFixed(3)}`
+        + `, numericRecall ${worstOf((fold) => Math.abs((fold.recordedMetrics?.numericRecall ?? 0) - fold.numericRecall)).toFixed(3)}`
+        + `, longNumericRecall ${worstOf((fold) => Math.abs((fold.recordedMetrics?.top20LongNumericRecall ?? 0) - fold.longNumericRecall)).toFixed(3)}`,
+    )
   } else {
     console.log('\nrecorded vs recomputed: no folds carry recorded metrics (pre-0.3.2 logs)')
   }

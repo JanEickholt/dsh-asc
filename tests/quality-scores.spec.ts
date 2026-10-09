@@ -10,32 +10,43 @@ const FIXTURE = [
   '{"type":"user/message","seq":0,"data":{"content":[{"type":"text","text":"ports: 3080 3080 3080 and 22 tasks\\nalpha beta gamma"}],"source":{"kind":"user"},"role":"user"}}',
   '{"type":"assistant/message","seq":1,"data":{"message":{"role":"assistant","content":[{"type":"text","text":"beta gamma delta"}]}}}',
   '{"type":"compaction/summary","seq":2,"data":{"compactionId":"c-aaa","summary":[{"type":"text","text":"alpha only, numbers dropped"}],"shadowedSeqs":[0,1],"provider":"p","model":"m"}}',
-  '{"type":"user/message","seq":3,"surfaceOp":{"op":"replace","startSeq":0,"endSeq":2},"data":{"content":[{"type":"text","text":"checkpoint"}],"source":{"kind":"plugin","plugin":"compact","compactionId":"c-aaa","quality":{"metrics":{"numericRecall":0.5}}},"role":"user"}}',
+  '{"type":"user/message","seq":3,"surfaceOp":{"op":"replace","startSeq":0,"endSeq":2},"data":{"content":[{"type":"text","text":"checkpoint"}],"source":{"kind":"plugin","plugin":"compact","compactionId":"c-aaa","quality":{"metrics":{"rouge1F1":0.4,"top20Recall":0.9,"numericRecall":0.5,"top20LongNumericRecall":0.5}}},"role":"user"}}',
   // Fold B: the summary keeps the number; no recorded metrics (pre-0.3.2 shape).
   '{"type":"user/message","seq":4,"data":{"content":[{"type":"text","text":"port 3080 again"}],"source":{"kind":"user"},"role":"user"}}',
   '{"type":"compaction/summary","seq":5,"data":{"compactionId":"c-bbb","summary":[{"type":"text","text":"still 3080"}],"shadowedSeqs":[4],"provider":"p","model":"m"}}',
   '{"type":"user/message","seq":6,"surfaceOp":{"op":"replace","startSeq":4,"endSeq":5},"data":{"content":[{"type":"text","text":"checkpoint"}],"source":{"kind":"plugin","plugin":"compact","compactionId":"c-bbb"},"role":"user"}}',
   // Fold C: shadowed events missing from the log; must be skipped.
   '{"type":"compaction/summary","seq":7,"data":{"compactionId":"c-ccc","summary":[{"type":"text","text":"summary"}],"shadowedSeqs":[99],"provider":"p","model":"m"}}',
+  // Fold D: summary matches the recorded metrics on all four signals, so
+  // the fidelity check passes end to end.
+  '{"type":"user/message","seq":19,"data":{"content":[{"type":"text","text":"port 3080"}],"source":{"kind":"user"},"role":"user"}}',
+  '{"type":"compaction/summary","seq":20,"data":{"compactionId":"c-ddd","summary":[{"type":"text","text":"port 3080"}],"shadowedSeqs":[19],"provider":"p","model":"m"}}',
+  '{"type":"user/message","seq":21,"surfaceOp":{"op":"replace","startSeq":19,"endSeq":20},"data":{"content":[{"type":"text","text":"checkpoint"}],"source":{"kind":"plugin","plugin":"compact","compactionId":"c-ddd","quality":{"metrics":{"rouge1F1":0.8,"top20Recall":0.667,"numericRecall":1,"top20LongNumericRecall":1}}},"role":"user"}}',
   '{"type":"session/end-seed","seq":8,"data":{}}',
 ].join('\n')
 
 describe('parseSessionLog', () => {
   it('scores folds, pairs recorded metrics, and skips partial logs', () => {
     const folds = parseSessionLog(FIXTURE, 'fixture.jsonl')
-    expect(folds).toHaveLength(2)
-    const [a, b] = folds
+    expect(folds).toHaveLength(3)
+    const [a, b, d] = folds
     expect(a!.session).toBe('fixture.jsonl')
     expect(a!.compactionId).toBe('c-aaa')
     expect(a!.provider).toBe('p')
     expect(a!.model).toBe('m')
     expect(a!.numericRecall).toBe(0)
-    expect(a!.recordedNumericRecall).toBe(0.5)
+    expect(a!.recordedMetrics).toEqual({ rouge1F1: 0.4, top20Recall: 0.9, numericRecall: 0.5, top20LongNumericRecall: 0.5 })
+    // Fold A recomputes numericRecall 0 and long recall 0 against the
+    // recorded 0.5/0.5: the fidelity check must flag it.
     expect(a!.recordedMatches).toBe(false)
     expect(b!.compactionId).toBe('c-bbb')
     expect(b!.numericRecall).toBe(1)
-    expect(b!.recordedNumericRecall).toBeNull()
+    expect(b!.recordedMetrics).toBeNull()
     expect(b!.recordedMatches).toBeNull()
+    // Fold D's recorded block matches the recomputation on all four
+    // signals (rouge 2/2 x 2/3 = 0.8, keyword 2/3, numeric 1, long 1):
+    // the extraction-fidelity guarantee, exercised on its pass path.
+    expect(d!.recordedMatches).toBe(true)
     // Tail analysis: fold A's only singleton (22) is dropped, fold B keeps its
     // single 3080; half of fold A's top-20 is a short fragment.
     expect(a!.singletonCount).toBe(1)
@@ -117,7 +128,7 @@ function fold(overrides: Partial<Pick<FoldScore, 'session' | 'compactionId' | 'f
     kindBytes: { injected: 12, assistant: 24, tool: 60, checkpoint: 6, human: 18 },
     kindMissedLong: { injected: 0, assistant: 1, tool: 2, checkpoint: 0, human: 0 },
     missedLongOccurrences: 3,
-    recordedNumericRecall: null,
+    recordedMetrics: null,
     recordedMatches: null,
     ...overrides,
   }
