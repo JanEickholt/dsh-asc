@@ -552,6 +552,9 @@ Config knob is out: 98.7% of corpus folds are model-written by the
 session's own route, which no plugin config can reach, and the
 reachable fallback path already has the pair
 (`fallback.summarizationProvider`/`summarizationModel`, usage.md).
+Revisit only if the engine grows a delegated summarization mode (the
+existing pair extends to it) or fallback-authored folds reach n >= 100
+per summarizer route (today 10 corpus-wide).
 
 Two non-gating follow-ups shipped from the evaluation. Rejections now
 name the fragment-free reading when it is low
