@@ -82,6 +82,13 @@ export type SummarySource =
     rawOutput?: ContentBlock[]
     /** Provider-reported usage for the summarization request. */
     usage?: TokenUsage
+    /**
+     * Quality-gate outcome measured at commit time. Record-only: the
+     * fallback is the last-resort path and never blocks on it, but its
+     * checkpoint source carries the same per-signal metrics as a
+     * model-written fold, so the corpus can see fallback quality at all.
+     */
+    quality?: QualityReport
   }
 
 /** Transaction options. */
@@ -440,7 +447,7 @@ function frameCheckpoint(
     source: Object.freeze({
       ...compactCheckpointSource(compactionId, sourceCommandId),
       fingerprint: foldFingerprint(session, prepared.selection.shadowedSeqs),
-      ...source.kind === 'model' && source.quality !== undefined
+      ...source.quality !== undefined
         ? { quality: source.quality }
         : {},
     }),

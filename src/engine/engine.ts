@@ -1043,6 +1043,12 @@ export class AgenticCompactionEngine extends CompactionEngine {
       messages: regionMessages(session, selection.shadowedSeqs),
     }
     const result = await summarizeWithLlm(this.ctx, this.config, input, agent, signal)
+    // Record-only for the fallback (issue #3): the last-resort path never
+    // blocks on quality, but its summaries are measured with the same
+    // instrument as model-written folds and the report rides the checkpoint
+    // source, so the corpus sees fallback quality instead of an ungated hole.
+    const summaryText = result.summary.map(block => blockText(block)).join('\n')
+    const quality = this.evaluateSummary(session, selection.shadowedSeqs, summaryText, undefined)
     const committed = await commitSurfaceCompaction(
       { meter: this.ctx.tokenMeter },
       session,
@@ -1056,6 +1062,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
         maxTokens: result.maxTokens,
         rawOutput: result.rawOutput,
         ...result.usage === undefined ? {} : { usage: result.usage },
+        quality,
       },
       {
         owner: options.owner,
@@ -1069,13 +1076,20 @@ export class AgenticCompactionEngine extends CompactionEngine {
     )
     // Tell the model what happened: an automatic compaction replaced history
     // it may not have chosen to compress. The notice is a plugin-sourced user
-    // message, so it is durable, model-visible, and replayable.
+    // message, so it is durable, model-visible, and replayable. A failing
+    // measurement is named in the notice so the model can restate essential
+    // values it knows the summary dropped — record-only, never a block.
+    const qualityNote = quality.passed
+      ? ''
+      : ` Summary quality measured below floors (${
+        quality.metrics === undefined ? (quality.note ?? 'unknown reason') : qualityGateDetail(quality.metrics)
+      }); restate essential values now if needed.`
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text:
         `[context-management] System compacted seqs ${committed.shadowedRange.start}..`
         + `${committed.shadowedRange.end} (~${committed.shadowedTokenCount} tokens) `
         + 'after a context-overflow or manual compaction. Use context_decompress '
-        + 'to restore the original content if needed.' }],
+        + 'to restore the original content if needed.' + qualityNote }],
       source: overflowNoticeSource(),
     }), { surfaceOp: 'append' })
     this.applyPostCompressionBaseline(session, committed.tier)
@@ -1087,16 +1101,30 @@ export class AgenticCompactionEngine extends CompactionEngine {
     session: Session,
     plan: { range: ModelCompressionRange; selection: ReturnType<typeof validateSurfaceRange> },
   ): QualityReport {
-    const originalText = serializeMessages(regionMessages(session, plan.selection.shadowedSeqs))
+    return this.evaluateSummary(session, plan.selection.shadowedSeqs, plan.range.summary, plan.range.topic)
+  }
+
+  /**
+   * Measure one summary with the quality gate. Shared by the model path
+   * (blocking) and the fallback path (record-only), so both authorship
+   * kinds carry the same per-signal metrics on their checkpoint source.
+   */
+  private evaluateSummary(
+    session: Session,
+    shadowedSeqs: readonly number[],
+    summaryText: string,
+    topic: string | undefined,
+  ): QualityReport {
+    const originalText = serializeMessages(regionMessages(session, shadowedSeqs))
     const measurement = this.ctx.tokenMeter.measure(session)
-    const shadowedTokens = plan.selection.shadowedSeqs.reduce((sum, seq) => {
+    const shadowedTokens = shadowedSeqs.reduce((sum, seq) => {
       const node = measurement.nodes.find(candidate => candidate.seq === seq)
       return sum + (node?.tokens ?? 0)
     }, 0)
     const summaryMessage = createUserMessage({
       content: frameSummary([
-        ...plan.range.topic === undefined ? [] : [{ type: 'text' as const, text: `## Topic: ${plan.range.topic}` }],
-        { type: 'text', text: plan.range.summary },
+        ...topic === undefined ? [] : [{ type: 'text' as const, text: `## Topic: ${topic}` }],
+        { type: 'text', text: summaryText },
       ], CompactionId(QUALITY_GATE_COMPACTION_ID)),
       source: requestOnlySource(),
     })
@@ -1106,7 +1134,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
     // keyword-coverage layer is waived because the rules for that tier
     // require dropping lower-level process vocabulary.
     const tiers = tierSnapshot(session)
-    const resultingTier = 1 + plan.selection.shadowedSeqs.reduce((maxTier, seq) => {
+    const resultingTier = 1 + shadowedSeqs.reduce((maxTier, seq) => {
       const tier = tiers.tierBySeq.get(seq) ?? 0
       return Math.max(maxTier, tier)
     }, 0)
@@ -1124,7 +1152,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
       {
         originalText,
         shadowedTokens,
-        summaryText: plan.range.summary,
+        summaryText,
         // The gate must price what the commit will actually land: the framed
         // checkpoint node, not the raw summary message.
         summaryTokens: this.ctx.tokenMeter.estimateMessage(summaryMessage),
@@ -1270,7 +1298,9 @@ function rangeIneligibilityMessage(
 /**
  * Render the measured gate metrics into the rejection detail so the model
  * can see exactly why the summary failed and what to fix: too short, too
- * little retention, or missing key terms.
+ * little retention, or missing key terms and exact numbers. When the
+ * fragment-free numeric reading is low too, it is named as well — the
+ * value-survival signal the thread measured as the gate's blind spot.
  * @param metrics - the measured values and thresholds.
  * @returns a compact human-readable failure detail.
  */
@@ -1289,7 +1319,11 @@ function qualityGateDetail(metrics: QualityMetrics): string {
       `ROUGE-1 ${metrics.rouge1F1.toFixed(3)} < ${metrics.layer2MaxRougeF1} `
       + `and recall ${metrics.top20Recall.toFixed(2)} < ${metrics.layer2MaxTop20Recall} `
       + `and numeric recall ${metrics.numericRecall.toFixed(2)} < ${metrics.layer2MaxNumericRecall} `
-      + '(key terms and exact numbers missing)',
+      + '(key terms and exact numbers missing)'
+      + (metrics.top20LongNumericRecall < metrics.layer2MaxNumericRecall
+        ? `; long numeric recall ${metrics.top20LongNumericRecall.toFixed(2)} `
+          + '(frequent 3+ digit values dropped)'
+        : ''),
     )
   }
   return parts.join('; ') || 'summary below quality floors'

@@ -530,3 +530,35 @@ recorded finding stands.
 Reproduce with `node scripts/quality-scores.ts` (full report incl. the
 attribution tables) or `node scripts/quality-scores.ts --fold-dump
 <path>` (one JSON row per unique fold; the kind columns ride along).
+
+### The gate lever, evaluated: record-only stands, two follow-ups shipped (2026-10-09)
+
+Four evaluation lanes (model axis, per-fold composition predictors,
+gate arithmetic, a compaction-model Config knob) ran against the dump
+snapshot. The model axis is real: omen-alpha tails 16.4% of big folds
+(n=482) against zai-glm-5-3's 6.2% (n=81), the gap holds within every
+event-count tercile (CMH χ²=5.42, p=0.020) and the strongest pair
+compares at z=2.39, p=0.017 — a 2.7× size-robust modulator of the
+per-fold lottery, not its mechanism, since even the best model still
+tails at ~5–6%. Per-fold composition confirms the thread's aggregate:
+all five kind byte-share AUCs straddle 0.5 (best is 0.036 from chance),
+so no pre-compaction composition feature predicts tail membership. The
+gate arithmetic settles record-only: the three-signal AND gate catches
+zero big folds today, a fourth conjunct is arithmetically a no-op, and
+the only catching form is a standalone trigger that taxes 13.5% of
+big-fold compressions at floor 0.10 on ordinary, no-signature content
+the same-model retry loop cannot reliably fix. A compaction-model
+Config knob is out: 98.7% of corpus folds are model-written by the
+session's own route, which no plugin config can reach, and the
+reachable fallback path already has the pair
+(`fallback.summarizationProvider`/`summarizationModel`, usage.md).
+
+Two non-gating follow-ups shipped from the evaluation. Rejections now
+name the fragment-free reading when it is low
+(`long numeric recall ...` in the gate detail), so a retrying model
+knows exactly which values to restore. And the fallback path, which
+previously ran with no gate and no metrics, is now measured with the
+same instrument at commit time: the report rides the checkpoint source
+like a model-written fold (record-only — the last-resort path never
+blocks), and the overflow notice names the failed floors so the model
+can restate essential values the summary dropped.

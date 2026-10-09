@@ -256,6 +256,50 @@ describe('commitSurfaceCompaction', () => {
     })
   })
 
+  it('writes the quality record for fallback summaries too', async () => {
+    const ctx = createContext()
+    const session = conversationSession(4)
+    const nodes = session.surface.nodes
+    const quality: import('../src/types.ts').QualityReport = {
+      gate: 'rouge-recall-v2',
+      passed: false,
+      blocking: true,
+      layer: 2,
+      metrics: {
+        summaryChars: 220,
+        retentionPct: 8,
+        rouge1F1: 0.01,
+        top20Recall: 0.0,
+        numericRecall: 0.0,
+        top20LongNumericRecall: 0.0,
+        layer1MinChars: 200,
+        layer1MinRetentionPct: 1.0,
+        layer2MaxRougeF1: 0.05,
+        layer2MaxTop20Recall: 0.2,
+        layer2MaxNumericRecall: 0.2,
+      },
+    }
+    const result = await commitSurfaceCompaction(
+      { meter: ctx.tokenMeter },
+      session,
+      nodes[0]!,
+      nodes[1]!,
+      {
+        kind: 'llm',
+        summary: [{ type: 'text', text: 'fallback summary' }],
+        provider: MODEL,
+        model: MODEL,
+        quality,
+      },
+      { owner: 'current-turn', stability: 'whole-surface' },
+    )
+    // Record-only provenance (issue #3): the fallback's measured report
+    // rides the same checkpoint source field as a model-written fold.
+    const events = session.snapshotEvents()
+    const replacement = eventOf(events, result.summarySeq + 1, 'user/message')
+    expect(replacement.data.source).toMatchObject({ quality })
+  })
+
   it('keeps the quality record across the persistence round trip', async () => {
     const ctx = createContext()
     const session = conversationSession(4)

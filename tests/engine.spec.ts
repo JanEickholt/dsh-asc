@@ -152,6 +152,24 @@ describe('AgenticCompactionEngine.compressByModel', () => {
     expect(retried.compressed).toHaveLength(1)
     // The acknowledged commit still records the rejected gate outcome.
     expect(retried.compressed[0]!.quality?.passed).toBe(false)
+
+    // When the original carried frequent 3+ digit values and the summary
+    // dropped them, the rejection detail names the fragment-free reading
+    // so the retry knows exactly what to restore (issue #3).
+    const numericSession = conversationSession(
+      4,
+      'ticket 12345 12345 67890 67890 build '.repeat(3).trim(),
+    )
+    const numericAgent = agentOf(numericSession)
+    const numericNodes = [...numericSession.surface.nodes]
+    const numericSelection = validateSurfaceRange(
+      numericSession,
+      numericNodes[0]!,
+      numericNodes[Math.floor(numericNodes.length / 2)]!,
+    )
+    await expect(engine.compressByModel(numericAgent, [
+      { startSeq: numericSelection.start, endSeq: numericSelection.end, summary: 'x' },
+    ])).rejects.toThrow(/long numeric recall 0\.00/)
     expect(retried.compressed[0]!.quality?.blocking).toBe(true)
   })
 
@@ -928,6 +946,36 @@ describe('AgenticCompactionEngine automatic behavior', () => {
     const result = await engine.compactRegion(nodes[0]!, nodes[1]!, agent) as import('../src/engine/region.ts').CommitResult
     expect(result.author).toBe('fallback')
     expect(result.shadowedSeqs).toHaveLength(2)
+  })
+
+  it('measures the fallback summary and records it with the bracket', async () => {
+    const { engine } = engineWith()
+    // Numeric-heavy original + a stub fallback summary with no digits: the
+    // gate must measure the miss (record-only, never a block).
+    const session = conversationSession(
+      4,
+      'ticket 12345 12345 67890 67890 build '.repeat(30).trim(),
+    )
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    const result = await engine.compactRegion(nodes[0]!, nodes[1]!, agent) as import('../src/engine/region.ts').CommitResult
+    expect(result.author).toBe('fallback')
+    // The measured report rides the checkpoint source like a model fold.
+    const replacement = session.snapshotEvents().find(event => event.type === 'user/message'
+      && (event.data.source as { kind?: string }).kind === 'compact-checkpoint') as
+      | { data: { source: { quality?: { passed: boolean, metrics?: Record<string, number> } } } }
+      | undefined
+    expect(replacement?.data.source.quality?.passed).toBe(false)
+    expect(replacement?.data.source.quality?.metrics?.top20LongNumericRecall).toBe(0)
+    // The overflow notice names the failed floors so the model can restate
+    // the values the summary dropped.
+    const notice = session.snapshotEvents().find(event => event.type === 'user/message'
+      && (event.data.source as { kind: string }).kind === PLUGIN_SOURCE_KIND
+      && (event.data.source as { purpose?: string }).purpose === 'overflow-notice')
+    const noticeText = (notice as unknown as { data: { content: Array<{ text: string }> } })
+      .data.content.map(block => block.text).join(' ')
+    expect(noticeText).toContain('Summary quality measured below floors')
+    expect(noticeText).toContain('restate essential values')
   })
 
   it('compactNow requires an idle agent and commits standalone brackets', async () => {
