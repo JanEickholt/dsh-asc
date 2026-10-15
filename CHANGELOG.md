@@ -10,6 +10,20 @@ releases, not for every commit.
 
 ## [Unreleased]
 
+### Fixed
+
+- The shipped `cordis.patch.yml` mounted its row as `name: 'dsh-asc'`,
+  but the cordis loader resolves a row's `name` as a module specifier
+  from the profile root, where only `@internetnutzer/dsh-asc` is
+  installed. The row could never start, so the plugin manager kept
+  reporting the plugin as installed-but-pending through every restart
+  (issue #5). The patch, the documented mount examples, and the
+  loader-composition test fixture now use the full package name
+  (`@internetnutzer/dsh-asc` and the `/invariant` subpath), and a new
+  `tests/bundle-patch.spec.ts` rejects any row name a real profile
+  install cannot resolve. Stale `lmst2/dsh-asc` clone/install URLs in
+  the docs were corrected to `JanEckholt/dsh-asc` in the same pass.
+
 ## [0.4.0] - 2026-10-08
 
 This is the dsh `0.2.0-rc.2` generation release: the peer range admits both

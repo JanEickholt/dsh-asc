@@ -9,21 +9,21 @@ below).
 The package is published on npm as `dsh-asc`:
 
 ```sh
-dsh plugin --profile <name> add dsh-asc
+dsh plugin --profile <name> add @internetnutzer/dsh-asc
 ```
 
 GitHub releases are available for commits newer than the npm version:
 
 ```sh
-dsh plugin --profile <name> add github:lmst2/dsh-asc
+dsh plugin --profile <name> add github:JanEickholt/dsh-asc
 ```
 
 To install the package directly into a deployment that runs `dsh`:
 
 ```sh
-pnpm add dsh-asc
+pnpm add @internetnutzer/dsh-asc
 # or the latest GitHub commit:
-pnpm add github:lmst2/dsh-asc
+pnpm add github:JanEickholt/dsh-asc
 ```
 
 To build from source: `pnpm install && pnpm build` in this repository,
@@ -40,7 +40,7 @@ config by id:
 # cordis.patch.yml — insert the agentic backend
 - insert:
     - id: dsh-asc
-      name: "dsh-asc"
+      name: "@internetnutzer/dsh-asc"
       config:
         auto: true
 ```
@@ -65,7 +65,7 @@ dsh --profile web --dump-config | grep -A 20 compaction
 ```yaml
 - insert:
     - id: dsh-asc-invariant
-      name: "dsh-asc/invariant"
+      name: "@internetnutzer/dsh-asc/invariant"
 ```
 
 It requires the `@deepseek-ai/dsh-invariants` service (shipped in the base

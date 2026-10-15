@@ -36,7 +36,7 @@ dsh plugin --profile <name> add github:JanEickholt/dsh-asc
 **从源码安装**——要改插件本身，或参与开发：
 
 ```sh
-git clone https://github.com/lmst2/dsh-asc.git
+git clone https://github.com/JanEickholt/dsh-asc.git
 cd dsh-asc
 pnpm install
 pnpm build
@@ -57,7 +57,7 @@ dsh plugin --profile <name> add "link:$(pwd)"
 ```yaml
 - insert:
     - id: dsh-asc-invariant          # 运行时不变式检查（可选，推荐）
-      name: "dsh-asc/invariant"
+      name: "@internetnutzer/dsh-asc/invariant"
     - id: session-query-sqlite       # context_search 全文检索后端（可选）
       name: "@deepseek-ai/dsh-session-query-sqlite"
 ```

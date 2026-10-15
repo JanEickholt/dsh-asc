@@ -18,7 +18,7 @@
 #   - id: dsh-asc-invariant             (runtime invariant companion)
 - insert:
     - id: dsh-asc
-      name: 'dsh-asc'
+      name: '@internetnutzer/dsh-asc'
       config:
         auto: true
         nudge:

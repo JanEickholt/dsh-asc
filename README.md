@@ -57,7 +57,7 @@ system prompt load together with that profile.
 **From source** — to modify the plugin itself, or to contribute:
 
 ```sh
-git clone https://github.com/lmst2/dsh-asc.git
+git clone https://github.com/JanEickholt/dsh-asc.git
 cd dsh-asc
 pnpm install
 pnpm build
@@ -79,7 +79,7 @@ Optionally mount the invariant companion and the full-text-search backend:
 ```yaml
 - insert:
     - id: dsh-asc-invariant          # runtime invariant checks (optional, recommended)
-      name: "dsh-asc/invariant"
+      name: "@internetnutzer/dsh-asc/invariant"
     - id: session-query-sqlite       # context_search full-text backend (optional)
       name: "@deepseek-ai/dsh-session-query-sqlite"
 ```

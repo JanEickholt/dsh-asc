@@ -13,7 +13,7 @@ The package mounts on the standard `ctx.compaction` seam — the same seam
 ```yaml
 # cordis.yml (profile patch or preset)
 plugins:
-  - name: "dsh-asc"
+  - name: "@internetnutzer/dsh-asc"
     config:
       auto: true
 ```
@@ -21,7 +21,7 @@ plugins:
 It also registers five model-facing tools (`context_compress`,
 `context_decompress`, `context_recap`, `context_status`,
 `context_search`) and, optionally, the invariant companion row
-(`dsh-asc/invariant`).
+(`@internetnutzer/dsh-asc/invariant`).
 
 Nothing in the agent loop changes. Everything the plugin produces is either
 a session event on the existing log or a registration on an existing seam:
