@@ -10,6 +10,8 @@ releases, not for every commit.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-15
+
 ### Fixed
 
 - The shipped `cordis.patch.yml` mounted its row as `name: 'dsh-asc'`,
@@ -22,7 +24,7 @@ releases, not for every commit.
   (`@internetnutzer/dsh-asc` and the `/invariant` subpath), and a new
   `tests/bundle-patch.spec.ts` rejects any row name a real profile
   install cannot resolve. Stale `lmst2/dsh-asc` clone/install URLs in
-  the docs were corrected to `JanEckholt/dsh-asc` in the same pass.
+  the docs were corrected to `JanEickholt/dsh-asc` in the same pass.
 
 ## [0.4.0] - 2026-10-08
 
