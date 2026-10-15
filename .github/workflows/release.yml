@@ -65,7 +65,10 @@ jobs:
             echo "release for ${TAG} already exists; skipping"
             exit 0
           fi
-          gh release create "${TAG}" dsh-asc-*.tgz \
+          # pnpm pack names the tarball after the package
+          # (@internetnutzer/dsh-asc -> internetnutzer-dsh-asc-*.tgz);
+          # one pack step runs, so match any tarball it produced.
+          gh release create "${TAG}" *.tgz \
             --repo "${GITHUB_REPOSITORY}" \
             --title "${TAG}" \
             --notes-file release-notes.md
