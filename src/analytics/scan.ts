@@ -149,6 +149,10 @@ export function scanSessionUsage(session: Session): UsageReport {
   // callId → pending decompress call awaiting its tool/result. Events are
   // scanned in seq order, so a result always follows its call.
   const pending = new Map<string, PendingDecompressCall>()
+  // compaction id → seq of its latest in-place restore message. A restore
+  // through the tool lands that message BEFORE the tool's own result, so the
+  // result must not count the same restore a second time.
+  const lastRestoreSeq = new Map<string, number>()
   let lastFoldSeq: number | undefined
   let scannedToSeq = 0
 
@@ -217,7 +221,8 @@ export function scanSessionUsage(session: Session): UsageReport {
           skippedIds,
           outcome,
         })
-        for (const id of restoredIds) {
+        for (const [id, path] of restored) {
+          if (path === undefined && (lastRestoreSeq.get(id) ?? -1) > waiting.callSeq) continue
           const cp = byId.get(id)
           if (cp !== undefined) cp.decompressCount += 1
         }
@@ -227,7 +232,9 @@ export function scanSessionUsage(session: Session): UsageReport {
         // An in-place restore commits a replacement user message carrying
         // the checkpoint's id; it marks the checkpoint decompressed too.
         const id = restoredCheckpointId(event.data.source as { kind: string; op?: string; compactionId?: unknown })
-        const cp = id === undefined ? undefined : byId.get(id)
+        if (id === undefined) break
+        lastRestoreSeq.set(id, event.seq)
+        const cp = byId.get(id)
         if (cp !== undefined) cp.decompressCount += 1
         break
       }

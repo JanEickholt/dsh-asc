@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import SessionStore, { Session } from '@deepseek-ai/dsh-session'
 import { CompactionId } from '@deepseek-ai/dsh-compaction'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { AgenticCompactionEngine } from '../src/engine/engine.ts'
 import { resolveConfig } from '../src/config.ts'
 import { validateSurfaceRange } from '../src/policy/protected.ts'
@@ -150,6 +150,38 @@ describe('scanSessionUsage', () => {
     expect(report.decompressCalls[0]!.outcome).toBe('failed')
     expect(report.decompressCalls[0]!.restoredIds).toEqual([])
     expect(report.checkpoints[0]!.decompressCount).toBe(0)
+  })
+
+  it('counts an in-place restore made through the tool exactly once', async () => {
+    // The real tool flow: the call lands, the in-place restore commits its
+    // restored user message, and only then does the tool result land. Both
+    // name the checkpoint; together they are one decompression.
+    const { engine, session } = engineWith()
+    const id = await foldFirstHalf(engine, session)
+    const callSeq = session.seq
+    session.append('tool/call', {
+      turn: 5,
+      step: 1,
+      callId: 'call-in-place' as never,
+      name: 'context_decompress',
+      arguments: JSON.stringify({ compactionIds: [id] }),
+    })
+    const result = await engine.decompressByModel(agentOf(session), { compactionIds: [id] })
+    expect(result.restored).toHaveLength(1)
+    session.append('tool/result', {
+      turn: 5,
+      step: 1,
+      message: createToolResultMessage({
+        callId: 'call-in-place' as never,
+        content: [{ type: 'text', text: JSON.stringify({ restored: [{ compactionId: id }], skipped: [] }) }],
+        isError: false,
+      }),
+    }, { surfaceOp: 'append' })
+    const report = scanSessionUsage(session)
+    expect(report.decompressCalls).toHaveLength(1)
+    expect(report.decompressCalls[0]!.callSeq).toBe(callSeq)
+    expect(report.decompressCalls[0]!.outcome).toBe('restored')
+    expect(report.checkpoints[0]!.decompressCount).toBe(1)
   })
 
   it('records a decompress call whose result never arrives', async () => {

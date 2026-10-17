@@ -104,24 +104,35 @@ export function projectSearch(text: string): string | null {
   return out.length < text.length ? out : null
 }
 
-/** Logs → adjacent duplicate-line collapse with numeric normalization. */
+/**
+ * Logs → adjacent duplicate-line collapse with numeric normalization. The
+ * `#` normalization only decides which lines merge: a line that merged with
+ * nothing, or a run of byte-identical lines, keeps its original text, so
+ * timestamps, ids, and exit codes survive unless they actually varied.
+ */
 export function projectLog(text: string): string | null {
   const lines = text.split('\n')
   if (lines.length < 20) return null
   const out: string[] = []
   let prev: string | null = null
+  let first = ''
+  let varied = false
   let run = 0
   const flush = () => {
     if (prev === null) return
-    out.push(run > 1 ? `${prev}  (×${run})` : prev)
+    const shown = varied ? prev : first
+    out.push(run > 1 ? `${shown}  (×${run})` : shown)
   }
   for (const line of lines) {
     const norm = line.replace(/\d+/g, '#')
     if (norm === prev) {
       run++
+      if (line !== first) varied = true
     } else {
       flush()
       prev = norm
+      first = line
+      varied = false
       run = 1
     }
   }

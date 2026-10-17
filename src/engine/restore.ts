@@ -239,6 +239,12 @@ export function restoreTargets(
       skipped.push(`${target.compactionId} (no restorable message content)`)
       continue
     }
+    // A checkpoint that left the surface restores nothing, so it must not
+    // consume restore budget that a later target could use.
+    if (!session.surface.nodes.includes(SessionSeq(target.checkpointSeq))) {
+      skipped.push(`${target.compactionId} (checkpoint seq ${target.checkpointSeq} is no longer on the surface)`)
+      continue
+    }
     if (budgetUsed + tokens > config.decompress.maxTokens) {
       skipped.push(
         `${target.compactionId} (${tokens} tokens; combined ${budgetUsed + tokens} exceeds `
@@ -250,11 +256,6 @@ export function restoreTargets(
     // Commit the restored transcript back into the surface at the
     // checkpoint's own position. The checkpoint node is shadowed by the
     // restored content, exactly as if the compression had been undone.
-    const checkpointIdx = session.surface.nodes.indexOf(SessionSeq(target.checkpointSeq))
-    if (checkpointIdx === -1) {
-      skipped.push(`${target.compactionId} (checkpoint seq ${target.checkpointSeq} is no longer on the surface)`)
-      continue
-    }
     session.append('user/message', message, {
       surfaceOp: { op: 'replace', startSeq: SessionSeq(target.checkpointSeq), endSeq: SessionSeq(target.checkpointSeq) },
       sourceEventSeqs: [SessionSeq(target.checkpointSeq), ...restoredSeqs.map(SessionSeq)],

@@ -10,6 +10,52 @@ releases, not for every commit.
 
 ## [Unreleased]
 
+### Fixed
+
+- The tool-result projection service remembered committed originals by
+  seq alone, but seqs restart in every session log and one service
+  observes all sessions: an oversized result in a second session at an
+  already-used seq was silently left unprojected. Committed originals are
+  now keyed by session id and seq.
+- The log reducer replaced every digit run with `#` in its output, so
+  timestamps, ports, and exit codes vanished even from lines that merged
+  with nothing. Normalization now only decides which adjacent lines merge;
+  unmerged lines and runs of identical lines keep their original text.
+- The head/tail projection fallback cut text at raw UTF-16 offsets and
+  could split a surrogate pair (emoji, astral CJK), landing lone
+  surrogates in the projected result. Cuts now snap to code-point
+  boundaries.
+- `context_compress` reported a commit-time failure at the entry's
+  position among the validated entries instead of its index in the
+  request, so it named the wrong entry whenever an earlier entry had
+  failed validation.
+- Tier nudges for tiers above 3 (`tiers.maxTier` 4 or 5) told the model to
+  use the TIER 2 DISTILLATION rules; the doctrine says those tiers repeat
+  TIER 3 CONDENSATION, and the nudge now says so too.
+- Tier recommendations could extend a run of checkpoints across a
+  protected checkpoint, producing an ineligible range that was then
+  dropped (losing the eligible run before it) plus an overlapping
+  duplicate. Runs now end at the first protected checkpoint.
+- An in-place restore whose checkpoint had already left the surface was
+  skipped but still charged against the per-call restore budget, which
+  could make later targets in the same call skip as over budget.
+- `asc-stats` counted an in-place restore made through `context_decompress`
+  twice: once for the restored user message and again for the tool result
+  naming the same checkpoint.
+- A model policy with its own `retainTokens` was still validated against
+  the inherited global `retainRatio`, so a valid override such as
+  `{ thresholdRatio: 0.1, retainTokens: 1000 }` failed plugin load.
+- Fallback summarization used an unrouted request header (empty provider
+  and model) as its target instead of falling through to the agent's own
+  provider/model.
+
+### Performance
+
+- Fallback range selection and the head-history recommendation no longer
+  re-scan the span for protected nodes on every step of the end walk
+  (quadratic in surface length); the quality gate and `context_status`
+  look up node prices through a seq map instead of a linear search per node.
+
 ## [0.4.1] - 2026-10-15
 
 ### Fixed

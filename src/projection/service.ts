@@ -68,8 +68,12 @@ export class ToolResultProjectionService extends Service {
   private autoDisposed = false
   /** Candidate keys (`sessionId:callId`) awaiting their materialized result. */
   private readonly pending = new Map<string, { toolName: string }>()
-  /** Original seqs already committed, so a replayed firehose pass is a no-op. */
-  private readonly committedSeqs = new Set<number>()
+  /**
+   * Originals already committed (`sessionId:seq`), so a replayed firehose
+   * pass is a no-op. Keyed per session: seqs restart at 0 in every session
+   * log, and one service instance observes all of them.
+   */
+  private readonly committedSeqs = new Set<string>()
 
   constructor(ctx: Context, config: ResolvedProjectionConfig) {
     super(ctx, 'toolResultProjection')
@@ -136,14 +140,15 @@ export class ToolResultProjectionService extends Service {
       const candidate = this.pending.get(key)
       if (candidate === undefined) return
       this.pending.delete(key)
-      if (this.committedSeqs.has(event.seq)) return
+      const committedKey = `${session.id}:${event.seq}`
+      if (this.committedSeqs.has(committedKey)) return
       if (this.committedSeqs.size >= MAX_COMMITTED_SEQS) {
         // Insertion-order eviction: the remembered set only needs to cover
         // recent replayed passes, not the whole session.
         const oldest = this.committedSeqs.values().next()
         if (!oldest.done) this.committedSeqs.delete(oldest.value)
       }
-      this.committedSeqs.add(event.seq)
+      this.committedSeqs.add(committedKey)
       // Appends cannot reenter the publishing append that is emitting here.
       queueMicrotask(() => { this.commit(session, event, candidate.toolName) })
     }))

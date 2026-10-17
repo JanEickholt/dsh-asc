@@ -86,6 +86,24 @@ describe('AgenticCompactionEngine.compressByModel', () => {
     expect(result.failures[1]!.reason).toContain('non-empty')
   })
 
+  it('reports a commit-time failure at the entry index of the request', async () => {
+    const { engine } = engineWith()
+    const session = conversationSession(4)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    const selection = validateSurfaceRange(session, nodes[0]!, nodes[Math.floor(nodes.length / 2)]!)
+    // Entry 0 fails validation; entries 1 and 2 both validate against the
+    // same surface, but entry 2 fails at commit because entry 1 already
+    // shadowed its span.
+    const result = await engine.compressByModel(agent, [
+      { startSeq: 9999, endSeq: 9998, summary: SUMMARY },
+      { startSeq: selection.start, endSeq: selection.end, summary: SUMMARY },
+      { startSeq: selection.start, endSeq: selection.end, summary: SUMMARY },
+    ])
+    expect(result.compressed).toHaveLength(1)
+    expect(result.failures.map(failure => failure.index)).toEqual([0, 2])
+  })
+
   it('returns the per-range topic label with a committed checkpoint', async () => {
     const { engine } = engineWith()
     const session = conversationSession(4)
