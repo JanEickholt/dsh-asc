@@ -88,13 +88,13 @@ export function planProjection(
   originalSeq: number,
   budget: ProjectionBudget,
 ): ProjectionPlan | null {
-  const oversized: number[] = []
+  const oversized = new Set<number>()
   for (let i = 0; i < blocks.length; i++) {
     const block: ContentBlock | undefined = blocks[i]
     if (block === undefined || block.type !== 'text') continue
-    if (budget.estimate([block]) > budget.thresholdTokens) oversized.push(i)
+    if (budget.estimate([block]) > budget.thresholdTokens) oversized.add(i)
   }
-  if (oversized.length === 0) return null
+  if (oversized.size === 0) return null
 
   const hash = contentHash(blocks)
   const tokensBefore = budget.estimate(blocks)
@@ -102,14 +102,12 @@ export function planProjection(
   const strategies = new Set<'structured' | 'head-tail'>()
   const kinds = new Set<string>()
   let tokensAfter = 0
-  const unprojected = new Set<number>()
   for (const index of oversized) {
     const block: ContentBlock | undefined = blocks[index]
     if (block === undefined || block.type !== 'text') continue // unreachable: oversized indices are text blocks
     const single = projectBlock(block.text, hash, originalSeq, budget)
     if (single === null) {
       // Nothing reduced it — the block stays at full length (never dangles).
-      unprojected.add(index)
       tokensAfter += budget.estimate([block])
       continue
     }
@@ -120,10 +118,11 @@ export function planProjection(
   }
   if (strategies.size === 0) return null
 
-  // Blocks left untouched keep their original price.
+  // Blocks that were never oversized keep their original price; oversized
+  // ones (projected or kept at full length) were priced above.
   for (let i = 0; i < blocks.length; i++) {
     const block: ContentBlock | undefined = blocks[i]
-    if (block === undefined || oversized.includes(i) || unprojected.has(i)) continue
+    if (block === undefined || oversized.has(i)) continue
     tokensAfter += budget.estimate([block])
   }
 
@@ -137,6 +136,24 @@ export function planProjection(
     tokensBefore,
     tokensAfter,
   }
+}
+
+/** Whether the UTF-16 cut at `index` would split a surrogate pair. */
+function splitsSurrogatePair(text: string, index: number): boolean {
+  if (index <= 0 || index >= text.length) return false
+  const before = text.charCodeAt(index - 1)
+  const after = text.charCodeAt(index)
+  return before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff
+}
+
+/** Nearest cut at or before `index` that keeps every code point whole. */
+function codePointBoundaryBefore(text: string, index: number): number {
+  return splitsSurrogatePair(text, index) ? index - 1 : index
+}
+
+/** Nearest cut at or after `index` that keeps every code point whole. */
+function codePointBoundaryAfter(text: string, index: number): number {
+  return splitsSurrogatePair(text, index) ? index + 1 : index
 }
 
 interface BlockProjection {
@@ -185,8 +202,9 @@ function projectBlock(
   for (let step = 0; step <= MAX_HALVING_STEPS; step++) {
     const headLen = Math.floor(keep * HEAD_SHARE)
     const tailLen = Math.max(0, keep - headLen)
-    const head = text.slice(0, headLen)
-    const tail = text.slice(Math.max(headLen, text.length - tailLen))
+    const headEnd = codePointBoundaryBefore(text, headLen)
+    const head = text.slice(0, headEnd)
+    const tail = text.slice(codePointBoundaryAfter(text, Math.max(headEnd, text.length - tailLen)))
     const attempt = `${head}\n\n${buildMarker({
       hash,
       originalSeq,

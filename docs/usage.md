@@ -227,7 +227,9 @@ proactive frugality, reversibility, and the six-tool workflow. The
 doctrine also encodes the tier operating model explicitly: capture raw
 spans into tier 1, distill settled tier-1 piles into tier 2 with the
 TIER 2 DISTILLATION rules, condense settled tier-2 piles into tier 3 with
-the TIER 3 CONDENSATION rules, and read before shrinking via
+the TIER 3 CONDENSATION rules (tiers above 3, when `tiers.maxTier` allows
+them, repeat the condensation rules, and tier nudges name them that way),
+and read before shrinking via
 `context_recap`/`context_search`/`context_decompress`. The model
 therefore compresses proactively and distills in levels instead of waiting
 for nudges or overflow.

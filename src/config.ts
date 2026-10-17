@@ -295,7 +295,12 @@ export function resolveConfig(config: AgenticCompactionConfig = {}): ResolvedCon
 
   const modelPolicies = resolveModelPolicies(config.modelPolicies)
   for (const [index, policy] of modelPolicies.entries()) {
-    const policyRetainRatio = policy.retainRatio ?? retention.retainRatio
+    // Mirror resolveTargetPolicy: a policy's own retainTokens replaces the
+    // inherited ratio, so that ratio must not be checked against the
+    // policy's threshold.
+    const policyRetainRatio = policy.retainTokens === undefined
+      ? policy.retainRatio ?? retention.retainRatio
+      : undefined
     validateRatioRetention(
       policy.thresholdRatio ?? thresholdRatio,
       {

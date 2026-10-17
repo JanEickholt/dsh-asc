@@ -303,6 +303,25 @@ describe('buildNudgeText', () => {
     expect(text).toContain('TIER 3 CONDENSATION')
     expect(text).toContain('context_compress')
   })
+
+  it('tier nudges above tier 3 repeat the condensation rule, as the doctrine says', () => {
+    const text = buildNudgeText({
+      decision: {
+        kind: 'tier' as const,
+        tier: 4,
+        reason: 'tier-3 pile grew',
+        growth: 1000,
+        recommendations: [],
+      },
+      totalTokens: 1000,
+      surfaceTokens: 500,
+      contextWindow: 2000,
+      config: resolveConfig({ tiers: { maxTier: 5 } }),
+    })
+    expect(text).toContain('Distill them into a Tier-4 checkpoint')
+    expect(text).toContain('TIER 3 CONDENSATION')
+    expect(text).not.toContain('TIER 2 DISTILLATION')
+  })
 })
 
 describe('recommendRanges', () => {

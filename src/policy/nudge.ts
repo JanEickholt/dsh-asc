@@ -8,9 +8,9 @@
  * out-of-tree plugin events (the persistence layer refuses unknown event
  * types); a fresh process re-establishes the baseline before nudging again,
  * so a restart can never double-fire. Every nudge itself is a durable
- * `user/message` with source `{ kind: 'plugin', plugin: 'dsh-asc',
- * purpose: 'nudge' }`, so "model-visible ⟺ logged" holds and the cost of
- * guidance is measurable from the log.
+ * `user/message` with source `{ kind: 'plugin:dsh-asc', purpose: 'nudge' }`,
+ * so "model-visible ⟺ logged" holds and the cost of guidance is measurable
+ * from the log.
  *
  * Baseline semantics: a nudge resets its own cadence; a compression resets
  * the baseline of the tier it CONSUMED (a tier-2 checkpoint reduces the
@@ -368,19 +368,15 @@ export function recommendTierRanges(
 ): RecommendedRangeCandidate[] {
   const snap = tierSnapshot(session)
   const recommendations: RecommendedRangeCandidate[] = []
+  // A run is a maximal span of consecutive unprotected `tier` checkpoints;
+  // the node that breaks it (another tier or a protected checkpoint) is
+  // never part of the run, so the range stays eligible and runs never overlap.
   let runStartIdx = -1
+  let runEndIdx = -1
   let runTokens = 0
   const flush = (): void => {
     if (runStartIdx === -1) return
     const startSeq = measurement.nodes[runStartIdx]?.seq
-    let runEndIdx = runStartIdx
-    for (let index = runStartIdx; index < measurement.nodes.length; index += 1) {
-      // oxlint-disable-next-line typescript/no-non-null-assertion -- index is in bounds
-      const node = measurement.nodes[index]!
-      if ((snap.tierBySeq.get(node.seq) ?? 0) !== tier) break
-      runEndIdx = index
-      runTokens += node.tokens
-    }
     const endSeq = measurement.nodes[runEndIdx]?.seq
     if (startSeq !== undefined && endSeq !== undefined) {
       recommendations.push({
@@ -402,6 +398,8 @@ export function recommendTierRanges(
     const isTarget = (snap.tierBySeq.get(node.seq) ?? 0) === tier
     if (isTarget && !isProtectedNode(session, node.seq, config)) {
       if (runStartIdx === -1) runStartIdx = index
+      runEndIdx = index
+      runTokens += node.tokens
     } else {
       flush()
     }
@@ -431,12 +429,13 @@ function recommendHeadRange(
   let startIdx = 0
   while (startIdx < tailBoundary && protectedSeqs.has(nodes[startIdx]!)) startIdx += 1
   if (startIdx >= tailBoundary) return null
-  let endIdx = tailBoundary - 1
-  while (endIdx >= startIdx) {
-    const spanProtected = nodes.slice(startIdx, endIdx + 1).some(seq => protectedSeqs.has(seq))
-    if (!spanProtected && toolPairingBalancedAfter(session, nodes[endIdx]!)) break
-    endIdx -= 1
+  // The span must end before the first protected node after its start.
+  let firstProtectedIdx = startIdx
+  while (firstProtectedIdx < tailBoundary && !protectedSeqs.has(nodes[firstProtectedIdx]!)) {
+    firstProtectedIdx += 1
   }
+  let endIdx = firstProtectedIdx - 1
+  while (endIdx >= startIdx && !toolPairingBalancedAfter(session, nodes[endIdx]!)) endIdx -= 1
   if (endIdx < startIdx) return null
   // Price exactly the recommended span, not the surface prefix before it.
   let tokens = 0
@@ -514,9 +513,10 @@ export function buildNudgeText(input: {
       lines.push('If older spans are no longer needed verbatim, consider compressing them with context_compress.')
     }
   } else if (decision.kind === 'tier') {
-    const rule = decision.tier === 3
-      ? 'TIER 3 CONDENSATION'
-      : 'TIER 2 DISTILLATION'
+    // Tiers above 3 repeat the condensation pattern (see the doctrine).
+    const rule = decision.tier === 2
+      ? 'TIER 2 DISTILLATION'
+      : 'TIER 3 CONDENSATION'
     lines.push(
       `Tier-${decision.tier! - 1} summaries have accumulated. Distill them into a Tier-${decision.tier} `
       + `checkpoint with context_compress using the ${rule} rules from the context-management doctrine.`,

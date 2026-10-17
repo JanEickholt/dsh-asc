@@ -94,7 +94,12 @@ export async function summarizeWithLlm(
   const configured = config.fallback.summarizationProvider.length === 0
     ? undefined
     : { provider: config.fallback.summarizationProvider, model: config.fallback.summarizationModel }
-  const latest = agent.session.requestHeader()?.config
+  // An unrouted header carries empty provider/model fields: treat it as
+  // absent so the agent's own target still applies (same rule as the engine).
+  const header = agent.session.requestHeader()?.config
+  const latest = header !== undefined && header.provider.length > 0 && header.model.length > 0
+    ? { provider: header.provider, model: header.model }
+    : undefined
   const agentTarget = agent.options.provider !== undefined
     && agent.options.provider.length > 0
     && agent.options.model !== undefined

@@ -161,6 +161,22 @@ describe('structured reducers', () => {
     expect(result.text).toContain('context_retrieve')
   })
 
+  it('keeps the original text of log lines that did not vary', () => {
+    // Numeric normalization decides which lines merge; it must not strip
+    // the numbers from lines that merged with nothing or never varied.
+    const lines = [
+      ...Array.from({ length: 10 }, (_, i) => `2026-01-01 10:00:0${i} INFO tick ${i}`),
+      'ERROR exit code 137 on port 8080',
+      ...Array.from({ length: 12 }, () => 'WARN retry 3 of 5'),
+    ]
+    const result = compressStructured(lines.join('\n'))
+    expect(result.contentType).toBe('log')
+    expect(result.text).toContain('ERROR exit code 137 on port 8080')
+    expect(result.text).toContain('WARN retry 3 of 5  (×12)')
+    // Lines whose numbers varied collapse to the normalized form.
+    expect(result.text).toContain('#-#-# #:#:# INFO tick #  (×10)')
+  })
+
   it('returns null for text with no reducer match', () => {
     expect(compressStructured('just one line of text')).toEqual({ text: null, contentType: 'text' })
   })
@@ -236,6 +252,19 @@ describe('planProjection', () => {
     expect(projectedText.length).toBeLessThan(bigLogText().length)
   })
 
+  it('never splits a surrogate pair at the head/tail cut', () => {
+    // Astral characters are two UTF-16 units; a cut between them would
+    // leave lone surrogates that no provider can encode. The leading 'a'
+    // puts the default cut points mid-pair.
+    const blocks: ContentBlock[] = [{ type: 'text', text: `a${'😀'.repeat(4000)}` }]
+    const plan = planProjection(blocks, 3, budget(500))
+    expect(plan).not.toBeNull()
+    expect(plan!.strategy).toBe('head-tail')
+    const projectedText = innerTextOf(plan!.blocks)
+    expect(projectedText).not.toMatch(/[\uD800-\uDFFF]/u)
+    expect(projectedText).toContain('context_retrieve(hash="')
+  })
+
   it('returns null when even the minimum slice cannot reach the threshold', () => {
     const blocks: ContentBlock[] = [{ type: 'text', text: 'x'.repeat(300) }]
     expect(planProjection(blocks, 1, budget(1))).toBeNull()
@@ -278,6 +307,36 @@ describe('ToolResultProjectionService end-to-end', () => {
 
     void service
     void pruneEvent
+  })
+
+  it('projects results in different sessions that share the same seq', async () => {
+    // One service observes every session, and seqs restart in each log: an
+    // original committed in one session must not mark the same seq of
+    // another session as already projected.
+    const ctx = createContext()
+    const service = new ToolResultProjectionService(ctx, { thresholdTokens: 1000, enabled: true })
+    const store = new SessionStore(ctx)
+    const resultSeqs: number[] = []
+    const sessions: Session[] = []
+    for (const label of ['a', 'b']) {
+      const session = store.create(SessionId(`projection-shared-seq-${label}-${sessionCounter++}`))
+      session.append('turn/start', { turn: 1 })
+      session.append('step/start', { turn: 1, step: 1 })
+      const callId = ToolCallId(`call-${callCounter++}`)
+      session.append('tool/call', { turn: 1, step: 1, callId, name: 'bash', arguments: '"run"' })
+      const callSeq = SessionSeq(session.seq - 1)
+      await runPostExecute(ctx, session, callId, bigLogText())
+      resultSeqs.push(materializeResult(session, callId, bigLogText(), callSeq))
+      await flush()
+      sessions.push(session)
+    }
+    expect(resultSeqs[0]).toBe(resultSeqs[1])
+    for (const [index, session] of sessions.entries()) {
+      const resultSeq = resultSeqs[index]!
+      expect(session.snapshotEvents()[resultSeq + 1]?.type).toBe('compaction/prune')
+      expect(session.surface.nodes.includes(SessionSeq(resultSeq))).toBe(false)
+    }
+    void service
   })
 
   it('leaves results under the threshold untouched and emits no marker', async () => {

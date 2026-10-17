@@ -110,6 +110,11 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/** Seq → metered tokens for one measurement, so per-node lookups stay O(1). */
+function nodeTokensBySeq(measurement: TokenMeasurement): Map<number, number> {
+  return new Map<number, number>(measurement.nodes.map(node => [node.seq, node.tokens]))
+}
+
 /**
  * Derive a distinct write path for one of several `toFile` restores. The
  * requested path is used verbatim for a single target; additional targets
@@ -499,7 +504,13 @@ export class AgenticCompactionEngine extends CompactionEngine {
       throw new Error(`context_compress accepts at most ${MAX_RANGES_PER_CALL} ranges per call`)
     }
     const failures: CompressionFailure[] = []
-    const plans: { range: ModelCompressionRange; selection: ReturnType<typeof validateSurfaceRange>; requested?: { startSeq: number; endSeq: number } }[] = []
+    const plans: {
+      /** Position of the entry in the request, reported on a commit failure. */
+      index: number
+      range: ModelCompressionRange
+      selection: ReturnType<typeof validateSurfaceRange>
+      requested?: { startSeq: number; endSeq: number }
+    }[] = []
     for (const [index, range] of ranges.entries()) {
       try {
         let selection: ReturnType<typeof validateSurfaceRange>
@@ -523,6 +534,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
           throw new Error('summary must be a non-empty string')
         }
         plans.push({
+          index,
           range,
           selection,
           ...selection.start !== range.startSeq || selection.end !== range.endSeq
@@ -584,7 +596,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
 
     const target = routedTarget(session)
     const compressed: CompressionOutcome[] = []
-    for (const [index, plan] of plans.entries()) {
+    for (const plan of plans) {
       signal?.throwIfAborted()
       try {
         const report = gateReports.get(plan.selection.start)
@@ -619,7 +631,9 @@ export class AgenticCompactionEngine extends CompactionEngine {
         })
         this.applyPostCompressionBaseline(session, outcome.tier)
       } catch (error: unknown) {
-        failures.push({ index, reason: errorMessage(error) })
+        // Report the entry's position in the request, not in the plan list:
+        // entries rejected during validation never became plans.
+        failures.push({ index: plan.index, reason: errorMessage(error) })
       }
     }
     return { compressed, failures }
@@ -905,8 +919,9 @@ export class AgenticCompactionEngine extends CompactionEngine {
     const protectedSeqs = session.surface.nodes.filter(seq => protectedSet.has(seq))
 
     const recentStart = Math.max(0, session.surface.nodes.length - STATUS_RECENT_NODES)
+    const tokensBySeq = nodeTokensBySeq(measurement)
     const recentNodes = session.surface.nodes.slice(-STATUS_RECENT_NODES).map((seq, offset) => (
-      this.surfaceNodePreview(session, measurement, tiers, seq, recentStart + offset, protectedSet.has(seq))
+      this.surfaceNodePreview(session, tokensBySeq, tiers, seq, recentStart + offset, protectedSet.has(seq))
     ))
 
     const lastCompression = summarySeqs.sort((left, right) => left.seq - right.seq).at(-1)
@@ -1116,11 +1131,8 @@ export class AgenticCompactionEngine extends CompactionEngine {
     topic: string | undefined,
   ): QualityReport {
     const originalText = serializeMessages(regionMessages(session, shadowedSeqs))
-    const measurement = this.ctx.tokenMeter.measure(session)
-    const shadowedTokens = shadowedSeqs.reduce((sum, seq) => {
-      const node = measurement.nodes.find(candidate => candidate.seq === seq)
-      return sum + (node?.tokens ?? 0)
-    }, 0)
+    const tokensBySeq = nodeTokensBySeq(this.ctx.tokenMeter.measure(session))
+    const shadowedTokens = shadowedSeqs.reduce((sum, seq) => sum + (tokensBySeq.get(seq) ?? 0), 0)
     const summaryMessage = createUserMessage({
       content: frameSummary([
         ...topic === undefined ? [] : [{ type: 'text' as const, text: `## Topic: ${topic}` }],
@@ -1248,14 +1260,13 @@ export class AgenticCompactionEngine extends CompactionEngine {
   /** One recent-node preview line. */
   private surfaceNodePreview(
     session: Session,
-    measurement: TokenMeasurement,
+    tokensBySeq: ReadonlyMap<number, number>,
     tiers: ReturnType<typeof tierSnapshot>,
     seq: number,
     position: number,
     protectedNode: boolean,
   ): SurfaceNodePreview {
     const kind = nodeKindOf(session, seq)
-    const node = measurement.nodes.find(candidate => candidate.seq === seq)
     const event = session.snapshotEvents()[seq]
     let preview = ''
     if (event !== undefined) {
@@ -1271,7 +1282,7 @@ export class AgenticCompactionEngine extends CompactionEngine {
       seq,
       position,
       kind,
-      tokens: node?.tokens ?? 0,
+      tokens: tokensBySeq.get(seq) ?? 0,
       tier: tiers.tierBySeq.get(seq) ?? 0,
       protected: protectedNode,
       preview,

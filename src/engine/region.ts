@@ -181,38 +181,31 @@ export function selectCompactableRange(
     if (accumulated >= retainTokens) break
   }
 
+  const isProtected = (index: number): boolean => (
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- callers pass in-bounds indices
+    protectedSeqs !== undefined && protectedSeqs.has(surfaceNodes[index]!)
+  )
+
   // Start after any leading protected nodes.
   let startIdx = 0
-  while (startIdx < keepFromIdx
-    && protectedSeqs !== undefined
-    && protectedSeqs.has(surfaceNodes[startIdx]!)) {
-    startIdx += 1
-  }
+  while (startIdx < keepFromIdx && isProtected(startIdx)) startIdx += 1
   if (startIdx >= keepFromIdx) return null
 
-  // Walk the end back until the span is protected-free and the trailing cut
-  // is balanced.
-  let endIdx = keepFromIdx - 1
-  while (endIdx >= startIdx) {
-    const spanProtected = protectedSeqs !== undefined
-      && surfaceNodes.slice(startIdx, endIdx + 1).some(seq => protectedSeqs.has(seq))
-    if (!spanProtected && toolPairingBalancedAfter(session, surfaceNodes[endIdx]!)) break
-    endIdx -= 1
-  }
+  // The span must stay protected-free, so it ends before the first protected
+  // node after its start; then walk the end back to a balanced trailing cut.
+  let firstProtectedIdx = startIdx
+  while (firstProtectedIdx < keepFromIdx && !isProtected(firstProtectedIdx)) firstProtectedIdx += 1
+  let endIdx = firstProtectedIdx - 1
+  while (endIdx >= startIdx && !toolPairingBalancedAfter(session, surfaceNodes[endIdx]!)) endIdx -= 1
   if (endIdx < startIdx) return null
 
   // Advance the start past unbalanced leading cuts (a cut before a
-  // tool/result whose call precedes the span); re-check the span afterwards.
+  // tool/result whose call precedes the span). The span only shrinks from
+  // the left, so it stays protected-free.
   while (startIdx <= endIdx && !toolPairingBalancedBefore(session, surfaceNodes[startIdx]!)) {
     startIdx += 1
   }
   if (startIdx > endIdx) return null
-  while (endIdx >= startIdx
-    && protectedSeqs !== undefined
-    && surfaceNodes.slice(startIdx, endIdx + 1).some(seq => protectedSeqs.has(seq))) {
-    endIdx -= 1
-  }
-  if (endIdx < startIdx) return null
 
   // oxlint-disable-next-line typescript/no-non-null-assertion -- indices validated above
   return { start: surfaceNodes[startIdx]!, end: surfaceNodes[endIdx]! }

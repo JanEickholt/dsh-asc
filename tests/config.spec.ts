@@ -135,6 +135,21 @@ describe('resolveTargetPolicy and resolveCompactSpec', () => {
     expect(other.retainRatio).toBe(0)
   })
 
+  it('does not check a replaced global retainRatio against an override threshold', () => {
+    // The override's retainTokens replaces the inherited 0.16 default ratio,
+    // so a threshold below that ratio is valid for this target.
+    const config = resolveConfig({
+      modelPolicies: [{ provider: 'p', model: 'm', thresholdRatio: 0.1, retainTokens: 1000 }],
+    })
+    const policy = resolveTargetPolicy(config, { provider: 'p', model: 'm' })
+    expect(policy.thresholdRatio).toBe(0.1)
+    expect(policy.retainTokens).toBe(1000)
+    // An override that still inherits the ratio is checked against it.
+    expect(() => resolveConfig({
+      modelPolicies: [{ provider: 'p', model: 'm', thresholdRatio: 0.1 }],
+    })).toThrow('must be less than the resolved thresholdRatio')
+  })
+
   it('scales budgets from the context window', () => {
     const spec = resolveCompactSpec({ thresholdRatio: 0.8, retainRatio: 0.16 }, 100_000)
     expect(spec.thresholdTokens).toBe(80_000)
