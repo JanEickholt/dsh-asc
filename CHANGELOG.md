@@ -10,6 +10,8 @@ releases, not for every commit.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-21
+
 ### Fixed
 
 - The tool-result projection service remembered committed originals by
