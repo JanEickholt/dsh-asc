@@ -139,7 +139,9 @@ original (seq 57, stored in this session log): context_retrieve(hash="…").]
   `ctx.compaction` — disabling it never disables compaction, and the
   overflow-triggered tool-result pruner stays mounted as the fallback.
 - Config: `projection.enabled` (default `true`),
-  `projection.thresholdTokens` (default `1000`).
+  `projection.thresholdTokens` (default `1000`), `projection.excludeTools`
+  (default `[]`), `projection.disabledReducers` (default `['code']`); see
+  [docs/usage.md](docs/usage.md) for the measured trade-off.
 
 The system prompt ties the tools into one operating loop: capture consumed
 raw work into tier-1 checkpoints, distill settled tier-1 piles into tier-2

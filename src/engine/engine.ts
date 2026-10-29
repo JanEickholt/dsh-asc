@@ -194,6 +194,16 @@ function engineConfigSchema(): z<AgenticCompactionConfig> {
     projection: z.object({
       enabled: z.boolean(),
       thresholdTokens: maxTokensSchema,
+      excludeTools: z.array(z.string()),
+      disabledReducers: z.array(z.union([
+        z.const('json'),
+        z.const('diff'),
+        z.const('code'),
+        z.const('test'),
+        z.const('search'),
+        z.const('log'),
+        z.const('cli-output'),
+      ])),
     }),
     analytics: z.object({
       enabled: z.boolean(),

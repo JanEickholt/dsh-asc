@@ -398,6 +398,39 @@ describe('ToolResultProjectionService end-to-end', () => {
     }
   })
 
+  it('never projects results of configured excluded tools', async () => {
+    const ctx = createContext()
+    const service = new ToolResultProjectionService(ctx, {
+      thresholdTokens: 1000, enabled: true, excludeTools: ['read'],
+    })
+    const { session, resultSeq } = await projectFixture(ctx, bigLogText(), 'read')
+    const log = session.snapshotEvents()
+    expect(log.some(event => event.type === 'compaction/prune')).toBe(false)
+    expect(innerTextOf(innerContentOf(log[resultSeq]!))).toBe(bigLogText())
+    void service
+  })
+
+  it('skips the code explorer by default and keeps a verbatim head/tail slice', async () => {
+    // Live logs: 47% of code-explorer projections were re-retrieved (vs 23%
+    // overall) — the model read the code for its bodies.
+    const code = Array.from({ length: 300 }, (_, i) => (i % 10 === 0
+      ? `export function handler${i}(input: string): string {`
+      : `  const value${i} = input.slice(${i}) + 'body line ${i}'`)).join('\n')
+    const projectedKind = async (disabledReducers?: readonly 'code'[]): Promise<string> => {
+      const ctx = createContext()
+      const service = new ToolResultProjectionService(ctx, {
+        thresholdTokens: 1000, enabled: true,
+        ...disabledReducers === undefined ? {} : { disabledReducers },
+      })
+      const { session, resultSeq } = await projectFixture(ctx, code)
+      const text = innerTextOf(innerContentOf(session.snapshotEvents()[resultSeq + 2]!))
+      void service
+      return /\[dsh-asc projection: (\S+) /.exec(text)?.[1] ?? 'none'
+    }
+    expect(await projectedKind()).toBe('code')
+    expect(await projectedKind([])).toBe('structured:code')
+  })
+
   it('survives restart: a session rebuilt from the log still holds the original', async () => {
     const ctx = createContext()
     const service = new ToolResultProjectionService(ctx, { thresholdTokens: 1000, enabled: true })

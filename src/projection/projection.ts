@@ -18,6 +18,7 @@
 import { createHash } from 'node:crypto'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { compressStructured } from './structured.ts'
+import type { ContentType } from './structured.ts'
 
 /** Fallback slice shape: head gets 2/3 of the kept budget, tail 1/3. */
 const HEAD_SHARE = 2 / 3
@@ -75,6 +76,8 @@ export interface ProjectionBudget {
   readonly toolName?: string
   /** Whether the tool result reports an error; selects failure windows. */
   readonly failed?: boolean
+  /** Content families whose structured reducer is skipped (head/tail only). */
+  readonly disabledReducers?: ReadonlySet<ContentType>
 }
 
 /**
@@ -175,7 +178,7 @@ function projectBlock(
 ): BlockProjection | null {
   const original: readonly ContentBlock[] = [{ type: 'text', text }]
   const tokensBefore = budget.estimate(original)
-  const structured = compressStructured(text, budget.toolName, budget.failed === true)
+  const structured = compressStructured(text, budget.toolName, budget.failed === true, budget.disabledReducers)
   if (structured.text !== null) {
     const candidate: readonly ContentBlock[] = [{ type: 'text', text: structured.text }]
     const tokensAfter = budget.estimate(candidate)

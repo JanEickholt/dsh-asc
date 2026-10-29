@@ -28,8 +28,8 @@ export { resolveConfig, TargetPolicyConfigError } from './config.ts'
 export { ToolResultProjectionService, PROJECTION_SERVICE_ID } from './projection/service.ts'
 export type { ResolvedProjectionConfig } from './projection/service.ts'
 export { planProjection, contentHash, buildMarker } from './projection/projection.ts'
-export { compressStructured, detectContentType } from './projection/structured.ts'
-export type { ContentType, StructuredResult } from './projection/structured.ts'
+export { compressStructured, detectContentType, DEFAULT_DISABLED_REDUCERS, REDUCER_TYPES } from './projection/structured.ts'
+export type { ContentType, ReducerType, StructuredResult } from './projection/structured.ts'
 export {
   commitSurfaceCompaction,
   selectCompactableRange,

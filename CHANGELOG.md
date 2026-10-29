@@ -10,6 +10,28 @@ releases, not for every commit.
 
 ## [Unreleased]
 
+### Added
+
+- `projection.excludeTools` (default `[]`): tool names whose results are
+  never projected. `projection.disabledReducers` (default `['code']`):
+  content families whose structured reducer is skipped (the meter-priced
+  head/tail slice still applies). Both are validated at load and documented
+  with the measured trade-off in `docs/usage.md`.
+
+### Changed
+
+- The structured code explorer is off by default. Measured over every
+  session log of one deployment (2595 logs, 17067 projected blocks, 23.7%
+  re-retrieved overall), the explorer keeps ~9% of the original (imports
+  and top-level definitions) and the model re-retrieved 47% of the bash
+  results it reduced; counting a retrieval's extra model step as three
+  context re-sends, that pair lost 66M token-requests, while every other
+  large pair stayed net positive. `read` results, by contrast, were
+  re-retrieved 23% of the time and saved +473M token-requests (+242M at
+  the same weighting), so they stay projected by default. Code-detected
+  blocks now get the head/tail slice; set `disabledReducers: []` to restore
+  the explorer.
+
 ### Fixed
 
 - A session whose log carried a plugin-owned message-projection event

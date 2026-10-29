@@ -258,6 +258,10 @@ Pipeline, in loop order:
    JSON/YAML/XML/delimited/code, git-diff hunk compaction, search-result
    clipping, CLI rule reduction, then a meter-priced head/tail slice —
    and only commits when the plan beats `projection.thresholdTokens`.
+   Families in `projection.disabledReducers` (default `code`: the explorer
+   keeps only signatures, and live logs show the model re-retrieving 47% of
+   those originals) skip their structured reducer and go straight to the
+   head/tail slice; tools in `projection.excludeTools` are never candidates.
 4. The commit appends the tool-result pruner's shadow+replace pair: a
    `compaction/prune` shadow price, then a replacement `tool/result` whose
    content embeds the retrieval marker

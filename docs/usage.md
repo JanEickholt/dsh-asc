@@ -208,6 +208,30 @@ catastrophic signal that conjunction catches.
 |---|---|---|
 | `enabled` | `true` | Mount the reversible tool-result projection service (independent of `ctx.compaction`; `false` never disables compaction or the overflow pruner). |
 | `thresholdTokens` | `1000` | Per text-block token budget, priced with the real token meter. Blocks over budget are compressed before they enter the context; the original stays byte-exact in the session log and is recoverable with `context_retrieve`. |
+| `excludeTools` | `[]` | Tool names whose results are never projected (the six `context_*` tools never are). |
+| `disabledReducers` | `['code']` | Content families whose structured reducer is skipped; their blocks still get the meter-priced head/tail slice. Any of `json`, `diff`, `code`, `test`, `search`, `log`, `cli-output`. |
+
+How to tune these: a projection pays off when the model does not fetch the
+original back. Every `context_retrieve` is an extra model step that re-sends
+the whole context, and the stub then sits in context next to the restored
+original. The defaults come from all 2595 session logs of one deployment
+(17067 projected blocks in 1412 logs, measured in token-requests: tokens
+removed from or added to the request prefix, multiplied by the requests that
+re-send them):
+
+| Results | Re-retrieved | Net, retrieval step = 1 context | Net, retrieval step = 3 contexts |
+|---|---|---|---|
+| all projections | 23.7% | +1414M | +798M |
+| `read` (generic CLI rule) | 23% | +473M | +242M |
+| bash, generic CLI rule | 18% | +84M | +37M |
+| bash, head/tail slice | 12% | +144M | +111M |
+| bash, code explorer | 47% | +41M | −66M |
+
+Only the code explorer fails a moderate round-trip weighting: it keeps just
+imports and top-level definitions (~9% of the original), and the model
+fetches the bodies back about half the time, so it is off by default. Add a
+tool to `excludeTools` when your models keep retrieving its results; the
+`context_retrieve` calls in a session log show which ones.
 
 `context_decompress` restores in place: the restored transcript is
 committed back into the surface at the checkpoint's own position (the

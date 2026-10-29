@@ -13,6 +13,22 @@ import { matchRuleByContent, reduceWithRule } from './vendor/cli-rules.ts'
 
 export type ContentType = 'json' | 'code' | 'log' | 'diff' | 'search' | 'test' | 'cli-output' | 'text'
 
+/** Content families that have a structured reducer (`text` has none). */
+export type ReducerType = Exclude<ContentType, 'text'>
+
+/** Every content family with a structured reducer, in detection order. */
+export const REDUCER_TYPES: readonly ReducerType[] = ['json', 'diff', 'code', 'test', 'search', 'log', 'cli-output']
+
+/**
+ * Structured reducers disabled by default. The code explorer keeps only
+ * imports and top-level definitions (~9% of the original); across every
+ * live session log (2595 logs, 1434 bash results) the model re-retrieved
+ * 47% of those originals, against 23% for all projections — it read the
+ * code to see the bodies. Disabled families fall back to the meter-priced
+ * head/tail slice, which keeps the leading and trailing text verbatim.
+ */
+export const DEFAULT_DISABLED_REDUCERS: readonly ReducerType[] = ['code']
+
 export interface StructuredResult {
   /** Reduced text, or `null` when no real reduction applies. */
   text: string | null
@@ -142,11 +158,19 @@ export function projectLog(text: string): string | null {
 
 /**
  * Compress one text block through the reducer selected by content detection.
+ * @param disabled - content families whose reducer must not run; the block
+ *   then reports its detected type with no reduction.
  * @returns `text: null` when no reducer applies or the candidate is not a
  *   strict, non-identical reduction of the input.
  */
-export function compressStructured(text: string, toolName?: string, failed = false): StructuredResult {
+export function compressStructured(
+  text: string,
+  toolName?: string,
+  failed = false,
+  disabled: ReadonlySet<ContentType> = new Set(),
+): StructuredResult {
   const contentType = detectContentType(text, toolName)
+  if (disabled.has(contentType)) return { text: null, contentType }
   let candidate: string | null
   switch (contentType) {
     case 'json': candidate = projectJson(text); break

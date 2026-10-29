@@ -6,6 +6,7 @@
 
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
+import { DEFAULT_DISABLED_REDUCERS, REDUCER_TYPES } from './projection/structured.ts'
 import type {
   AgenticCompactionConfig,
   ModelAgenticPolicyConfig,
@@ -103,7 +104,7 @@ const PROTECTION_KEYS: ReadonlySet<string> = new Set([
 
 const DECOMPRESS_KEYS: ReadonlySet<string> = new Set(['maxTokens', 'maxBlocks'])
 
-const PROJECTION_KEYS: ReadonlySet<string> = new Set(['enabled', 'thresholdTokens'])
+const PROJECTION_KEYS: ReadonlySet<string> = new Set(['enabled', 'thresholdTokens', 'excludeTools', 'disabledReducers'])
 
 const ANALYTICS_KEYS: ReadonlySet<string> = new Set(['enabled', 'regretSeqWindow'])
 
@@ -264,12 +265,23 @@ export function resolveConfig(config: AgenticCompactionConfig = {}): ResolvedCon
   const projection = resolveGroup(config.projection, PROJECTION_KEYS, 'AgenticCompactionConfig.projection', {
     enabled: true,
     thresholdTokens: 1000,
-  } as const, (group, name) => {
+    excludeTools: [] as string[],
+    disabledReducers: [...DEFAULT_DISABLED_REDUCERS],
+  }, (group, name) => {
     if (group.enabled !== undefined && typeof group.enabled !== 'boolean') {
       throw new Error(`${name}.enabled must be a boolean`)
     }
     if (group.thresholdTokens !== undefined) {
       assertPositiveInteger(`${name}.thresholdTokens`, group.thresholdTokens)
+    }
+    assertStringArray(`${name}.excludeTools`, group.excludeTools)
+    assertStringArray(`${name}.disabledReducers`, group.disabledReducers)
+    for (const reducer of group.disabledReducers) {
+      if (!(REDUCER_TYPES as readonly string[]).includes(reducer)) {
+        throw new Error(
+          `${name}.disabledReducers: unknown reducer "${reducer}" (expected one of ${REDUCER_TYPES.join(', ')})`,
+        )
+      }
     }
   })
 

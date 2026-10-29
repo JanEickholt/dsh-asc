@@ -34,6 +34,8 @@ import type { ContentBlock, ToolResultMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { PostToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { planProjection } from './projection.ts'
+import { DEFAULT_DISABLED_REDUCERS } from './structured.ts'
+import type { ContentType, ReducerType } from './structured.ts'
 import { CONTEXT_TOOL_NAMES } from '../tools/tools.ts'
 
 /** Maximum number of awaited projection candidates kept in flight. */
@@ -53,6 +55,13 @@ export interface ResolvedProjectionConfig {
   readonly thresholdTokens: number
   /** Master switch; `false` never mounts the service. Defaults to `true`. */
   readonly enabled: boolean
+  /** Tools whose results are never projected. Defaults to none. */
+  readonly excludeTools?: readonly string[]
+  /**
+   * Content families whose structured reducer is skipped (the head/tail
+   * slice still applies). Defaults to {@link DEFAULT_DISABLED_REDUCERS}.
+   */
+  readonly disabledReducers?: readonly ReducerType[]
 }
 
 /**
@@ -75,10 +84,16 @@ export class ToolResultProjectionService extends Service {
    * log, and one service instance observes all of them.
    */
   private readonly committedSeqs = new Set<string>()
+  /** Tools whose results are never candidates. */
+  private readonly excludedTools: ReadonlySet<string>
+  /** Content families whose structured reducer is skipped. */
+  private readonly disabledReducers: ReadonlySet<ContentType>
 
   constructor(ctx: Context, config: ResolvedProjectionConfig) {
     super(ctx, 'toolResultProjection')
     this.config = config
+    this.excludedTools = new Set(config.excludeTools ?? [])
+    this.disabledReducers = new Set(config.disabledReducers ?? DEFAULT_DISABLED_REDUCERS)
     this._register()
   }
 
@@ -114,6 +129,7 @@ export class ToolResultProjectionService extends Service {
       // renderings whose every line the model acts on — a reduced
       // context_status loses the surface nodes and ranges it exists to show.
       if (CONTEXT_TOOL_NAMES.has(exec.name)) return decision
+      if (this.excludedTools.has(exec.name)) return decision
       // Only top-level (model-visible) calls materialize `tool/result` events;
       // PTC sub-dispatches log through the bridge and are invisible here.
       if (exec.parent !== undefined) return decision
@@ -220,6 +236,7 @@ export class ToolResultProjectionService extends Service {
         estimate,
         toolName,
         failed: isError,
+        disabledReducers: this.disabledReducers,
       })
       if (plan === null) return
       shadowed = true

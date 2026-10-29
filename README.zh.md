@@ -105,7 +105,9 @@ original (seq 57, stored in this session log): context_retrieve(hash="…").]
 - 投影挂载为独立的 cordis 服务行，与 `ctx.compaction` 无关——关闭投影
   不会关闭压缩，溢出触发的工具结果修剪器仍作为兜底保留。
 - 配置：`projection.enabled`（默认 `true`）、`projection.thresholdTokens`
-  （默认 `1000`）。
+  （默认 `1000`）、`projection.excludeTools`（默认 `[]`）、
+  `projection.disabledReducers`（默认 `['code']`）；实测权衡见
+  [docs/usage.md](docs/usage.md)。
 
 系统提示词把这些工具串成一条操作闭环：把已经消费的原始工作压成 T1
 检查点，把稳定下来的 T1 堆蒸馏成 T2 决策、再把 T2 堆凝结成 T3 事实索引。

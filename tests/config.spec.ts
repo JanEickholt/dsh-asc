@@ -28,6 +28,8 @@ describe('resolveConfig', () => {
     expect(config.protection.protectFirstUserMessage).toBe(true)
     expect(config.protection.retainRecentMessages).toBe(20)
     expect(config.protection.protectedTools).toEqual([])
+    expect(config.projection.excludeTools).toEqual([])
+    expect(config.projection.disabledReducers).toEqual(['code'])
     expect(config.decompress.maxTokens).toBe(60000)
     expect(config.decompress.maxBlocks).toBe(8)
   })
@@ -179,5 +181,20 @@ describe('resolveTargetPolicy and resolveCompactSpec', () => {
       expect(error).not.toBeInstanceOf(TargetPolicyConfigError)
       expect((error as Error).message).toContain('positive integer')
     }
+  })
+})
+
+describe('resolveConfig projection tuning', () => {
+  it('accepts excluded tools and an explicit reducer list', () => {
+    const config = resolveConfig({ projection: { excludeTools: ['read'], disabledReducers: [] } })
+    expect(config.projection.excludeTools).toEqual(['read'])
+    expect(config.projection.disabledReducers).toEqual([])
+  })
+
+  it('rejects unknown reducers and non-string tool names at load', () => {
+    expect(() => resolveConfig({ projection: { disabledReducers: ['text' as never] } }))
+      .toThrow(/unknown reducer "text"/)
+    expect(() => resolveConfig({ projection: { excludeTools: [1 as never] } }))
+      .toThrow(/excludeTools must be an array of strings/)
   })
 })

@@ -152,6 +152,14 @@ export interface ProjectionConfig {
   enabled?: boolean
   /** Metered token ceiling per text block; blocks above it are projected. Defaults to `1000`. */
   thresholdTokens?: number
+  /** Tool names whose results are never projected (the six `context_*` tools never are). Defaults to `[]`. */
+  excludeTools?: string[]
+  /**
+   * Content families whose structured reducer is skipped; such blocks still
+   * get the meter-priced head/tail slice. One of `json`, `diff`, `code`,
+   * `test`, `search`, `log`, `cli-output`. Defaults to `['code']`.
+   */
+  disabledReducers?: Array<'json' | 'diff' | 'code' | 'test' | 'search' | 'log' | 'cli-output'>
 }
 
 /**
