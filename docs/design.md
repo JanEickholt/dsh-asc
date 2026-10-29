@@ -323,7 +323,8 @@ package name and is currently an empty installer: the backend declares no
 custom event vocabulary, and the `compaction/*` bracket structure is
 enforced by the upstream `@deepseek-ai/dsh-compaction/invariant` companion.
 The row exists so compositions that mount it keep working as the vocabulary
-story evolves.
+story evolves. It needs the `invariants` service, which DSH 0.2.1 removed:
+on 0.2.1 and later the row never starts.
 
 ## 9. Configuration reference
 

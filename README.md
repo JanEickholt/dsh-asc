@@ -78,7 +78,7 @@ Optionally mount the invariant companion and the full-text-search backend:
 
 ```yaml
 - insert:
-    - id: dsh-asc-invariant          # runtime invariant checks (optional, recommended)
+    - id: dsh-asc-invariant          # runtime invariant checks (optional; DSH <= 0.2.0 only)
       name: "@internetnutzer/dsh-asc/invariant"
     - id: session-query-sqlite       # context_search full-text backend (optional)
       name: "@deepseek-ai/dsh-session-query-sqlite"

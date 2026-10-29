@@ -40,6 +40,10 @@ releases, not for every commit.
   longer token-budgeted (`maxBlocks` still bounds the call), and relative
   paths now resolve against the session's working directory instead of
   the host process cwd.
+- The docs recommended mounting the `dsh-asc/invariant` companion row,
+  but DSH 0.2.1 removed the `invariants` service it injects, so on 0.2.1
+  hosts the row never starts. The README, usage, design, and bundle-patch
+  notes now scope the row to 0.2.0 hosts.
 
 ### Performance
 

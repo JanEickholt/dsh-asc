@@ -15,7 +15,8 @@
 #
 # Optional rows to add in the profile layer:
 #   - id: session-query-sqlite          (context_search full-text backend)
-#   - id: dsh-asc-invariant             (runtime invariant companion)
+#   - id: dsh-asc-invariant             (runtime invariant companion; DSH <= 0.2.0,
+#                                        whose base bundle ships the invariants service)
 - insert:
     - id: dsh-asc
       name: '@internetnutzer/dsh-asc'
