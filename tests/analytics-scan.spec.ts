@@ -6,6 +6,7 @@ import { AgenticCompactionEngine } from '../src/engine/engine.ts'
 import { resolveConfig } from '../src/config.ts'
 import { validateSurfaceRange } from '../src/policy/protected.ts'
 import { scanSessionUsage } from '../src/analytics/scan.ts'
+import { registerContextTools } from '../src/tools/tools.ts'
 import {
   appendContextToolPair,
   agentOf,
@@ -48,6 +49,23 @@ async function foldFirstHalf(
   }])
   expect(result.failures).toEqual([])
   return result.compressed[0]!.compactionId
+}
+
+/**
+ * The real `context_decompress` renderer: the harness logs a tool's rendered
+ * output on its `tool/result`, never the structured value.
+ */
+function decompressRenderer(engine: AgenticCompactionEngine): (value: unknown) => string {
+  let render: ((args: unknown, value: unknown) => { text: string }[]) | undefined
+  const ctx = createContext()
+  ctx.provide('tools', {
+    register: (tool: { name: string; output: { render: typeof render } }): (() => void) => {
+      if (tool.name === 'context_decompress') render = tool.output.render
+      return () => {}
+    },
+  } as never)
+  registerContextTools(ctx, engine)
+  return value => render!({}, value).map(block => block.text).join('')
 }
 
 describe('scanSessionUsage', () => {
@@ -182,6 +200,50 @@ describe('scanSessionUsage', () => {
     expect(report.decompressCalls[0]!.callSeq).toBe(callSeq)
     expect(report.decompressCalls[0]!.outcome).toBe('restored')
     expect(report.checkpoints[0]!.decompressCount).toBe(1)
+  })
+
+  it('parses the rendered decompress results the harness actually logs', async () => {
+    const { engine, session } = engineWith()
+    const render = decompressRenderer(engine)
+    const id = await foldFirstHalf(engine, session)
+    const skippedCallSeq = session.seq
+    appendContextToolPair(session, 'context_decompress',
+      JSON.stringify({ compactionIds: [id] }),
+      { content: [render({ restored: [], skipped: [`${id} (70000 tokens; combined 70000 exceeds the 60000-token restore budget)`] })] })
+    appendContextToolPair(session, 'context_decompress',
+      JSON.stringify({ compactionIds: [id], toFile: 'out.txt' }),
+      { content: [render({ restored: [{
+        compactionId: id, tier: 1, checkpointSeq: 9, restoredSeqs: [1, 2], restoredTokens: 70000,
+        restoredChars: 280000, preview: 'written to /work/out.txt (280000 chars)', path: '/work/out.txt',
+      }], skipped: [] })] })
+    session.append('tool/call', {
+      turn: 5,
+      step: 1,
+      callId: 'call-rendered' as never,
+      name: 'context_decompress',
+      arguments: JSON.stringify({ compactionIds: [id] }),
+    })
+    const result = await engine.decompressByModel(agentOf(session), { compactionIds: [id] })
+    session.append('tool/result', {
+      turn: 5,
+      step: 1,
+      message: createToolResultMessage({
+        callId: 'call-rendered' as never,
+        content: [{ type: 'text', text: render(result) }],
+        isError: false,
+      }),
+    }, { surfaceOp: 'append' })
+    const report = scanSessionUsage(session)
+    expect(report.decompressCalls.map(call => call.outcome)).toEqual(['skipped', 'to-file', 'restored'])
+    expect(report.decompressCalls[0]!.callSeq).toBe(skippedCallSeq)
+    expect(report.decompressCalls[0]!.skippedIds).toEqual([
+      `${id} (70000 tokens; combined 70000 exceeds the 60000-token restore budget)`,
+    ])
+    expect(report.decompressCalls[1]!.restoredIds).toEqual([id])
+    expect(report.decompressCalls[2]!.restoredIds).toEqual([id])
+    // to-file once, plus the in-place restore counted once across its
+    // restored user message and its tool result.
+    expect(report.checkpoints[0]!.decompressCount).toBe(2)
   })
 
   it('records a decompress call whose result never arrives', async () => {

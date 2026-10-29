@@ -84,7 +84,7 @@ function joinedText(message: ToolResultMessage): string {
  * Restored entries of a decompress result payload: compaction id → the file
  * path the entry went to (`toFile` marks every entry with a path).
  */
-function restoredEntriesOf(json: Record<string, unknown> | undefined): ReadonlyMap<string, string | undefined> {
+function restoredEntriesOf(json: Record<string, unknown> | undefined): Map<string, string | undefined> {
   const entries = new Map<string, string | undefined>()
   if (!Array.isArray(json?.restored)) return entries
   for (const entry of json.restored) {
@@ -95,6 +95,49 @@ function restoredEntriesOf(json: Record<string, unknown> | undefined): ReadonlyM
     entries.set(id, typeof path === 'string' ? path : undefined)
   }
   return entries
+}
+
+/** One rendered in-place restore line of a `context_decompress` result. */
+const RENDERED_RESTORED_RE = /^restored checkpoint (\S+) \(tier \d+\): \d+ events, ~\d+ tokens, \d+ chars — content is back in the surface at its original position$/u
+/** One rendered `toFile` line of a `context_decompress` result. */
+const RENDERED_WROTE_RE = /^wrote checkpoint (\S+) \(tier \d+\): \d+ events, ~\d+ tokens, \d+ chars — content is in (.+); the checkpoint stays compressed$/u
+/** Prefix of one rendered skip line; skip lines close the rendered result. */
+const RENDERED_SKIPPED_PREFIX = 'skipped: '
+
+/**
+ * Parse one decompress tool result into its restored entries and skip
+ * reasons. The logged `tool/result` carries the tool's model-facing
+ * rendering (see the `context_decompress` renderer), not the structured
+ * value; a JSON payload is read directly when present.
+ */
+function decompressResultOf(text: string): {
+  restored: ReadonlyMap<string, string | undefined>
+  skipped: readonly string[]
+} {
+  const json = parseJsonObject(text)
+  if (json !== undefined) {
+    return { restored: restoredEntriesOf(json), skipped: stringArrayOf(json.skipped) }
+  }
+  const lines = text.split('\n')
+  const restored = new Map<string, string | undefined>()
+  for (const line of lines) {
+    const inPlace = RENDERED_RESTORED_RE.exec(line)
+    if (inPlace !== null) {
+      restored.set(inPlace[1]!, undefined)
+      continue
+    }
+    const toFile = RENDERED_WROTE_RE.exec(line)
+    if (toFile !== null) restored.set(toFile[1]!, toFile[2]!)
+  }
+  // Skip lines are rendered after every restored entry and its preview, so
+  // only the trailing run counts (a preview may quote arbitrary text).
+  const skipped: string[] = []
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]!
+    if (!line.startsWith(RENDERED_SKIPPED_PREFIX)) break
+    skipped.unshift(line.slice(RENDERED_SKIPPED_PREFIX.length))
+  }
+  return { restored, skipped }
 }
 
 /** Mutable counter carrier folded into each checkpoint during the scan. */
@@ -191,10 +234,8 @@ export function scanSessionUsage(session: Session): UsageReport {
         const waiting = pending.get(event.data.message.toolCallId)
         if (waiting === undefined) break
         pending.delete(event.data.message.toolCallId)
-        const json = parseJsonObject(joinedText(event.data.message))
-        const restored = restoredEntriesOf(json)
+        const { restored, skipped: skippedIds } = decompressResultOf(joinedText(event.data.message))
         const restoredIds = [...restored.keys()]
-        const skippedIds = stringArrayOf(json?.skipped)
         const failed = event.data.message.isError === true || event.data.error !== undefined
         const outcome: DecompressOutcomeKind = failed
           ? 'failed'

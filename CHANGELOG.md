@@ -27,6 +27,11 @@ releases, not for every commit.
   model-facing renderings; on live logs a status report was cut to two
   lines by the search-line reducer, hiding the surface nodes and ranges
   it exists to show. All six `context_*` tools are now exempt.
+- `asc-stats` parsed `context_decompress` results as JSON, but the
+  harness logs a tool's rendered text, so on real logs every decompress
+  call reported no restored ids, no skip reasons, and a `skipped`
+  outcome, and to-file restores were never counted. The scanner now reads
+  the rendered result lines (JSON payloads are still accepted).
 
 ### Performance
 
