@@ -10,6 +10,25 @@ releases, not for every commit.
 
 ## [Unreleased]
 
+### Fixed
+
+- A session whose log carried a plugin-owned message-projection event
+  (`image/offload`, written by the base bundle's image-offload plugin when
+  an image-capable route hits its image budget) broke every context tool,
+  nudge, and overflow-recovery path of that session: tier derivation
+  re-folded the whole log through the canonical surface fold without the
+  projection's interpreter, which throws. Tiers now come from an
+  incremental fold of surface membership (appends and positional
+  replacements) that needs no interpreter and is checked against the
+  session's own surface.
+
+### Performance
+
+- Tier derivation no longer re-folds and re-validates the whole session
+  log whenever the surface grows (every step): measured on live
+  9.4k-event logs, a per-step tier snapshot dropped from ~56 ms to
+  ~0.6 ms and the pre-step nudge evaluation from ~53 ms to ~5 ms.
+
 ## [0.4.2] - 2026-10-21
 
 ### Fixed

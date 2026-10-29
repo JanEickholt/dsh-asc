@@ -11,9 +11,9 @@
  */
 
 import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
-import { foldSurface } from '@deepseek-ai/dsh-session'
+import { SessionLogOffset, isAppendSurfaceEvent, isReplacementSurfaceEvent } from '@deepseek-ai/dsh-session'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
 import { isNudgeSource, isRestoredSource } from '../events.ts'
 
@@ -32,7 +32,20 @@ export interface TierSnapshot {
   readonly shadowedBySeq: ReadonlyMap<number, readonly number[]>
 }
 
-const tierCache = new WeakMap<Session, { generation: number; nodes: number; snapshot: TierSnapshot }>()
+/**
+ * Incremental replacement-provenance fold over one session's append-only
+ * log: `processed` events have been folded into `nodes` (the surface they
+ * produce) and the provenance maps, so a later call folds only new events.
+ */
+interface TierFold {
+  processed: number
+  readonly nodes: number[]
+  readonly tierBySeq: Map<number, number>
+  readonly shadowedBySeq: Map<number, readonly number[]>
+  snapshot: TierSnapshot | undefined
+}
+
+const tierFolds = new WeakMap<Session, TierFold>()
 
 // Producer-owned provenance lives in ../events.ts; re-exported here so the
 // classification predicates and the name stay importable from one module.
@@ -71,61 +84,89 @@ export function nodeKindOf(session: Session, seq: number): SurfaceNodeKind {
  * checkpoint that is no longer on the surface keeps its tier (a tier-2
  * checkpoint shadows the tier-1 checkpoint it consumed, and the derivation
  * must still resolve that chain).
+ *
+ * The provenance fold is incremental: the log is append-only, so each call
+ * folds only the events appended since the previous one (a step costs
+ * O(new events) instead of a full canonical re-fold of the whole log). It
+ * reads only surface membership — appends and positional replacements —
+ * so plugin-owned message projections (e.g. `image/offload`), which change
+ * content but never membership, need no interpreter here; the session's
+ * own surface stays the authority and the fold is checked against it.
  * @param session - session whose surface is folded.
- * @returns the snapshot for the current replace generation.
+ * @returns the snapshot for the current log.
  */
 export function tierSnapshot(session: Session): TierSnapshot {
-  const surface = session.surface
-  const generation = surface.replaceGeneration
-  const cached = tierCache.get(session)
-  // Appends do not bump replaceGeneration, so the cache key also tracks the
-  // surface node count: a stale snapshot would miss newly appended nodes.
-  if (cached !== undefined
-    && cached.generation === generation
-    && cached.nodes === surface.nodes.length) {
-    return cached.snapshot
+  let fold = tierFolds.get(session)
+  if (fold === undefined || fold.processed > session.seq) {
+    fold = { processed: 0, nodes: [], tierBySeq: new Map(), shadowedBySeq: new Map(), snapshot: undefined }
+    tierFolds.set(session, fold)
   }
-
-  const folded = foldSurface(session.snapshotEvents())
-  const shadowedBySeq = new Map<number, readonly number[]>()
-  const tierBySeq = new Map<number, number>()
-  // Replacements arrive in log order, so a checkpoint's shadowed tiers are
-  // always resolved before the checkpoint that consumed them.
-  for (const replacement of folded.replacements) {
-    shadowedBySeq.set(replacement.seq, replacement.shadowedSeqs)
-    const event = session.snapshotEvents()[replacement.seq]
-    const isCheckpoint = event?.type === 'user/message'
-      && isCompactCheckpointSource(event.data.source)
-    if (!isCheckpoint) {
-      // Non-checkpoint replacements (restored transcripts, tool-result
-      // rewrites) are raw surface content again: they must never inherit the
-      // consumed checkpoint's tier.
-      tierBySeq.set(replacement.seq, 0)
-      continue
-    }
-    let maxShadowed = 0
-    for (const shadowedSeq of replacement.shadowedSeqs) {
-      const tier = tierBySeq.get(shadowedSeq) ?? 0
-      if (tier > maxShadowed) maxShadowed = tier
-    }
-    tierBySeq.set(replacement.seq, maxShadowed + 1)
+  if (fold.processed < session.seq) {
+    const fresh = session.snapshotEvents(SessionLogOffset(fold.processed))
+    let surfaceChanged = false
+    for (const event of fresh) surfaceChanged = foldTierEvent(fold, event) || surfaceChanged
+    fold.processed += fresh.length
+    if (surfaceChanged) fold.snapshot = undefined
   }
+  if (fold.snapshot !== undefined) return fold.snapshot
 
+  const nodes = session.surface.nodes
+  if (nodes.length !== fold.nodes.length || nodes.some((seq, index) => seq !== fold.nodes[index])) {
+    // The log is append-only and the fold mirrors the canonical surface
+    // operations, so this only fires on a corrupt or foreign log.
+    throw new Error('tier snapshot: replacement provenance does not match the session surface')
+  }
+  const tierBySeq = new Map(fold.tierBySeq)
   const kindBySeq = new Map<number, SurfaceNodeKind>()
-  for (const seq of surface.nodes) {
-    const kind = nodeKindOf(session, seq)
-    kindBySeq.set(seq, kind)
+  for (const seq of nodes) {
+    kindBySeq.set(seq, nodeKindOf(session, seq))
     if (!tierBySeq.has(seq)) tierBySeq.set(seq, 0)
   }
-
-  const snapshot: TierSnapshot = {
-    generation,
+  fold.snapshot = {
+    generation: session.surface.replaceGeneration,
     tierBySeq,
     kindBySeq,
-    shadowedBySeq,
+    shadowedBySeq: new Map(fold.shadowedBySeq),
   }
-  tierCache.set(session, { generation, nodes: surface.nodes.length, snapshot })
-  return snapshot
+  return fold.snapshot
+}
+
+/**
+ * Fold one event's surface operation into the provenance state.
+ * Replacements arrive in log order, so a checkpoint's shadowed tiers are
+ * always resolved before the checkpoint that consumed them.
+ * @returns whether the event changed surface membership.
+ */
+function foldTierEvent(fold: TierFold, event: SessionEvent): boolean {
+  if (isAppendSurfaceEvent(event)) {
+    fold.nodes.push(event.seq)
+    return true
+  }
+  if (!isReplacementSurfaceEvent(event)) return false
+  const { startSeq, endSeq } = event.surfaceOp
+  const startIdx = fold.nodes.indexOf(startSeq)
+  const endIdx = fold.nodes.indexOf(endSeq)
+  if (startIdx === -1 || endIdx < startIdx) {
+    throw new Error(`tier snapshot: replacement at seq ${event.seq} names a span outside the folded surface`)
+  }
+  const shadowedSeqs = fold.nodes.splice(startIdx, endIdx - startIdx + 1, event.seq)
+  fold.shadowedBySeq.set(event.seq, shadowedSeqs)
+  const isCheckpoint = event.type === 'user/message'
+    && isCompactCheckpointSource(event.data.source)
+  if (!isCheckpoint) {
+    // Non-checkpoint replacements (restored transcripts, tool-result
+    // rewrites) are raw surface content again: they must never inherit the
+    // consumed checkpoint's tier.
+    fold.tierBySeq.set(event.seq, 0)
+    return true
+  }
+  let maxShadowed = 0
+  for (const shadowedSeq of shadowedSeqs) {
+    const tier = fold.tierBySeq.get(shadowedSeq) ?? 0
+    if (tier > maxShadowed) maxShadowed = tier
+  }
+  fold.tierBySeq.set(event.seq, maxShadowed + 1)
+  return true
 }
 
 /**

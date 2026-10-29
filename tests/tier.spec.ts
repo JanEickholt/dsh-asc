@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createUserMessage, createAssistantMessage } from '@deepseek-ai/dsh-llm'
-import { SessionSeq } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { SessionMessageProjection } from '@deepseek-ai/dsh-session'
 import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import {
   commitSurfaceCompaction,
@@ -116,6 +117,46 @@ describe('tierSnapshot', () => {
     const snapshot = tierSnapshot(session)
     expect(snapshot.tierBySeq.get(restored.seq)).toBe(0)
     expect(nodeKindOf(session, restored.seq)).toBe('restored')
+  })
+
+  it('derives tiers on a log carrying a plugin-owned message projection', async () => {
+    // `image/offload` (mounted by the base bundle) is a message-projection
+    // event: re-folding the log without its interpreter throws, which used to
+    // break every tool, nudge, and overflow path of the session once fired.
+    const ctx = createContext()
+    const passthrough = {
+      type: 'image/offload',
+      project: () => new Map(),
+    } as unknown as SessionMessageProjection
+    const seed = conversationSession(4).snapshotEvents()
+    const session = Session.create(
+      SessionId('projected-session'), seed, undefined, SessionLogOffset(0), [passthrough],
+    )
+    // The seed's open turn belongs to the replayed lifecycle; open a live one.
+    session.append('turn/start', { turn: 5 })
+    // The event type is declared by the image-offload package, not by this
+    // repo's dependency set, so append it through an untyped view.
+    const appendUntyped = session.append.bind(session) as unknown as (type: string, data: unknown) => void
+    appendUntyped('image/offload', { targets: [] })
+    const nodes = session.surface.nodes
+    const selection = validateSurfaceRange(session, nodes[0]!, nodes[Math.floor(nodes.length / 2)]!)
+    const result = await commitSurfaceCompaction(
+      { meter: ctx.tokenMeter },
+      session,
+      selection.start,
+      selection.end,
+      {
+        kind: 'model',
+        summary: 'checkpoint summary that retains file paths, decisions, and the pending next step in full detail',
+        provider: MODEL,
+        model: MODEL,
+      },
+      { owner: 'current-turn', stability: 'whole-surface' },
+    )
+    expect(result.tier).toBe(1)
+    const checkpointSeq = checkpointViews(session)[0]!.seq
+    expect(tierSnapshot(session).tierBySeq.get(checkpointSeq)).toBe(1)
+    expect(tierSnapshot(session).shadowedBySeq.get(checkpointSeq)).toEqual(result.shadowedSeqs)
   })
 
   it('rebuilds the tier snapshot after plain surface appends', () => {
