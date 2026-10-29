@@ -21,6 +21,12 @@ releases, not for every commit.
   incremental fold of surface membership (appends and positional
   replacements) that needs no interpreter and is checked against the
   session's own surface.
+- The tool-result projection service projected this package's own
+  `context_status`, `context_recap`, and `context_search` reports (only
+  `context_retrieve` was exempt). Those reports are already capped,
+  model-facing renderings; on live logs a status report was cut to two
+  lines by the search-line reducer, hiding the surface nodes and ranges
+  it exists to show. All six `context_*` tools are now exempt.
 
 ### Performance
 

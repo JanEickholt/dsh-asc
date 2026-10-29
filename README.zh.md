@@ -101,6 +101,7 @@ original (seq 57, stored in this session log): context_retrieve(hash="…").]
   hunk 压缩、搜索结果裁剪、CLI 规则压缩，最后的兜底是按计量定价的首尾切片。
   `context_retrieve` 按哈希或 seq 返回字节级原文；未知键返回诊断字符串，
   绝不编造内容。
+- 六个 `context_*` 工具自身的结果从不投影（找回结果保持字节级原样；status/recap/search 报告本身已有长度上限）。
 - 投影挂载为独立的 cordis 服务行，与 `ctx.compaction` 无关——关闭投影
   不会关闭压缩，溢出触发的工具结果修剪器仍作为兜底保留。
 - 配置：`projection.enabled`（默认 `true`）、`projection.thresholdTokens`

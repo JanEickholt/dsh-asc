@@ -34,6 +34,7 @@ import type { ContentBlock, ToolResultMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { PostToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { planProjection } from './projection.ts'
+import { CONTEXT_TOOL_NAMES } from '../tools/tools.ts'
 
 /** Maximum number of awaited projection candidates kept in flight. */
 const MAX_PENDING_CANDIDATES = 256
@@ -107,9 +108,12 @@ export class ToolResultProjectionService extends Service {
     ): Promise<PostToolDecision> => {
       const decision = await next()
       if (decision.kind !== 'accept') return decision
-      // Retrieval results must land byte-exact: projecting them would break
-      // the very byte-exactness contract they serve.
-      if (exec.name === 'context_retrieve') return decision
+      // This package's own context tools are exempt: retrieval results must
+      // land byte-exact (projecting them would break the contract they
+      // serve), and the other reports are already capped, model-facing
+      // renderings whose every line the model acts on — a reduced
+      // context_status loses the surface nodes and ranges it exists to show.
+      if (CONTEXT_TOOL_NAMES.has(exec.name)) return decision
       // Only top-level (model-visible) calls materialize `tool/result` events;
       // PTC sub-dispatches log through the bridge and are invisible here.
       if (exec.parent !== undefined) return decision

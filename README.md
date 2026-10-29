@@ -133,6 +133,8 @@ original (seq 57, stored in this session log): context_retrieve(hash="…").]
   clipping, CLI rule reduction, and a meter-priced head/tail slice as the
   last fallback. `context_retrieve` returns the stored original byte-exact
   by hash or seq; unknown keys get a diagnostic, never fabricated content.
+- The six `context_*` tools' own results are never projected (retrieval
+  stays byte-exact; status/recap/search reports are already capped).
 - The projection mounts as its own cordis service row, independent of
   `ctx.compaction` — disabling it never disables compaction, and the
   overflow-triggered tool-result pruner stays mounted as the fallback.

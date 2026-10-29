@@ -383,6 +383,21 @@ describe('ToolResultProjectionService end-to-end', () => {
     void service
   })
 
+  it('never projects the other context tool reports either', async () => {
+    // context_status/recap/search render capped reports the model acts on
+    // line by line; a structured reduction would leave it a stub of its own
+    // surface map (seen on live logs: a status report cut to two lines).
+    for (const toolName of ['context_status', 'context_recap', 'context_search']) {
+      const ctx = createContext()
+      const service = new ToolResultProjectionService(ctx, { thresholdTokens: 1000, enabled: true })
+      const { session, resultSeq } = await projectFixture(ctx, bigLogText(), toolName)
+      const log = session.snapshotEvents()
+      expect(log.some(event => event.type === 'compaction/prune')).toBe(false)
+      expect(innerTextOf(innerContentOf(log[resultSeq]!))).toBe(bigLogText())
+      void service
+    }
+  })
+
   it('survives restart: a session rebuilt from the log still holds the original', async () => {
     const ctx = createContext()
     const service = new ToolResultProjectionService(ctx, { thresholdTokens: 1000, enabled: true })

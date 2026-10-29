@@ -27,6 +27,16 @@ import { textPreview } from '../utils/text.ts'
 
 const TOOL_OUTPUT_CHARS = 8000
 
+/** Names of the six model-facing context tools this package registers. */
+export const CONTEXT_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'context_compress',
+  'context_decompress',
+  'context_recap',
+  'context_retrieve',
+  'context_search',
+  'context_status',
+])
+
 /** The maximum nodes shown in the status tool's recent-surface preview. */
 const STATUS_NODES_CAP = 40
 

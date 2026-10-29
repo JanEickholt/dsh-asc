@@ -240,7 +240,10 @@ Pipeline, in loop order:
 
 1. `tools/post-execute` waterfall (pass-through): measure the decision's
    text blocks with the real `ctx.tokenMeter` service and park an
-   oversized candidate in a small in-memory pending map. The waterfall
+   oversized candidate in a small in-memory pending map. Results of this
+   package's own six `context_*` tools are never candidates: retrieval
+   must land byte-exact, and the other reports are already capped
+   model-facing renderings. The waterfall
    decision is returned UNCHANGED — replacing content here would erase the
    original from the log and dangle the marker.
 2. The agent loop materializes the settled `tool/result` event (surface

@@ -17,17 +17,8 @@ import type {
   UsageReport,
 } from './types.ts'
 import { tierSnapshot } from '../engine/tier.ts'
+import { CONTEXT_TOOL_NAMES } from '../tools/tools.ts'
 import { PLUGIN_SOURCE_KIND } from '../events.ts'
-
-/** The six `context_*` tools the scanner tracks. */
-const CONTEXT_TOOL_NAMES: ReadonlySet<string> = new Set([
-  'context_compress',
-  'context_decompress',
-  'context_recap',
-  'context_retrieve',
-  'context_search',
-  'context_status',
-])
 
 /** Summary text blocks carry the topic label under this prefix. */
 const TOPIC_PREFIX = '## Topic: '
