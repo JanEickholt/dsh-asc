@@ -67,6 +67,9 @@
     "@deepseek-ai/dsh-compaction-tool-result-pruner": {
       "optional": true
     },
+    "@deepseek-ai/dsh-invariants": {
+      "optional": true
+    },
     "@deepseek-ai/dsh-session-query": {
       "optional": true
     }

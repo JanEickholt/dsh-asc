@@ -76,7 +76,9 @@ releases, not for every commit.
 - The docs recommended mounting the `dsh-asc/invariant` companion row,
   but DSH 0.2.1 removed the `invariants` service it injects, so on 0.2.1
   hosts the row never starts. The README, usage, design, and bundle-patch
-  notes now scope the row to 0.2.0 hosts.
+  notes now scope the row to 0.2.0 hosts, and `@deepseek-ai/dsh-invariants`
+  is an optional peer, so installing beside a 0.2.1 host no longer
+  reports (or auto-installs) a peer that host does not ship.
 
 ### Performance
 

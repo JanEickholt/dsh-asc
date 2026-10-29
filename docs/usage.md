@@ -70,8 +70,9 @@ dsh --profile web --dump-config | grep -A 20 compaction
 
 It requires the `@deepseek-ai/dsh-invariants` service, which the base
 bundle shipped up to DSH 0.2.0; DSH 0.2.1 removed that service, so on
-0.2.1 and later the row never starts — leave it out there. It is
-currently an empty installer: the backend declares no custom
+0.2.1 and later the row never starts — leave it out there (the
+`@deepseek-ai/dsh-invariants` peer is optional, so installs beside a 0.2.1
+host do not warn about it). It is currently an empty installer: the backend declares no custom
 session-event vocabulary, so the upstream `@deepseek-ai/dsh-compaction`
 invariant companion owns the `compaction/*` bracket relations. The row
 exists so compositions that mount it keep working as the vocabulary story
