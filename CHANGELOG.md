@@ -31,6 +31,17 @@ releases, not for every commit.
   the same weighting), so they stay projected by default. Code-detected
   blocks now get the head/tail slice; set `disabledReducers: []` to restore
   the explorer.
+- `thresholdRatio` now positions the nudge band per route. It used to be
+  only a validation ceiling for the retention budget, so a `modelPolicies`
+  entry's `thresholdRatio` changed nothing a deployment could observe
+  (live configs set per-route 0.44 entries expecting a later trigger). The
+  `nudge.minRatio`/`maxRatio` band is calibrated against the global
+  `thresholdRatio` (both default to 0.8); a route whose policy sets its own
+  value gets the band scaled by `policy / global`, capped at the full
+  window (`pressureBand`). Without per-route thresholds nothing changes.
+  The docs now also state plainly that `thresholdRatio` never triggers
+  compaction: the deterministic fallback runs only on provider overflow
+  or manual compaction.
 
 ### Fixed
 

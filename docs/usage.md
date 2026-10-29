@@ -112,10 +112,10 @@ All fields are optional; every unknown key fails plugin load.
 | Key | Default | Meaning |
 |---|---|---|
 | `auto` | `true` | Register automatic nudge injection and overflow recovery. |
-| `thresholdRatio` | `0.8` | High-pressure reference fraction of the routed model's context window; the resolved fallback retention budget must stay strictly below it. |
+| `thresholdRatio` | `0.8` | High-pressure mark as a fraction of the routed model's context window. It is the reference the `nudge` band is calibrated against: a `modelPolicies` entry with its own `thresholdRatio` scales that route's `minRatio`/`maxRatio` by `policy / global` (capped at 1). The resolved retention budget must stay strictly below it. It never triggers compaction by itself — the deterministic fallback runs only on a provider context-overflow error or a manual `/compact`. |
 | `retainRatio` | `0.16` | Recent-tail retention budget as a fraction of the routed model's context window (deterministic fallback selection). |
 | `retainTokens` | — | Absolute recent-tail retention budget; mutually exclusive with `retainRatio`. |
-| `modelPolicies` | `[]` | Per `{provider, model}` overrides of the three fields above; duplicate targets fail load. |
+| `modelPolicies` | `[]` | Per `{provider, model}` overrides of the three fields above; duplicate targets fail load. Example: global `thresholdRatio: 0.22` with nudges at `0.185`–`0.22`, plus `{ provider: p, model: m, thresholdRatio: 0.44 }`, nudges route `p/m` at `0.37`–`0.44` of its window. |
 
 ### `compress`
 
@@ -128,8 +128,8 @@ All fields are optional; every unknown key fails plugin load.
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | Master switch for automatic nudge injection. |
-| `minRatio` | `0.45` | Below this fraction of the window, no nudges fire. |
-| `maxRatio` | `0.8` | Above this fraction, strong nudges fire every `frequency` steps. |
+| `minRatio` | `0.45` | Below this fraction of the window, no nudges fire. Scaled per route by its `thresholdRatio` (see the top level). |
+| `maxRatio` | `0.8` | Above this fraction, strong nudges fire every `frequency` steps. Scaled per route like `minRatio`. |
 | `growthTokens` | `50000` | Token growth since the last baseline required to nudge again. Applies to iteration nudges (and tiers have their own); without real growth a session the model chose not to compress stays quiet. |
 | `frequency` | `5` | Step interval for pressure and iteration nudges. |
 | `iterationThreshold` | `15` | Nudge after this many messages since the last user prompt (in the over-min band, past the growth floor and frequency gate). |

@@ -979,7 +979,16 @@ export class AgenticCompactionEngine extends CompactionEngine {
     const contextWindow = await this.contextWindowOfAsync(session)
     // Each pre-step evaluation advances the step counter before deciding.
     const stepped = { ...state, stepsSinceBaseline: state.stepsSinceBaseline + 1 }
-    const decision = decideNudge({ session, measurement, config: this.config, contextWindow, state: stepped })
+    // The routed model's own thresholdRatio moves the pressure band.
+    const target = routedTarget(session)
+    const decision = decideNudge({
+      session,
+      measurement,
+      config: this.config,
+      contextWindow,
+      state: stepped,
+      ...target === undefined ? {} : { thresholdRatio: resolveTargetPolicy(this.config, target).thresholdRatio },
+    })
     if (decision.kind === 'none') {
       this.nudgeStates.set(session, stepped)
       return

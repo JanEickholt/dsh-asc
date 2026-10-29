@@ -6,6 +6,7 @@ import { registerContextTools } from '../src/tools/tools.ts'
 import { resolveConfig } from '../src/config.ts'
 import { validateSurfaceRange, rangeIneligibility, checkpointViews } from '../src/policy/protected.ts'
 import { createContext, conversationSession, closedSession, agentOf, eventOf, MODEL } from './helpers.ts'
+import type { ModelAgenticPolicyConfig } from '../src/types.ts'
 import { PLUGIN_SOURCE_KIND } from '../src/events.ts'
 
 const SUMMARY = 'consolidated checkpoint preserving file paths, decisions, commands, and the pending next step in full detail'
@@ -920,6 +921,34 @@ describe('AgenticCompactionEngine automatic behavior', () => {
     expect(nudgeIdx).toBeGreaterThanOrEqual(0)
     const nudgeMessage = eventOf(session.snapshotEvents(), nudgeIdx, 'user/message')
     expect((nudgeMessage.data.content as readonly { text: string }[])[0]!.text).toContain('[context-management]')
+  })
+
+  it('moves the pressure band by the routed model policy thresholdRatio', async () => {
+    // The band is calibrated against the global thresholdRatio (0.8); a
+    // route whose policy sets 0.008 is nudged at 1% of the band's ratios.
+    const nudged = async (modelPolicies?: ModelAgenticPolicyConfig[]): Promise<boolean> => {
+      const ctx = createContext(100_000)
+      const engine = new AgenticCompactionEngine(ctx, {
+        nudge: { minRatio: 0.5, maxRatio: 0.9, frequency: 1 },
+        protection: { retainRecentMessages: 0 },
+        ...modelPolicies === undefined ? {} : { modelPolicies },
+      })
+      const session = conversationSession(2)
+      const agent = agentOf(session)
+      await engine.compactIfNeeded(agent, 'pressure', new AbortController().signal)
+      for (let i = 0; i < 30; i += 1) {
+        session.append('user/message', createUserMessage({
+          content: [{ type: 'text', text: `more context ${i} `.repeat(40) }],
+          source: { kind: 'plugin:other' },
+        }), { surfaceOp: 'append' })
+      }
+      await engine.compactIfNeeded(agent, 'pressure', new AbortController().signal)
+      return session.snapshotEvents().some(event => event.type === 'user/message'
+        && (event.data.source as { purpose?: string }).purpose === 'nudge')
+    }
+    expect(await nudged()).toBe(false)
+    expect(await nudged([{ provider: MODEL, model: MODEL, thresholdRatio: 0.008, retainTokens: 1 }])).toBe(true)
+    expect(await nudged([{ provider: 'other', model: MODEL, thresholdRatio: 0.008, retainTokens: 1 }])).toBe(false)
   })
 
   it('compacts automatically on context overflow through the fallback summarizer', async () => {

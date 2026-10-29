@@ -8,7 +8,14 @@ import type { CompactionId } from '@deepseek-ai/dsh-compaction'
 
 /** Policy fields shared by the default policy and exact model overrides. */
 export interface CompactionPolicyFields {
-  /** High-pressure reference fraction of the model's context window; scales the fallback retention budget. Defaults to `0.8`. */
+  /**
+   * High-pressure mark as a fraction of the model's context window. The
+   * nudge band is calibrated against the global value; a model policy's
+   * own value scales that route's band proportionally. The retention budget
+   * must stay below it. It never triggers compaction by itself: the
+   * fallback runs only on provider overflow or manual compaction.
+   * Defaults to `0.8`.
+   */
   thresholdRatio?: number
   /** Recent context retained as a fraction of the model's window. Defaults to `0.16`. */
   retainRatio?: number
@@ -28,9 +35,9 @@ export interface ModelAgenticPolicyConfig extends CompactionPolicyFields {
 export interface NudgeConfig {
   /** Master switch for automatic nudge injection. Defaults to `true`. */
   enabled?: boolean
-  /** Below this fraction of the window, no nudges fire. Defaults to `0.45`. */
+  /** Below this fraction of the window, no nudges fire; scaled per route by its `thresholdRatio`. Defaults to `0.45`. */
   minRatio?: number
-  /** Above this fraction, strong nudges fire every `frequency` steps. Defaults to `0.8`. */
+  /** Above this fraction, pressure nudges fire every `frequency` steps; scaled per route like `minRatio`. Defaults to `0.8`. */
   maxRatio?: number
   /** Token growth since the last nudge required to nudge again. Defaults to `50000`. */
   growthTokens?: number

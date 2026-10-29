@@ -120,6 +120,32 @@ export interface NudgeInput {
   readonly contextWindow: number | undefined
   /** Transient per-session nudge state. */
   readonly state: NudgeState
+  /**
+   * The routed model's resolved `thresholdRatio` (its `modelPolicies`
+   * override, else the global value); scales the pressure band. Omitted
+   * means the global value, i.e. the configured band unchanged.
+   */
+  readonly thresholdRatio?: number
+}
+
+/**
+ * The pressure band for one route. `nudge.minRatio`/`nudge.maxRatio` are
+ * calibrated against the global `thresholdRatio` (both default to 0.8, the
+ * high-pressure mark); a model policy with its own `thresholdRatio` moves
+ * the band proportionally, so a route whose effective capacity differs from
+ * the default (e.g. twice the usable share of its window) is nudged at the
+ * same relative pressure. Ratios are capped at the full window.
+ * @param config - resolved policy.
+ * @param thresholdRatio - the route's resolved threshold ratio.
+ * @returns the band as fractions of the route's context window.
+ */
+export function pressureBand(
+  config: ResolvedConfig,
+  thresholdRatio: number = config.thresholdRatio,
+): { minRatio: number; maxRatio: number } {
+  const scale = thresholdRatio / config.thresholdRatio
+  const maxRatio = Math.min(1, config.nudge.maxRatio * scale)
+  return { minRatio: Math.min(maxRatio, config.nudge.minRatio * scale), maxRatio }
 }
 
 /** One nudge decision. */
@@ -147,6 +173,7 @@ export interface NudgeDecision {
  */
 export function decideNudge(input: NudgeInput): NudgeDecision {
   const { session, measurement, config, contextWindow, state } = input
+  const band = pressureBand(config, input.thresholdRatio)
   const nudge = config.nudge
   const tiers = config.tiers
   if (!nudge.enabled) return none()
@@ -156,8 +183,8 @@ export function decideNudge(input: NudgeInput): NudgeDecision {
   const baseline = state.lastBaselineTokens
   const growth = Math.max(0, total - baseline)
   const hasWindow = contextWindow !== undefined && contextWindow > 0
-  const overMax = hasWindow && total >= contextWindow * nudge.maxRatio
-  const overMin = hasWindow && total >= contextWindow * nudge.minRatio
+  const overMax = hasWindow && total >= contextWindow * band.maxRatio
+  const overMin = hasWindow && total >= contextWindow * band.minRatio
 
   // Over-max pressure keeps its own cadence: the window itself is the
   // threshold, so a step counter plus the frequency gate is enough.
@@ -165,7 +192,7 @@ export function decideNudge(input: NudgeInput): NudgeDecision {
     return {
       kind: 'pressure',
       reason: `context ${percent(total, contextWindow)}% is at or above the max ratio `
-        + `${Math.round(nudge.maxRatio * 100)}%`,
+        + `${Math.round(band.maxRatio * 100)}%`,
       growth,
       recommendations: recommendRanges(session, measurement, config),
     }

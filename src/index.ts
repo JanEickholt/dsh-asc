@@ -44,6 +44,7 @@ export {
   applyCompressionBaseline,
   applyNudgeBaseline,
   decideNudge,
+  pressureBand,
   freshNudgeState,
   recommendRanges,
   buildNudgeText,

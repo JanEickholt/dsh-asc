@@ -12,6 +12,7 @@ import {
   decideNudge,
   freshNudgeState,
   nodesSinceLastUser,
+  pressureBand,
   recommendRanges,
 } from '../src/policy/nudge.ts'
 import { resolveConfig } from '../src/config.ts'
@@ -71,7 +72,32 @@ describe('freshNudgeState and baselines', () => {
   })
 })
 
+describe('pressureBand', () => {
+  it('keeps the configured band for the global threshold and scales it per route', () => {
+    const config = resolveConfig({ thresholdRatio: 0.22, retainRatio: 0.05, nudge: { minRatio: 0.185, maxRatio: 0.22 } })
+    expect(pressureBand(config)).toEqual({ minRatio: 0.185, maxRatio: 0.22 })
+    const doubled = pressureBand(config, 0.44)
+    expect(doubled.minRatio).toBeCloseTo(0.37)
+    expect(doubled.maxRatio).toBeCloseTo(0.44)
+    // Capped at the full window.
+    expect(pressureBand(resolveConfig({}), 1).maxRatio).toBe(1)
+  })
+})
+
 describe('decideNudge', () => {
+  it('applies the routed thresholdRatio to the pressure band', () => {
+    const ctx = createContext()
+    const session = conversationSession(2)
+    const config = resolveConfig({ nudge: { frequency: 1 }, protection: { retainRecentMessages: 0 } })
+    const total = ctx.tokenMeter.measure(session).totalTokens
+    const state = { ...applyNudgeBaseline(total, new Map()), stepsSinceBaseline: 1 }
+    // 60% of the window: under the default 80% max ratio, over a route
+    // whose policy halves the threshold (band max 40%).
+    const window = Math.ceil(total / 0.6)
+    expect(decideNudge(nudgeInput(session, ctx, config, window, state)).kind).toBe('none')
+    expect(decideNudge({ ...nudgeInput(session, ctx, config, window, state), thresholdRatio: 0.4 }).kind).toBe('pressure')
+  })
+
   it('stays quiet before the first baseline', () => {
     const ctx = createContext()
     const session = conversationSession(2)

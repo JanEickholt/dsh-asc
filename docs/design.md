@@ -217,9 +217,13 @@ Registered only when `auto: true` (default):
   `pressure` (over-max, frequency-gated), `tier` (per-tier growth past
   `tiers.growthTokens`, only for tiers below the cap with consumable
   checkpoints), or `iteration` (messages since the last user prompt past
-  `nudge.iterationThreshold`, in the over-min band). On a decision, the
-  engine appends the nudge `user/message`. Always calls
-  `next()`.
+  `nudge.iterationThreshold`, in the over-min band). The band is
+  `nudge.minRatio`..`nudge.maxRatio` of the routed window, scaled by the
+  route's resolved `thresholdRatio` over the global one (`pressureBand`),
+  so a `modelPolicies` threshold moves that route's band. On a decision,
+  the engine appends the nudge `user/message`. Always calls `next()`.
+  Nothing here compacts: only provider overflow (below) and manual
+  compaction run the deterministic fallback.
 - `agent/request-error` (waterfall): on `CONTEXT_WINDOW_EXCEEDED`, prunes
   tool results through the optional `toolResultPruner`, selects a range with
   the deterministic fallback, and commits an LLM-summarized compaction
@@ -296,8 +300,8 @@ projection is frequent and tail-only.
 `compactIfNeeded('context-overflow')`, `compactNow`, and `compactRegion`
 share one path: selection with the routed-model retention budget
 (`retainRatio`/`retainTokens`/`modelPolicies`, scaled by the adapter's
-context window; `thresholdRatio` is the validation ceiling the budget must
-stay below), hard fences for protected nodes, the configured recent-tail
+context window; `thresholdRatio` is the ceiling the budget must stay
+below and otherwise only positions the nudge band), hard fences for protected nodes, the configured recent-tail
 node count, and the tier cap; then one
 `ctx.llm.stream()` call whose envelope reuses the conversation's own system
 prompt and tool schemas and carries the shadowed region in surface order
