@@ -197,7 +197,7 @@ catastrophic signal that conjunction catches.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `maxTokens` | `60000` | Combined restored-token budget per call; over-budget targets are skipped and reported. |
+| `maxTokens` | `60000` | Combined restored-token budget per in-place call; over-budget targets are skipped and reported. `toFile` writes are not budgeted. |
 | `maxBlocks` | `8` | Maximum checkpoints restored per call; exceeding it is a hard error. |
 
 ### `projection`
@@ -216,7 +216,11 @@ only; large restores are governed by the `maxTokens` budget instead.
 `toFile` writes the transcript through the optional fs service and keeps
 the checkpoint compressed; multiple targets get derived sibling paths so
 they never overwrite each other, and each result reports the written
-path.
+path. A relative path resolves against the session's working directory,
+like every filesystem tool. Written transcripts never enter the context
+window, so `maxTokens` does not apply to them — `toFile` is the way to
+recover a restore too large to bring back in place (`maxBlocks` still
+bounds the call).
 
 ## Model experience
 

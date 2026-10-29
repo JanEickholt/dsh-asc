@@ -32,6 +32,14 @@ releases, not for every commit.
   call reported no restored ids, no skip reasons, and a `skipped`
   outcome, and to-file restores were never counted. The scanner now reads
   the rendered result lines (JSON payloads are still accepted).
+- `context_decompress` `toFile` was capped by the in-place restore budget
+  (`decompress.maxTokens`) although a written transcript never enters the
+  context window; the tool description recommends `toFile` precisely for
+  restores too large to bring back in place, and live logs show it
+  rejecting one (233k tokens over a 60k budget). `toFile` writes are no
+  longer token-budgeted (`maxBlocks` still bounds the call), and relative
+  paths now resolve against the session's working directory instead of
+  the host process cwd.
 
 ### Performance
 

@@ -145,9 +145,11 @@ Restores compressed content by replaying the log.
   position — the position of its collapsed shadowed span — lies inside it).
 - `full?: boolean` — one tier up by default; recursive to raw content with
   `full: true`.
-- Budgets: `decompress.maxTokens` per call (priced as the combined
-  `user/message` that will actually be appended; over-budget targets are
-  skipped and reported) and `decompress.maxBlocks` per call (hard error).
+- Budgets: `decompress.maxTokens` per in-place call (priced as the
+  combined `user/message` that will actually be appended; over-budget
+  targets are skipped and reported) and `decompress.maxBlocks` per call
+  (hard error). `toFile` writes append nothing to the surface and are not
+  token-budgeted.
 - Each restored transcript is committed back into the surface at its
   checkpoint's position — an in-place replace (the checkpoint node is
   shadowed by a `user/message` carrying the original content with
@@ -159,7 +161,9 @@ Restores compressed content by replaying the log.
   the checkpoint compressed. A single target uses the requested path
   verbatim; multiple targets receive derived sibling paths (`name-1.ext`,
   `name-2.ext`, …) so no transcript overwrites another, and each result
-  reports the path it wrote.
+  reports the path it wrote. Relative paths resolve against the session's
+  working directory (the `workingDirectory` service when mounted, else the
+  session's creation cwd).
 - The tool result reports statistics and a preview or path only (no inline
   content), keeping the model-visible footprint equal to the restored
   transcript rather than doubling it.

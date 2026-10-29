@@ -694,23 +694,23 @@ export class AgenticCompactionEngine extends CompactionEngine {
       }
       const restored: DecompressTarget[] = []
       const skipped: string[] = [...unknown]
-      let budgetUsed = 0
+      // Relative paths resolve against the session's working directory, as
+      // every filesystem tool resolves them, not the host process cwd.
+      const cwd = this.sessionWorkingDirectory(session)
+      // No restore-token budget here: a written transcript never enters the
+      // context window, which is exactly why toFile exists for restores too
+      // large to bring back in place. `maxBlocks` still bounds the call.
       for (const [index, t] of targets.entries()) {
         const { restoredSeqs, text, tokens, chars } = buildRestoredContent(session, t, target.full === true, this.ctx.tokenMeter)
         if (text.length === 0 || restoredSeqs.length === 0) {
           skipped.push(`${t.compactionId} (no restorable message content)`)
           continue
         }
-        if (budgetUsed + tokens > this.config.decompress.maxTokens) {
-          skipped.push(
-            `${t.compactionId} (${tokens} tokens; combined ${budgetUsed + tokens} exceeds `
-            + `the ${this.config.decompress.maxTokens}-token restore budget)`,
-          )
-          continue
-        }
-        budgetUsed += tokens
         const path = uniqueToFilePath(target.toFile, index, targets.length)
-        const resolved = await fs.resolve(path)
+        const resolved = await fs.resolve(path, {
+          ...cwd === undefined ? {} : { cwd },
+          ...signal === undefined ? {} : { signal },
+        })
         await fs.writeText(resolved, text, undefined, signal)
         // Report the target the fs provider actually wrote: remote/sandboxed
         // backends may normalize or remap the requested path.
@@ -1171,6 +1171,23 @@ export class AgenticCompactionEngine extends CompactionEngine {
       },
       gateConfig,
     )
+  }
+
+  /**
+   * The session's committed working directory: the optional
+   * working-directory service when mounted, else the session's creation cwd.
+   */
+  private sessionWorkingDirectory(session: Session): string | undefined {
+    const service = this.ctx.get('workingDirectory') as { get?: (session: Session) => string } | null | undefined
+    if (typeof service?.get === 'function') {
+      try {
+        return service.get(session)
+      } catch {
+        // A session unknown to the service still has its creation cwd; the
+        // fs provider reports the path it actually wrote either way.
+      }
+    }
+    return session.header.cwd
   }
 
   /** Current protected surface seqs under the resolved policy. */

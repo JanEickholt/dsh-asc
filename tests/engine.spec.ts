@@ -636,6 +636,41 @@ describe('AgenticCompactionEngine.decompressByModel', () => {
     expect(session.surface.nodes).toContain(view.seq)
   })
 
+  it('writes a toFile restore over the in-place budget, resolving against the session cwd', async () => {
+    // A written transcript never enters the context window: the restore
+    // budget only gates in-place restores, so toFile still handles a
+    // restore too large to bring back in place.
+    const { ctx, engine } = engineWith({ decompress: { maxTokens: 10 } })
+    const resolves: Array<{ path: string; cwd?: string }> = []
+    ctx.provide('workingDirectory', { get: () => '/work/project' } as never)
+    ctx.provide('fs', {
+      resolve: async (path: string, opts?: { cwd?: string }) => {
+        resolves.push({ path, ...opts?.cwd === undefined ? {} : { cwd: opts.cwd } })
+        return { path, displayPath: `/work/project/${path}` }
+      },
+      writeText: async () => ({ version: 1 }),
+    } as never)
+    const session = conversationSession(2)
+    const agent = agentOf(session)
+    const nodes = [...session.surface.nodes]
+    await engine.compressByModel(agent, [{
+      startSeq: nodes[0]!,
+      endSeq: nodes[0]!,
+      summary: 'tiny',
+    }])
+    const view = checkpointViews(session)[0]!
+    const result = await engine.decompressByModel(agent, {
+      compactionIds: [view.compactionId],
+      toFile: 'restore.txt',
+    })
+    expect(result.skipped).toEqual([])
+    expect(result.restored).toHaveLength(1)
+    expect(result.restored[0]!.restoredTokens).toBeGreaterThan(10)
+    expect(result.restored[0]!.path).toBe('/work/project/restore.txt')
+    expect(resolves).toEqual([{ path: 'restore.txt', cwd: '/work/project' }])
+    expect(session.surface.nodes).toContain(view.seq)
+  })
+
   it('fails loudly when toFile is set without an fs service', async () => {
     const { engine } = engineWith()
     const session = conversationSession(2)

@@ -299,7 +299,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
         '- startSeq/endSeq: every checkpoint whose current surface position (the position of its collapsed shadowed span) lies inside the given range is restored.',
         '',
         'Tier-aware restore: by default a checkpoint is restored one tier up (a tier-2 checkpoint reveals its tier-1 summaries). Pass full: true to expand recursively all the way to the original raw content — expensive, use only when necessary.',
-        'Restoring inflates context: the combined restored transcript must stay within the configured token budget; over-budget targets are skipped and reported. The configured maxBlocks bound is a hard per-call limit.',
+        'Restoring in place inflates context: the combined restored transcript must stay within the configured token budget; over-budget targets are skipped and reported (toFile writes are not budgeted — they never enter context). The configured maxBlocks bound is a hard per-call limit.',
       ].join('\n'),
       parameters: {
         compactionIds: {
