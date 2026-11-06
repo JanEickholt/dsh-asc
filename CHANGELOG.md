@@ -10,6 +10,8 @@ releases, not for every commit.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-06
+
 ### Added
 
 - `projection.excludeTools` (default `[]`): tool names whose results are
