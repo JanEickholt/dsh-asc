@@ -200,7 +200,11 @@ sessions. `surface` optionally restricts hits to `current`, `shadowed`, or
 `log-only`. Hits carry `seq`, `type`, `surface`, and a snippet;
 session-scope shadowed hits also carry the owning `checkpointId`. Requires
 a session-query backend such as
-`@deepseek-ai/dsh-session-query-sqlite`.
+`@deepseek-ai/dsh-session-query-sqlite` with `openAt` other than `never`.
+A missing service or `SESSION_QUERY_SEARCH_DISABLED` returns
+`unavailable: true` with no hits and a do-not-retry message instead of a
+tool error; the tool cannot be withheld at registration because the
+service exposes no searchable flag and probing would open the index early.
 
 ### `context_retrieve`
 Returns a projected tool-result original byte-exact by its 24-hex sha-256

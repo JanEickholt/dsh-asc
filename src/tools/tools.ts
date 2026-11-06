@@ -459,6 +459,7 @@ export function registerContextTools(ctx: Context, engine: AgenticCompactionEngi
         'Use search only when no visible summary tells you where the detail lives: name an exact path, error, command, identifier, or quote, and the hit names the owning checkpoint. If a visible summary already names the right block, decompress that block directly instead of searching.',
         'Use surface:"current" to search only what is visible now (raw nodes plus checkpoint summaries); use surface:"shadowed" to search only compressed originals when you need a vanished path, error string, command, or verbatim detail; omit it to search everything. Use context_recap or context_decompress on the returned checkpointId when a shadowed hit is relevant.',
         'Scope: "session" searches the current session; "workspace" searches all sessions.',
+        'Search needs the deployment\'s full-text index. When it is not enabled the result carries unavailable: true; do not retry, locate the block from visible summaries or context_recap instead.',
       ].join('\n'),
       parameters: {
         query: { type: 'string', required: true, description: 'Search text, interpreted as data (not query syntax).' },
@@ -588,10 +589,6 @@ async function searchContext(
   exec: ToolRunContext,
   args: { query: string; scope?: string; surface?: string; limit?: number },
 ): Promise<Record<string, JsonValue>> {
-  const sessionQuery = ctx.get('sessionQuery')
-  if (sessionQuery === null || sessionQuery === undefined) {
-    throw new Error('context_search requires the session-query service (mount dsh-session-query with a backend)')
-  }
   if (typeof args.query !== 'string' || args.query.trim().length === 0) {
     throw new Error('context_search requires a non-empty query')
   }
@@ -616,6 +613,12 @@ async function searchContext(
   const eventFilters = surface === undefined
     ? undefined
     : [{ kind: 'surface', values: [surface] }] as const
+  // A mounted service is not necessarily a searchable one: the base bundle's
+  // session-query-sqlite row ships `openAt: never`, and the service exposes
+  // no flag for that, so only the call can tell. Both cases get the same
+  // result so the model stops retrying and locates the block another way.
+  const sessionQuery = ctx.get('sessionQuery')
+  if (sessionQuery === null || sessionQuery === undefined) return searchUnavailable(scope, query)
   // The query service's stable-observation pass loads every persisted sibling
   // log, so one corrupt or legacy-format session fails ALL scopes with
   // SESSION_QUERY_PERSISTENCE_FAILED (e.g. a legacy log whose plugin source
@@ -682,7 +685,9 @@ async function searchContext(
       })),
     }
   } catch (error) {
-    if ((error as { code?: string }).code !== 'SESSION_QUERY_PERSISTENCE_FAILED') throw error
+    const code = (error as { code?: string }).code
+    if (code === 'SESSION_QUERY_SEARCH_DISABLED') return searchUnavailable(scope, query)
+    if (code !== 'SESSION_QUERY_PERSISTENCE_FAILED') throw error
     const cause = (error as { cause?: unknown }).cause
     const detail = cause instanceof Error ? `: ${cause.message}` : ''
     return {
@@ -694,6 +699,19 @@ async function searchContext(
         + ' — one stored session log is unreadable (corrupt or legacy format);'
         + ' report it to the user so the log can be moved or repaired.',
     }
+  }
+}
+
+/** The result for a deployment whose session-query service cannot search. */
+function searchUnavailable(scope: 'session' | 'workspace', query: string): Record<string, JsonValue> {
+  return {
+    scope,
+    query,
+    hits: [],
+    unavailable: true,
+    error: 'Full-text search is not enabled in this deployment, so context_search cannot run here. Do not retry it.'
+      + ' Locate the detail from the checkpoint summaries you can see (each names its Compaction id) or with context_recap,'
+      + ' or use another session search tool if your tool list has one; then context_decompress the block.',
   }
 }
 

@@ -58,7 +58,8 @@ dsh plugin --profile <name> add "link:$(pwd)"
 - insert:
     - id: dsh-asc-invariant          # 运行时不变式检查（可选；仅 DSH <= 0.2.0）
       name: "@internetnutzer/dsh-asc/invariant"
-    - id: session-query-sqlite       # context_search 全文检索后端（可选）
+    - id: session-query-sqlite       # context_search 全文检索后端（可选；base bundle
+                                     # 默认 openAt: never 会关闭检索，开启方法见 docs/usage.md）
       name: "@deepseek-ai/dsh-session-query-sqlite"
 ```
 

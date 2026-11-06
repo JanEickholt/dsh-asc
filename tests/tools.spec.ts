@@ -151,6 +151,38 @@ describe('registerContextTools', () => {
     await expect(search({ query: 'needle' }, { agent: { session } })).rejects.toThrow('database exploded')
   })
 
+  it('reports context_search as unavailable when the deployment cannot search', async () => {
+    const ctx = createContext()
+    const registry = recordingRegistry(ctx)
+    const engine = new AgenticCompactionEngine(ctx, { auto: false })
+    registerContextTools(ctx, engine)
+    const session = conversationSession(1)
+    const search = registry.execute('context_search')!
+    type Result = { unavailable?: boolean; hits: unknown[]; error?: string; scope: string }
+
+    // No session-query service mounted at all.
+    const unmounted = await search({ query: 'needle' }, { agent: { session } }) as Result
+    expect(unmounted.unavailable).toBe(true)
+    expect(unmounted.hits).toEqual([])
+    expect(unmounted.error).toContain('Do not retry')
+
+    // Mounted but configured with openAt: never (the base bundle's default).
+    const disabled = Object.assign(new Error(
+      'session search is disabled: this deployment configures the session-query index with openAt "never"',
+    ), { code: 'SESSION_QUERY_SEARCH_DISABLED' })
+    ctx.provide('sessionQuery', {
+      searchEvents: async () => { throw disabled },
+      searchSessions: async () => { throw disabled },
+    } as never)
+    for (const scope of ['session', 'workspace']) {
+      const result = await search({ query: 'needle', scope }, { agent: { session } }) as Result
+      expect(result.unavailable).toBe(true)
+      expect(result.scope).toBe(scope)
+      expect(result.error).toContain('context_recap')
+      expect(result.error).not.toContain('openAt')
+    }
+  })
+
   it('renders context_status with recent nodes first and one line per node', () => {
     const ctx = createContext()
     const registry = recordingRegistry(ctx)

@@ -45,6 +45,18 @@ releases, not for every commit.
 
 ### Fixed
 
+- `context_search` failed with a raw `SESSION_QUERY_SEARCH_DISABLED` error
+  on default installs ([#7](https://github.com/JanEickholt/dsh-asc/issues/7)):
+  the DSH base bundle mounts `session-query-sqlite` with `openAt: never`,
+  so the service exists but cannot search, while the doctrine tells the
+  model to search before decompressing. A disabled or missing backend now
+  returns `unavailable: true` with no hits and a message that tells the
+  model not to retry and where to look instead. The doctrine and tool
+  description state the dependency, the bundle-patch and usage notes show
+  the `openAt: first-search` override, and the doctrine's call examples
+  now use named JSON fields (`context_decompress({ compactionIds: [...] })`)
+  because hosts that defer tools behind an invoker rejected the bare-array
+  form as stringified arguments.
 - A session whose log carried a plugin-owned message-projection event
   (`image/offload`, written by the base bundle's image-offload plugin when
   an image-capable route hits its image budget) broke every context tool,

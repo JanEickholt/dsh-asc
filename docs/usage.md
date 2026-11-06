@@ -80,7 +80,7 @@ evolves.
 
 ### Optional: full-text search
 
-`context_search` needs a session-query backend:
+`context_search` needs a session-query backend that can search:
 
 ```yaml
 - insert:
@@ -88,8 +88,22 @@ evolves.
       name: "@deepseek-ai/dsh-session-query-sqlite"
 ```
 
-Without it, `context_search` fails with a clear message; the other four
-tools work normally.
+The DSH base bundle already mounts this row, but with `openAt: never`,
+which keeps the service up and turns full-text search off. Override it in
+the profile layer to enable search (fully restart DSH afterwards):
+
+```yaml
+- id: session-query-sqlite
+  config:
+    path: /absolute/path/session-search.db
+    openAt: first-search   # index opens on the first search, not at startup
+```
+
+Without a searchable backend the tool stays registered (the service gives
+plugins no way to read `openAt` without calling it) and every call returns
+`unavailable: true` with an empty `hits` list and a message telling the
+model not to retry and to locate the block through visible summaries or
+`context_recap` instead. The other five tools work normally.
 
 ### Optional: model-free tool-result pruning
 

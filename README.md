@@ -80,7 +80,9 @@ Optionally mount the invariant companion and the full-text-search backend:
 - insert:
     - id: dsh-asc-invariant          # runtime invariant checks (optional; DSH <= 0.2.0 only)
       name: "@internetnutzer/dsh-asc/invariant"
-    - id: session-query-sqlite       # context_search full-text backend (optional)
+    - id: session-query-sqlite       # context_search full-text backend (optional;
+                                     # the base bundle ships it with openAt: never,
+                                     # see docs/usage.md to turn search on)
       name: "@deepseek-ai/dsh-session-query-sqlite"
 ```
 

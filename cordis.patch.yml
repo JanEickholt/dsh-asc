@@ -14,7 +14,10 @@
 #     disabled: true
 #
 # Optional rows to add in the profile layer:
-#   - id: session-query-sqlite          (context_search full-text backend)
+#   - id: session-query-sqlite          (context_search full-text backend; the
+#                                        DSH base bundle ships this row with
+#                                        openAt: never, which turns search off:
+#                                        override it with openAt: first-search)
 #   - id: dsh-asc-invariant             (runtime invariant companion; DSH <= 0.2.0,
 #                                        whose base bundle ships the invariants service)
 - insert:
