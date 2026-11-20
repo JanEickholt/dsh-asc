@@ -283,8 +283,10 @@ The tools are self-describing: `context_status` lists the current surface
 with seqs, 0-based surface positions, kinds, tiers, protection flags,
 tierTokens, and previews (the recent-node list is capped to the last 40
 nodes, and every recommended range is pre-validated against the surface
-shown by that status call — re-run it after any surface change);
-`context_compress` takes exactly those seqs, persists an optional topic,
+shown by that status call — re-run it after any surface change).
+Recommendations walk the oldest history first and resume past protected
+nodes, so a protected early prompt costs one span, not the whole older
+surface. `context_compress` takes exactly those seqs, persists an optional topic,
 and auto-extends tool-pair-splitting ranges; `context_decompress` takes
 the `compactionId`s that `context_status` reports; `context_recap` re-reads
 checkpoint summaries, optionally filtered by tier (1 detail, 2 decisions,

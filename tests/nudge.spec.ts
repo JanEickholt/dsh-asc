@@ -4,7 +4,7 @@ import { SessionSeq } from '@deepseek-ai/dsh-session'
 import {
   commitSurfaceCompaction,
 } from '../src/engine/region.ts'
-import { rangeIneligibility, validateSurfaceRange } from '../src/policy/protected.ts'
+import { isProtectedNode, rangeIneligibility, validateSurfaceRange } from '../src/policy/protected.ts'
 import {
   applyCompressionBaseline,
   applyNudgeBaseline,
@@ -426,6 +426,30 @@ describe('recommendRanges', () => {
     const ranges = recommendRanges(session, ctx.tokenMeter.measure(session), config)
     for (const range of ranges) {
       expect(() => validateSurfaceRange(session, range.startSeq, range.endSeq)).not.toThrow()
+    }
+  })
+
+  it('resumes the head scan past a protected node instead of stopping there', () => {
+    const ctx = createContext()
+    const session = conversationSession(5)
+    // Every human prompt is protected, so each reply is its own run — the
+    // shape issue #8 reported, where one protected node near the head hid
+    // every older span behind it.
+    const config = resolveConfig({
+      protection: { retainRecentMessages: 0, protectUserMessages: true },
+    })
+    const ranges = recommendRanges(session, ctx.tokenMeter.measure(session), config)
+    const history = ranges.filter(range => range.kind === 'history')
+    expect(history.length).toBeGreaterThan(1)
+    // Oldest first and disjoint: the second span starts after the first,
+    // behind the protected user message that used to end the head scan.
+    expect(history[0]!.startPosition).toBe(1)
+    expect(history[1]!.startPosition).toBe(history[0]!.endPosition + 2)
+    const boundarySeq = session.surface.nodes[history[1]!.startPosition - 1]!
+    expect(isProtectedNode(session, boundarySeq, config)).toBe(true)
+    for (const range of history) {
+      const selection = validateSurfaceRange(session, range.startSeq, range.endSeq)
+      expect(rangeIneligibility(session, selection, config)).toBeUndefined()
     }
   })
 

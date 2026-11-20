@@ -20,7 +20,7 @@
  * @module dsh-asc/nudge
  */
 
-import { toolPairingBalancedAfter } from '@deepseek-ai/dsh-compaction'
+import { toolPairingBalancedAfter, toolPairingBalancedBefore } from '@deepseek-ai/dsh-compaction'
 import { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
@@ -283,12 +283,13 @@ export function nodesSinceLastUser(session: Session): number {
 }
 
 /**
- * Build up to three recommended ranges: the head-history span and the two
- * largest eligible tool results, in priority order and pairwise
- * non-overlapping so the model can batch them in one context_compress call.
- * Every returned range is pre-validated (balanced edges, no protected node,
- * outside the recent tail, below the tier cap) so a model acting on one
- * against the same surface cannot hit a commit-time rejection.
+ * Build up to five recommended ranges: the oldest compressible history spans
+ * (up to three, resuming past protected nodes) and the two largest eligible
+ * tool results, in priority order and pairwise non-overlapping so the model
+ * can batch them in one context_compress call. Every returned range is
+ * pre-validated (balanced edges, no protected node, outside the recent tail,
+ * below the tier cap) so a model acting on one against the same surface
+ * cannot hit a commit-time rejection.
  * @param session - session owning the surface.
  * @param measurement - current measurement.
  * @param config - resolved policy.
@@ -299,9 +300,7 @@ export function recommendRanges(
   measurement: TokenMeasurement,
   config: ResolvedConfig,
 ): RecommendedRange[] {
-  const candidates: RecommendedRangeCandidate[] = []
-  const head = recommendHeadRange(session, measurement, config)
-  if (head !== null) candidates.push(head)
+  const candidates: RecommendedRangeCandidate[] = recommendHeadRanges(session, measurement, config)
   for (const big of recommendBigToolResults(session, measurement, config, 2)) {
     candidates.push(big)
   }
@@ -435,16 +434,31 @@ export function recommendTierRanges(
   return recommendations.slice(0, 3)
 }
 
-/** The head-history range bounded by the recent-tail budget. */
-function recommendHeadRange(
+/** How many oldest-first history spans one recommendation list offers. */
+const HEAD_RANGE_LIMIT = 3
+
+/**
+ * The oldest compressible history spans in surface order.
+ *
+ * A protected node or tier-capped checkpoint splits the head scan into
+ * separate runs instead of ending it: one early protected node (the first
+ * user prompt is protected by default) must cost one span, not every older
+ * span behind it. Each run is trimmed inward to balanced tool-pair cuts and
+ * priced over exactly its own nodes.
+ * @param session - session owning the surface.
+ * @param measurement - current measurement.
+ * @param config - resolved policy.
+ * @returns up to `HEAD_RANGE_LIMIT` candidates, oldest first.
+ */
+function recommendHeadRanges(
   session: Session,
   measurement: TokenMeasurement,
   config: ResolvedConfig,
-): RecommendedRangeCandidate | null {
+): RecommendedRangeCandidate[] {
   const nodes = session.surface.nodes
-  if (nodes.length === 0) return null
+  if (nodes.length === 0) return []
   const tailBoundary = nodes.length - config.protection.retainRecentMessages
-  if (tailBoundary <= 0) return null
+  if (tailBoundary <= 0) return []
   const protectedSeqs = new Set(
     nodes.filter(seq => isProtectedNode(session, seq, config)),
   )
@@ -452,36 +466,46 @@ function recommendHeadRange(
   for (const seq of nodes) {
     if ((tiers.tierBySeq.get(seq) ?? 0) >= config.tiers.maxTier) protectedSeqs.add(seq)
   }
-  // Start after any leading protected nodes (e.g. a protected first prompt).
-  let startIdx = 0
-  while (startIdx < tailBoundary && protectedSeqs.has(nodes[startIdx]!)) startIdx += 1
-  if (startIdx >= tailBoundary) return null
-  // The span must end before the first protected node after its start.
-  let firstProtectedIdx = startIdx
-  while (firstProtectedIdx < tailBoundary && !protectedSeqs.has(nodes[firstProtectedIdx]!)) {
-    firstProtectedIdx += 1
+
+  const recommendations: RecommendedRangeCandidate[] = []
+  let runStart = -1
+  const flush = (runEnd: number): void => {
+    const firstIdx = runStart
+    runStart = -1
+    if (firstIdx === -1) return
+    let startIdx = firstIdx
+    let endIdx = runEnd
+    // The run edges can split a tool turn only when protection fell between
+    // the call and its result; trim inward to the nearest balanced cuts.
+    while (startIdx <= endIdx && !toolPairingBalancedBefore(session, nodes[startIdx]!)) startIdx += 1
+    while (endIdx >= startIdx && !toolPairingBalancedAfter(session, nodes[endIdx]!)) endIdx -= 1
+    if (startIdx > endIdx) return
+    // measurement.nodes is positional and parallel to the surface.
+    let tokens = 0
+    for (let index = startIdx; index <= endIdx; index += 1) {
+      tokens += measurement.nodes[index]?.tokens ?? 0
+    }
+    if (tokens <= 0) return
+    recommendations.push({
+      startSeq: nodes[startIdx]!,
+      endSeq: nodes[endIdx]!,
+      startPosition: startIdx,
+      endPosition: endIdx,
+      tokens,
+      kind: 'history',
+      reason: 'older conversation history',
+    })
   }
-  let endIdx = firstProtectedIdx - 1
-  while (endIdx >= startIdx && !toolPairingBalancedAfter(session, nodes[endIdx]!)) endIdx -= 1
-  if (endIdx < startIdx) return null
-  // Price exactly the recommended span, not the surface prefix before it.
-  let tokens = 0
-  let counting = false
-  for (const node of measurement.nodes) {
-    if (node.seq === nodes[startIdx]!) counting = true
-    if (!counting) continue
-    tokens += node.tokens
-    if (node.seq === nodes[endIdx]!) break
+  for (let index = 0; index < tailBoundary; index += 1) {
+    const seq = nodes[index]!
+    if (protectedSeqs.has(seq)) {
+      flush(index - 1)
+      continue
+    }
+    if (runStart === -1) runStart = index
   }
-  return {
-    startSeq: nodes[startIdx]!,
-    endSeq: nodes[endIdx]!,
-    startPosition: startIdx,
-    endPosition: endIdx,
-    tokens,
-    kind: 'history',
-    reason: 'older conversation history',
-  }
+  flush(tailBoundary - 1)
+  return recommendations.slice(0, HEAD_RANGE_LIMIT)
 }
 
 /** The largest eligible single-node tool results. */

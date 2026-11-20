@@ -10,6 +10,20 @@ releases, not for every commit.
 
 ## [Unreleased]
 
+### Fixed
+
+- `context_status` recommendations stopped at the first protected node, so
+  one protected early prompt (the first user message is protected by
+  default) hid every older span behind it: a 251k-token surface reported
+  6.3k tokens of recommendations with no legal boundary seq for the rest
+  ([#8](https://github.com/JanEickholt/dsh-asc/issues/8)). The head scan
+  now walks the surface once, closes a run at each protected or tier-capped
+  node and resumes after it, offering the oldest three compressible spans
+  plus the largest eligible tool results. Each span is trimmed to balanced
+  tool-pair cuts and priced over its own nodes, so every recommendation
+  stays commit-ready and the search-for-a-boundary workaround is no longer
+  needed.
+
 ## [0.5.0] - 2026-11-06
 
 ### Added

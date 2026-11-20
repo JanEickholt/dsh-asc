@@ -191,7 +191,12 @@ ranges, and the recent surface nodes with
 seq/position/kind/tokens/tier/protection/preview. Positions are 0-based
 surface positions (0 = the oldest current surface node); the recent-node
 list is capped to the last 40 nodes and each entry carries its own
-position.
+position. Recommended ranges are the oldest compressible history spans
+(up to three, oldest first) plus the two largest eligible tool results.
+The head scan resumes past a protected node or tier-capped checkpoint
+instead of ending at the first one, so an early protected prompt (the
+first user message is protected by default) costs one span rather than
+hiding all older history behind it.
 
 ### `context_search`
 Full-text search through the optional session-query service. `scope:
