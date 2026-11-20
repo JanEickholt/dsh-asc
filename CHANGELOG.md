@@ -10,6 +10,8 @@ releases, not for every commit.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-20
+
 ### Fixed
 
 - `context_status` recommendations stopped at the first protected node, so
